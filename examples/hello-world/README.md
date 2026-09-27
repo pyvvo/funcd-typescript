@@ -7,14 +7,14 @@ contract** of a handler.
 ## The handler + its I/O contract
 
 [`src/handler.ts`](src/handler.ts) exports `handle`, typed as `Handler<FuncInput, FuncOutput>`
-imported from `@pyvvo/funcd-shim` — so `context`, the CloudEvent `event`, and the return value
+imported from `@funcd-dev/shim` — so `context`, the CloudEvent `event`, and the return value
 are checked at compile time against the same contract the shim enforces at runtime (ADR-0037).
 
 The two exported interfaces **`FuncInput`** and **`FuncOutput`** *are* the I/O contract
 (ADR-0058). You write them as ordinary TypeScript types; the push build does the rest:
 
 ```ts
-import type { Handler } from '@pyvvo/funcd-shim';
+import type { Handler } from '@funcd-dev/shim';
 
 export interface FuncInput {
   name: string;
@@ -116,8 +116,8 @@ if omitted. `just demo` runs this whole journey end to end.
 ## Notes
 
 - The typed contract is **path-mapped** to the in-repo shim types (`tsconfig.json` →
-  `shim/src/types.ts`). When `@pyvvo/funcd-shim` is published, this becomes a plain
-  `yarn add -D @pyvvo/funcd-shim` (ADR-0037 open question).
+  `shim/src/types.ts`). When `@funcd-dev/shim` is published, this becomes a plain
+  `yarn add -D @funcd-dev/shim` (ADR-0037 open question).
 - `import type { Handler }` is erased at build time, so `handler.mjs` carries **no** shim
   dependency — your function bundles only the libraries it actually uses at runtime. The
   generated validators are baked in by the push build, not imported.

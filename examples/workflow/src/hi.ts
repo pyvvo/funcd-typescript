@@ -1,4 +1,4 @@
-import type { Handler } from '@pyvvo/funcd-shim';
+import type { Handler } from '@funcd-dev/shim';
 
 /** hi — the high branch. It receives score's output ({ amount, score }); it runs only when the
  * workflow's `when` condition (score > 30) held (ADR-0095 native-JS predicate). */

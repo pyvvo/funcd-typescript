@@ -1,8 +1,8 @@
 {
-  "name": "@funcd/example-hello-world",
+  "name": "@funcd-dev/example-hello-world",
   "private": true,
   "type": "module",
-  "description": "A funcd function authored in TypeScript against the @pyvvo/funcd-shim typed contract, bundled by esbuild to handler.mjs and deployed with funcdctl (ADR-0037 typed-authoring-contract).",
+  "description": "A funcd function authored in TypeScript against the @funcd-dev/shim typed contract, bundled by esbuild to handler.mjs and deployed with funcdctl (ADR-0037 typed-authoring-contract).",
   "scripts": {
     "typecheck": "tsc --noEmit",
     "test": "node --test --experimental-strip-types test/*.test.ts",

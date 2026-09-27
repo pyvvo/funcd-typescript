@@ -442,9 +442,9 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@funcd/example-blob-object@workspace:examples/blob-object":
+"@funcd-dev/example-blob-object@workspace:examples/blob-object":
   version: 0.0.0-use.local
-  resolution: "@funcd/example-blob-object@workspace:examples/blob-object"
+  resolution: "@funcd-dev/example-blob-object@workspace:examples/blob-object"
   dependencies:
     "@types/node": "npm:^22.0.0"
     ajv: "npm:^8.20.0"
@@ -454,9 +454,9 @@ __metadata:
   languageName: unknown
   linkType: soft
 
-"@funcd/example-egress-probe@workspace:examples/egress-probe":
+"@funcd-dev/example-egress-probe@workspace:examples/egress-probe":
   version: 0.0.0-use.local
-  resolution: "@funcd/example-egress-probe@workspace:examples/egress-probe"
+  resolution: "@funcd-dev/example-egress-probe@workspace:examples/egress-probe"
   dependencies:
     "@types/node": "npm:^22.0.0"
     ajv: "npm:^8.20.0"
@@ -466,9 +466,9 @@ __metadata:
   languageName: unknown
   linkType: soft
 
-"@funcd/example-env-echo@workspace:examples/env-echo":
+"@funcd-dev/example-env-echo@workspace:examples/env-echo":
   version: 0.0.0-use.local
-  resolution: "@funcd/example-env-echo@workspace:examples/env-echo"
+  resolution: "@funcd-dev/example-env-echo@workspace:examples/env-echo"
   dependencies:
     "@types/node": "npm:^22.0.0"
     ajv: "npm:^8.20.0"
@@ -478,9 +478,9 @@ __metadata:
   languageName: unknown
   linkType: soft
 
-"@funcd/example-fn-to-fn@workspace:examples/fn-to-fn":
+"@funcd-dev/example-fn-to-fn@workspace:examples/fn-to-fn":
   version: 0.0.0-use.local
-  resolution: "@funcd/example-fn-to-fn@workspace:examples/fn-to-fn"
+  resolution: "@funcd-dev/example-fn-to-fn@workspace:examples/fn-to-fn"
   dependencies:
     "@types/node": "npm:^22.0.0"
     ajv: "npm:^8.20.0"
@@ -490,9 +490,9 @@ __metadata:
   languageName: unknown
   linkType: soft
 
-"@funcd/example-hello-world@workspace:examples/hello-world":
+"@funcd-dev/example-hello-world@workspace:examples/hello-world":
   version: 0.0.0-use.local
-  resolution: "@funcd/example-hello-world@workspace:examples/hello-world"
+  resolution: "@funcd-dev/example-hello-world@workspace:examples/hello-world"
   dependencies:
     "@types/node": "npm:^22.0.0"
     esbuild: "npm:^0.28.1"
@@ -500,9 +500,9 @@ __metadata:
   languageName: unknown
   linkType: soft
 
-"@funcd/example-kv-counter@workspace:examples/kv-counter":
+"@funcd-dev/example-kv-counter@workspace:examples/kv-counter":
   version: 0.0.0-use.local
-  resolution: "@funcd/example-kv-counter@workspace:examples/kv-counter"
+  resolution: "@funcd-dev/example-kv-counter@workspace:examples/kv-counter"
   dependencies:
     "@types/node": "npm:^22.0.0"
     ajv: "npm:^8.20.0"
@@ -512,9 +512,9 @@ __metadata:
   languageName: unknown
   linkType: soft
 
-"@funcd/example-log-burst@workspace:examples/log-burst":
+"@funcd-dev/example-log-burst@workspace:examples/log-burst":
   version: 0.0.0-use.local
-  resolution: "@funcd/example-log-burst@workspace:examples/log-burst"
+  resolution: "@funcd-dev/example-log-burst@workspace:examples/log-burst"
   dependencies:
     "@types/node": "npm:^22.0.0"
     esbuild: "npm:^0.28.1"
@@ -522,9 +522,9 @@ __metadata:
   languageName: unknown
   linkType: soft
 
-"@funcd/example-s3-roundtrip@workspace:examples/s3-roundtrip":
+"@funcd-dev/example-s3-roundtrip@workspace:examples/s3-roundtrip":
   version: 0.0.0-use.local
-  resolution: "@funcd/example-s3-roundtrip@workspace:examples/s3-roundtrip"
+  resolution: "@funcd-dev/example-s3-roundtrip@workspace:examples/s3-roundtrip"
   dependencies:
     "@aws-sdk/client-s3": "npm:^3.700.0"
     "@types/node": "npm:^22.0.0"
@@ -533,13 +533,27 @@ __metadata:
   languageName: unknown
   linkType: soft
 
-"@funcd/example-workflow@workspace:examples/workflow":
+"@funcd-dev/example-workflow@workspace:examples/workflow":
   version: 0.0.0-use.local
-  resolution: "@funcd/example-workflow@workspace:examples/workflow"
+  resolution: "@funcd-dev/example-workflow@workspace:examples/workflow"
   dependencies:
     "@types/node": "npm:^22.0.0"
     ajv: "npm:^8.20.0"
     esbuild: "npm:^0.28.1"
+    ts-json-schema-generator: "npm:^2.9.0"
+    typescript: "npm:^5.7.0"
+  languageName: unknown
+  linkType: soft
+
+"@funcd-dev/shim@workspace:shim":
+  version: 0.0.0-use.local
+  resolution: "@funcd-dev/shim@workspace:shim"
+  dependencies:
+    "@hono/node-server": "npm:^2.0.5"
+    "@types/node": "npm:^22.10.0"
+    ajv: "npm:^8.20.0"
+    esbuild: "npm:^0.28.1"
+    hono: "npm:^4.12.25"
     ts-json-schema-generator: "npm:^2.9.0"
     typescript: "npm:^5.7.0"
   languageName: unknown
@@ -553,20 +567,6 @@ __metadata:
   checksum: 10c0/7ef810ca647c56d8d9386fd81609e18443b3a5634aa5ecabdf357e7ca724613c535e863c15ded9b7ae89b935a073040fb11e6d59041f3b1c3e153d8ecb699880
   languageName: node
   linkType: hard
-
-"@pyvvo/funcd-shim@workspace:shim":
-  version: 0.0.0-use.local
-  resolution: "@pyvvo/funcd-shim@workspace:shim"
-  dependencies:
-    "@hono/node-server": "npm:^2.0.5"
-    "@types/node": "npm:^22.10.0"
-    ajv: "npm:^8.20.0"
-    esbuild: "npm:^0.28.1"
-    hono: "npm:^4.12.25"
-    ts-json-schema-generator: "npm:^2.9.0"
-    typescript: "npm:^5.7.0"
-  languageName: unknown
-  linkType: soft
 
 "@smithy/core@npm:^3.33.2, @smithy/core@npm:^3.33.3, @smithy/core@npm:^3.35.0":
   version: 3.35.0

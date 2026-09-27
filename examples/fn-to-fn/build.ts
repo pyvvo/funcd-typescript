@@ -6,7 +6,7 @@
 //      ADR-0090) for `funcdctl push --schema <fn>.schema.json`.
 //
 // Run from the repo root after `yarn install` (see package.json `build`):
-//   yarn workspace @funcd/example-fn-to-fn run build
+//   yarn workspace @funcd-dev/example-fn-to-fn run build
 import { unlinkSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';

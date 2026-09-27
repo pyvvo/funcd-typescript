@@ -1,8 +1,8 @@
 {
-  "name": "@funcd/example-workflow",
+  "name": "@funcd-dev/example-workflow",
   "private": true,
   "type": "module",
-  "description": "A five-step funcd Workflow example (ADR-0094): ingest → score → {hi | lo, exclusive via when} → report (join: any). Each step is an ordinary contract-bearing TypeScript function; the Workflow materializes them into owned Functions the engine drives. Authored against @pyvvo/funcd-shim; build.ts bakes each step's contract and emits <step>.mjs + <step>.schema.json.",
+  "description": "A five-step funcd Workflow example (ADR-0094): ingest → score → {hi | lo, exclusive via when} → report (join: any). Each step is an ordinary contract-bearing TypeScript function; the Workflow materializes them into owned Functions the engine drives. Authored against @funcd-dev/shim; build.ts bakes each step's contract and emits <step>.mjs + <step>.schema.json.",
   "scripts": {
     "typecheck": "tsc --noEmit",
     "build": "node --experimental-strip-types build.ts"

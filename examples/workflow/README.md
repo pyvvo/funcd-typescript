@@ -23,7 +23,7 @@ manifest alone.
 
 ```bash
 yarn install                                    # at the repo root
-yarn workspace @funcd/example-workflow run build   # → <step>.mjs (baked contract validators) + <step>.schema.json
+yarn workspace @funcd-dev/example-workflow run build   # → <step>.mjs (baked contract validators) + <step>.schema.json
 ```
 
 ## Run it locally (`funcdctl dev`)

@@ -30,7 +30,7 @@ function does **not** declare the `other` alias, so a write there is `Forbidden`
 
 | File | What |
 |---|---|
-| [`src/object.ts`](src/object.ts) | the handler (typed against `@pyvvo/funcd-shim`) |
+| [`src/object.ts`](src/object.ts) | the handler (typed against `@funcd-dev/shim`) |
 | [`funcdctl.yaml`](funcdctl.yaml) | the client push/dev config (runtime · handler · blob binding · contract) |
 | [`function.yaml`](function.yaml) | the deploy `Function` CRD (`spec.blob` = the capability) |
 | [`bucket.yaml`](bucket.yaml) | the `lakehouse` Bucket — `gold` (owned) + `other` (unowned) |
