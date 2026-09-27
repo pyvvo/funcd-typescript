@@ -13,6 +13,9 @@ permissions:
 jobs:
   release-please:
     runs-on: ubuntu-latest
+    outputs:
+      release_created: ${{ steps.release.outputs.release_created }}
+      tag_name: ${{ steps.release.outputs.tag_name }}
     steps:
       # A PR opened with GITHUB_TOKEN triggers no workflows, so its required checks never run and
       # the merge queue refuses it. A token from the funcd release GitHub App does trigger them.
@@ -27,8 +30,46 @@ jobs:
           permission-pull-requests: write
           permission-issues: write
 
-      - uses: googleapis/release-please-action@v5
+      - id: release
+        uses: googleapis/release-please-action@v5
         with:
           token: ${{ steps.app-token.outputs.token || github.token }}
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
+
+  # npm trusted publishing (OIDC): no token is stored, and npm attaches a provenance attestation.
+  # The trusted publisher on npmjs.com names this workflow file and the npm environment.
+  publish-npm:
+    needs: release-please
+    if: needs.release-please.outputs.release_created == 'true'
+    runs-on: ubuntu-latest
+    environment: npm
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.release-please.outputs.tag_name }}
+
+      - name: Install Nix
+        uses: cachix/install-nix-action@v31
+        with:
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+
+      - name: Restore the Nix store
+        uses: nix-community/cache-nix-action@v7
+        with:
+          primary-key: nix-${{ runner.os }}-${{ hashFiles('flake.lock', 'flake.nix') }}
+          restore-prefixes-first-match: nix-${{ runner.os }}-
+          save: false
+
+      - name: Build and pack @funcd-dev/shim
+        run: |
+          nix develop --command yarn install --immutable
+          nix develop --command yarn workspace @funcd-dev/shim run build:lib
+          nix develop --command yarn workspace @funcd-dev/shim pack --out "$RUNNER_TEMP/shim.tgz"
+
+      - name: Publish to npm
+        run: nix develop .#publish --command npm publish "$RUNNER_TEMP/shim.tgz" --access public

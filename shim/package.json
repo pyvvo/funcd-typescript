@@ -1,23 +1,51 @@
 {
   "name": "@funcd-dev/shim",
   "version": "0.1.0",
-  "private": true,
   "type": "module",
-  "description": "funcd Node runtime shim — TypeScript + Hono over node:http, bundled to shim.mjs (ADR-0037, supersedes ADR-0030's hand-written shim)",
+  "description": "Types and the contract build for writing funcd functions in TypeScript",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/pyvvo/funcd-typescript.git",
+    "directory": "shim"
+  },
+  "homepage": "https://github.com/pyvvo/funcd-typescript#readme",
+  "engines": {
+    "node": ">=22"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/types.d.ts",
+      "default": "./dist/types.js"
+    },
+    "./build": {
+      "types": "./dist/build.d.ts",
+      "default": "./dist/build.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
     "typecheck": "tsc --noEmit",
     "test": "node --test --experimental-strip-types test/*.test.ts",
-    "build": "yarn build:shim && yarn build:pool",
+    "build": "yarn build:shim && yarn build:pool && yarn build:lib",
     "build:shim": "esbuild src/shim.ts --bundle --platform=node --format=esm --target=node22 --outfile=shim.mjs --banner:js=\"// GENERATED from shim/src/shim.ts by 'yarn build' (esbuild). Do not edit by hand.\"",
-    "build:pool": "esbuild src/pool.ts --bundle --platform=node --format=esm --target=node22 --outfile=pool.mjs --banner:js=\"// GENERATED from shim/src/pool.ts by 'yarn build' (esbuild). Do not edit by hand.\""
+    "build:pool": "esbuild src/pool.ts --bundle --platform=node --format=esm --target=node22 --outfile=pool.mjs --banner:js=\"// GENERATED from shim/src/pool.ts by 'yarn build' (esbuild). Do not edit by hand.\"",
+    "build:lib": "tsc -p tsconfig.lib.json"
+  },
+  "dependencies": {
+    "ajv": "^8.20.0",
+    "ts-json-schema-generator": "^2.9.0"
   },
   "devDependencies": {
     "@hono/node-server": "^2.0.5",
     "@types/node": "^22.10.0",
-    "ajv": "^8.20.0",
     "esbuild": "^0.28.1",
     "hono": "^4.12.25",
-    "ts-json-schema-generator": "^2.9.0",
     "typescript": "^5.7.0"
   }
 }

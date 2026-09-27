@@ -20,6 +20,7 @@ the health endpoints, the invoke socket, log capture, trace spans) needs a funcd
 | Path | What |
 |---|---|
 | `shim/` | The runtime shim. `src/*.ts` builds to `shim.mjs` and `pool.mjs`, both committed. `embed.go` is the Go package funcd imports |
+| `shim/dist/` | The npm package `@funcd-dev/shim`: the `context` types (`.`) and `buildContract` (`./build`). Built, never committed |
 | `examples/*` | Example functions. Each commits its built bundle and contract schema |
 | `go.mod` | This repo is also a Go module. funcd pins it by git tag |
 
@@ -49,6 +50,8 @@ and tests. CI runs the same checks, so never bypass a hook with `--no-verify`.
 - **release-please owns versions.** Never edit `version.txt`, `CHANGELOG.md` or the `version` in
   `shim/package.json` by hand, and never create tags. The funcd release GitHub App opens the
   release PR, which goes through the merge queue like any other PR. Merging it tags `vX.Y.Z`.
+- **Every release publishes `@funcd-dev/shim` to npm** from the release workflow, with npm trusted
+  publishing (no token). Its exports are a public API: removing or changing one is a `feat!:`.
 - **Before 1.0, a breaking change (`feat!:`) bumps the minor version.** From v2.0.0 on, Go requires
   a `/v2` module path, so stay below v2.
 - YAML is block style, imports sit at the top of the module, and comments explain why, not what.
