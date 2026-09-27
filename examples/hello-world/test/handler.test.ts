@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import type { CloudEvent } from '@pyvvo/funcd-shim';
+import type { CloudEvent, FunctionContext } from '@pyvvo/funcd-shim';
 import { handle, type FuncInput } from '../src/handler.ts';
 
 // The author's unit tests exercise the handler directly — the platform owns input/output
@@ -10,7 +10,7 @@ import { handle, type FuncInput } from '../src/handler.ts';
 
 test('handle greets by name and echoes the trigger', () => {
   const logs: unknown[][] = [];
-  const context = { log: (...args: unknown[]) => logs.push(args) };
+  const context = { log: (...args: unknown[]) => logs.push(args) } as unknown as FunctionContext;
   const event: CloudEvent<FuncInput> = {
     id: '1',
     source: '/demo',
@@ -25,7 +25,7 @@ test('handle greets by name and echoes the trigger', () => {
 });
 
 test('the optional `excited` flag switches the punctuation', () => {
-  const context = { log: () => {} };
+  const context = { log: () => {} } as unknown as FunctionContext;
   const event: CloudEvent<FuncInput> = {
     id: '2',
     source: '/demo',
