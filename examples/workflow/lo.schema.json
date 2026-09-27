@@ -1,0 +1,39 @@
+{
+  "input": {
+    "type": "object",
+    "properties": {
+      "amount": {
+        "type": "number"
+      },
+      "score": {
+        "type": "number"
+      }
+    },
+    "required": [
+      "amount",
+      "score"
+    ],
+    "additionalProperties": false,
+    "description": "lo — the low branch. The exclusive complement of hi: it runs only when score <= 30. Exactly one of hi/lo runs per run; the other is Skipped (its `when` was false)."
+  },
+  "output": {
+    "type": "object",
+    "properties": {
+      "amount": {
+        "type": "number"
+      },
+      "score": {
+        "type": "number"
+      },
+      "tier": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "amount",
+      "score",
+      "tier"
+    ],
+    "additionalProperties": false
+  }
+}

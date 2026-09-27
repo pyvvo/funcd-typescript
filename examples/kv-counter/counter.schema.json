@@ -1,0 +1,27 @@
+{
+  "input": {
+    "type": "object",
+    "properties": {
+      "name": {
+        "type": "string"
+      }
+    },
+    "additionalProperties": false
+  },
+  "output": {
+    "type": "object",
+    "properties": {
+      "name": {
+        "type": "string"
+      },
+      "count": {
+        "type": "number"
+      }
+    },
+    "required": [
+      "name",
+      "count"
+    ],
+    "additionalProperties": false
+  }
+}

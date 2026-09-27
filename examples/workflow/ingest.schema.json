@@ -1,0 +1,28 @@
+{
+  "input": {
+    "type": "object",
+    "properties": {
+      "amount": {
+        "type": "number"
+      }
+    },
+    "required": [
+      "amount"
+    ],
+    "additionalProperties": false,
+    "description": "ingest — the root step. It receives the run input as the CloudEvent `data` (ADR-0094: the dispatcher envelopes the flowing input; the shim validates it against this contract)."
+  },
+  "output": {
+    "type": "object",
+    "properties": {
+      "amount": {
+        "type": "number"
+      }
+    },
+    "required": [
+      "amount"
+    ],
+    "additionalProperties": false,
+    "description": "What ingest passes to the next step (verbatim single-parent flow)."
+  }
+}

@@ -1,0 +1,36 @@
+{
+  "input": {
+    "type": "object",
+    "properties": {
+      "url": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "url"
+    ],
+    "additionalProperties": false,
+    "description": "The destination to probe. `url` is a full URL (https://api.x.com/…), `expectPort` optional."
+  },
+  "output": {
+    "type": "object",
+    "properties": {
+      "ok": {
+        "type": "boolean"
+      },
+      "status": {
+        "type": "number"
+      },
+      "error": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "ok",
+      "status",
+      "error"
+    ],
+    "additionalProperties": false,
+    "description": "The probe result: ok=true iff the connection was allowed and completed; else the refusal detail."
+  }
+}

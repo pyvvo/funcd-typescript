@@ -1,0 +1,66 @@
+{
+  "input": {
+    "type": "object",
+    "properties": {
+      "hi": {
+        "type": "object",
+        "properties": {
+          "amount": {
+            "type": "number"
+          },
+          "score": {
+            "type": "number"
+          },
+          "tier": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "amount",
+          "score",
+          "tier"
+        ],
+        "additionalProperties": false
+      },
+      "lo": {
+        "type": "object",
+        "properties": {
+          "amount": {
+            "type": "number"
+          },
+          "score": {
+            "type": "number"
+          },
+          "tier": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "amount",
+          "score",
+          "tier"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "additionalProperties": false,
+    "description": "report — the join step (join: any). Its input is the fan-in composite keyed by parent step name: exactly one of `hi`/`lo` is present (the surviving branch), the other Skipped."
+  },
+  "output": {
+    "type": "object",
+    "properties": {
+      "done": {
+        "type": "boolean"
+      },
+      "tier": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "done",
+      "tier"
+    ],
+    "additionalProperties": false,
+    "description": "The leaf output IS the run output (ADR-0094: leaf outputs compose the run output)."
+  }
+}

@@ -1,0 +1,32 @@
+{
+  "input": {
+    "type": "object",
+    "properties": {
+      "amount": {
+        "type": "number"
+      }
+    },
+    "required": [
+      "amount"
+    ],
+    "additionalProperties": false,
+    "description": "score — the second step. Its input is ingest's output verbatim ({ amount })."
+  },
+  "output": {
+    "type": "object",
+    "properties": {
+      "amount": {
+        "type": "number"
+      },
+      "score": {
+        "type": "number"
+      }
+    },
+    "required": [
+      "amount",
+      "score"
+    ],
+    "additionalProperties": false,
+    "description": "score adds a derived `score` the branch conditions gate on (score = amount * 10)."
+  }
+}
