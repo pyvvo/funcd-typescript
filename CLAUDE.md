@@ -43,9 +43,9 @@ and tests. CI runs the same checks, so never bypass a hook with `--no-verify`.
 - **Built files are committed.** After changing `shim/src/` or an example, run `just build` and
   commit the outputs. CI fails when a build changes a committed file.
 - **Conventional Commits.** A PR title must be a Conventional Commit, and CI checks it. PRs are
-  squash-merged, so the PR title becomes the commit on `main`. `main` takes no direct pushes, and a
-  ruleset with no bypass rejects any commit whose message is not a Conventional Commit, including a
-  squash message edited at merge time.
+  squash-merged through a merge queue, which uses the PR title as the commit message on `main`, so
+  nobody can edit the message at merge time. The queue checks that exact message again before it
+  lands. `main` takes no direct pushes, and the ruleset has no bypass, not even for admins.
 - **release-please owns versions.** Never edit `version.txt`, `CHANGELOG.md` or the `version` in
   `shim/package.json` by hand, and never create tags. Merging the release PR tags `vX.Y.Z`.
 - **Before 1.0, a breaking change (`feat!:`) bumps the minor version.** From v2.0.0 on, Go requires
