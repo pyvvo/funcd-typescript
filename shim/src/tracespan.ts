@@ -49,7 +49,8 @@ export function parseTraceparent(tp: string | undefined): { traceId: string; par
  *  one (ADR-0105, X-Funcd-Span-Id) when a valid hex16 is given, else freshly minted (direct invoke). */
 export function newInvContext(tp: string | undefined, providedSpanId?: string): InvContext {
   const adopted = parseTraceparent(tp);
-  const spanId = providedSpanId && /^[0-9a-f]{16}$/.test(providedSpanId) ? providedSpanId : randomBytes(8).toString('hex');
+  const spanId =
+    providedSpanId && /^[0-9a-f]{16}$/.test(providedSpanId) ? providedSpanId : randomBytes(8).toString('hex');
   return {
     inv: randomBytes(8).toString('hex'),
     traceId: adopted ? adopted.traceId : randomBytes(16).toString('hex'),
@@ -58,7 +59,16 @@ export function newInvContext(tp: string | undefined, providedSpanId?: string): 
   };
 }
 
-function emitSpan(sink: Sink, ctx: InvContext, name: string, start: number, end: number, status: 'OK' | 'ERROR', statusMsg: string, links: string[]): void {
+function emitSpan(
+  sink: Sink,
+  ctx: InvContext,
+  name: string,
+  start: number,
+  end: number,
+  status: 'OK' | 'ERROR',
+  statusMsg: string,
+  links: string[],
+): void {
   const rec: SpanRecord = {
     'funcd.signal': 'traces',
     trace_id: ctx.traceId,
@@ -93,7 +103,13 @@ export interface Span {
  *  context is still established so logs get ids). `name` is the function name (or "invoke"); `tp` is
  *  the incoming `traceparent`; `spanId` is the engine-provided span-id to USE (ADR-0105,
  *  X-Funcd-Span-Id — else mint); `links` are fan-in edges (X-Funcd-Span-Links) attached to the span. */
-export function startSpan(sink: Sink | null, name: string, tp: string | undefined, spanId?: string, links: string[] = []): Span {
+export function startSpan(
+  sink: Sink | null,
+  name: string,
+  tp: string | undefined,
+  spanId?: string,
+  links: string[] = [],
+): Span {
   const inv = newInvContext(tp, spanId);
   const startNs = Date.now() * 1e6;
   const t0 = process.hrtime.bigint();
@@ -117,5 +133,8 @@ export function startSpan(sink: Sink | null, name: string, tp: string | undefine
 /** parseLinks splits an `X-Funcd-Span-Links` header (comma-separated hex16 span-ids) into a list. */
 export function parseLinks(header: string | undefined): string[] {
   if (!header) return [];
-  return header.split(',').map((s) => s.trim()).filter((s) => s.length > 0);
+  return header
+    .split(',')
+    .map((s) => s.trim())
+    .filter((s) => s.length > 0);
 }

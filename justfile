@@ -17,11 +17,19 @@ test:
 build:
     yarn workspaces foreach --all run build
 
+# format the TS sources and apply Biome's safe lint fixes
+fmt:
+    biome check --write .
+
+# the format check and lint, exactly as CI runs them
+lint:
+    biome ci .
+
 # the Go embed package funcd imports
 go-check:
     go vet ./...
     go build ./...
 
 # the CI gate: fails when a build changed a committed file
-ci: install typecheck test build go-check
+ci: install lint typecheck test build go-check
     @if [ -n "$(git status --porcelain)" ]; then git status --short; echo "build outputs are stale: run 'just build' and commit the result"; exit 1; fi

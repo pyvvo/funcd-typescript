@@ -10655,8 +10655,10 @@ async function workerMain() {
   try {
     delivered = spec.contract ? loadFromPath(spec.contract) : null;
   } catch (err) {
-    process.stderr.write(`funcd-pool[${spec.name}]: contract error: ${err instanceof ContractError ? err.message : err}
-`);
+    process.stderr.write(
+      `funcd-pool[${spec.name}]: contract error: ${err instanceof ContractError ? err.message : err}
+`
+    );
     process.exit(3);
   }
   let handler;
@@ -10670,14 +10672,24 @@ async function workerMain() {
 `);
     process.exit(3);
   }
-  const ctx = { log: (...args) => console.log(`[${spec.name}]`, ...args), invoke: makeInvoke(), kv: makeKV(), blob: makeBlob() };
+  const ctx = {
+    log: (...args) => console.log(`[${spec.name}]`, ...args),
+    invoke: makeInvoke(),
+    kv: makeKV(),
+    blob: makeBlob()
+  };
   port.on("message", (req) => {
     void (async () => {
       const event = req.event ?? {};
       if (validators.input) {
         const errors = validators.input(event.data);
         if (errors.length > 0) {
-          port.postMessage({ id: req.id, status: 422, error: "event data does not match the input contract", details: errors });
+          port.postMessage({
+            id: req.id,
+            status: 422,
+            error: "event data does not match the input contract",
+            details: errors
+          });
           return;
         }
       }
@@ -10688,7 +10700,12 @@ async function workerMain() {
           const errors = validators.output(result === void 0 ? null : result);
           if (errors.length > 0) {
             span.end("ERROR", "handler result does not match the output contract");
-            port.postMessage({ id: req.id, status: 500, error: "handler result does not match the output contract", details: errors });
+            port.postMessage({
+              id: req.id,
+              status: 500,
+              error: "handler result does not match the output contract",
+              details: errors
+            });
             return;
           }
         }

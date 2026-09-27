@@ -17,12 +17,7 @@
 // RequestChecksumCalculation=WhenRequired / ResponseChecksumValidation=WhenRequired).
 import type { CloudEvent, FunctionContext } from '@funcd-dev/shim';
 
-import {
-  S3Client,
-  PutObjectCommand,
-  GetObjectCommand,
-  ListObjectsV2Command,
-} from '@aws-sdk/client-s3';
+import { S3Client, PutObjectCommand, GetObjectCommand, ListObjectsV2Command } from '@aws-sdk/client-s3';
 
 export interface FuncInput {
   /** Optional invocation tag woven into the object key (defaults to a timestamp). */
@@ -87,9 +82,7 @@ export async function handle(ctx: FunctionContext, event: CloudEvent<FuncInput>)
   ctx.log(`s3-roundtrip: GET ${BUCKET}/${key} → match=${get}`);
 
   // (c) ListObjectsV2 the gold prefix → the key must be present.
-  const listed = await s3.send(
-    new ListObjectsV2Command({ Bucket: BUCKET, Prefix: `${GOLD}/` }),
-  );
+  const listed = await s3.send(new ListObjectsV2Command({ Bucket: BUCKET, Prefix: `${GOLD}/` }));
   const keys = (listed.Contents ?? []).map((o) => o.Key);
   const list = keys.includes(key) ? keys.length : 0;
   ctx.log(`s3-roundtrip: LIST ${GOLD}/ → ${keys.length} object(s), present=${keys.includes(key)}`);
@@ -97,9 +90,7 @@ export async function handle(ctx: FunctionContext, event: CloudEvent<FuncInput>)
   // (d) PutObject into a prefix it is NOT bound to / does not own → must be DENIED (403) by the PEP.
   let denied = false;
   try {
-    await s3.send(
-      new PutObjectCommand({ Bucket: BUCKET, Key: `${OTHER}/x.txt`, Body: 'nope' }),
-    );
+    await s3.send(new PutObjectCommand({ Bucket: BUCKET, Key: `${OTHER}/x.txt`, Body: 'nope' }));
     ctx.log(`s3-roundtrip: PUT ${OTHER}/x.txt UNEXPECTEDLY allowed — PEP did not deny`);
   } catch (err) {
     const e = err as { $metadata?: { httpStatusCode?: number }; name?: string };

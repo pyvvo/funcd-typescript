@@ -67,7 +67,12 @@ test('compiled validators enforce 422/500/204 through createApp', async () => {
   const v = loadFromPath(
     writeContract({
       input: CLOSED,
-      output: { type: 'object', properties: { ok: { type: 'boolean' } }, required: ['ok'], additionalProperties: false },
+      output: {
+        type: 'object',
+        properties: { ok: { type: 'boolean' } },
+        required: ['ok'],
+        additionalProperties: false,
+      },
     }),
   );
   const ce = (data: unknown) =>

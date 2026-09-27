@@ -48,7 +48,8 @@ export function buildContract(tsPath: string): ContractBuild {
   const wrap = (name: string, fn: string): string =>
     `export function ${name}(d) { return ${fn}(d) ? [] : (${fn}.errors ?? []); }\n`;
   const validatorSource =
-    base + '\n' +
+    base +
+    '\n' +
     (inputSchema ? wrap('__funcdValidateInput', '_funcdInput') : '') +
     (outputSchema ? wrap('__funcdValidateOutput', '_funcdOutput') : '');
 

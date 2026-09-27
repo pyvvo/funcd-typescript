@@ -35929,17 +35929,13 @@ async function handle(ctx, event) {
   const body = await streamToString(got.Body);
   const get2 = body === want;
   ctx.log(`s3-roundtrip: GET ${BUCKET}/${key} \u2192 match=${get2}`);
-  const listed = await s3.send(
-    new import_client_s3.ListObjectsV2Command({ Bucket: BUCKET, Prefix: `${GOLD}/` })
-  );
+  const listed = await s3.send(new import_client_s3.ListObjectsV2Command({ Bucket: BUCKET, Prefix: `${GOLD}/` }));
   const keys = (listed.Contents ?? []).map((o3) => o3.Key);
   const list2 = keys.includes(key) ? keys.length : 0;
   ctx.log(`s3-roundtrip: LIST ${GOLD}/ \u2192 ${keys.length} object(s), present=${keys.includes(key)}`);
   let denied = false;
   try {
-    await s3.send(
-      new import_client_s3.PutObjectCommand({ Bucket: BUCKET, Key: `${OTHER}/x.txt`, Body: "nope" })
-    );
+    await s3.send(new import_client_s3.PutObjectCommand({ Bucket: BUCKET, Key: `${OTHER}/x.txt`, Body: "nope" }));
     ctx.log(`s3-roundtrip: PUT ${OTHER}/x.txt UNEXPECTEDLY allowed \u2014 PEP did not deny`);
   } catch (err) {
     const e5 = err;

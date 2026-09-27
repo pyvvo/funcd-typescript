@@ -45,4 +45,6 @@ if (validatorSource) unlinkSync(join(here, '.counter.validator.mjs'));
 const contract = { input: inputSchema, output: outputSchema };
 writeFileSync(join(here, 'counter.schema.json'), JSON.stringify(contract, null, 2) + '\n');
 // eslint-disable-next-line no-console
-console.log('built counter.mjs' + (validatorSource ? ' (+ baked contract validators + counter.schema.json)' : ' (no contract)'));
+console.log(
+  'built counter.mjs' + (validatorSource ? ' (+ baked contract validators + counter.schema.json)' : ' (no contract)'),
+);

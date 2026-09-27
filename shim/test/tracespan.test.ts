@@ -30,7 +30,13 @@ function collector() {
 }
 
 function snapshotConsole(): () => void {
-  const saved = { debug: console.debug, log: console.log, info: console.info, warn: console.warn, error: console.error };
+  const saved = {
+    debug: console.debug,
+    log: console.log,
+    info: console.info,
+    warn: console.warn,
+    error: console.error,
+  };
   return () => Object.assign(console, saved);
 }
 
@@ -85,7 +91,13 @@ test('adopt-traceparent: span joins the caller trace (trace-id adopted, parent =
 // scenario: error-span-status — throw and output-mismatch → ERROR (+ msg); input-mismatch → no span.
 test('error-span-status: handler throw → ERROR span with message', async () => {
   const c = collector();
-  const app = createApp(() => { throw new Error('kaboom'); }, {}, { sink: c.sink, fnName: 'f' });
+  const app = createApp(
+    () => {
+      throw new Error('kaboom');
+    },
+    {},
+    { sink: c.sink, fnName: 'f' },
+  );
   const res = await app.request('/', jsonReq('{}'));
   assert.equal(res.status, 500);
   const s = c.spans()[0];
@@ -116,7 +128,14 @@ test('logs-correlated-to-span: a console log inside the handler carries the invo
   // patch console onto the SAME stub channel (explicit sink); the log records share the collector.
   installConsoleCapture({} as NodeJS.ProcessEnv, c.sink);
   try {
-    const app = createApp((ctx) => { ctx.log('inside'); return { ok: true }; }, {}, { sink: c.sink, fnName: 'f' });
+    const app = createApp(
+      (ctx) => {
+        ctx.log('inside');
+        return { ok: true };
+      },
+      {},
+      { sink: c.sink, fnName: 'f' },
+    );
     const res = await app.request('/', jsonReq('{}'));
     assert.equal(res.status, 200);
   } finally {
@@ -148,10 +167,13 @@ test('engine-owns-span-id: a provided X-Funcd-Span-Id is used and X-Funcd-Span-L
   const c = collector();
   const app = createApp(() => ({ ok: true }), {}, { sink: c.sink, fnName: 'step' });
   const provided = 'abcdef0123456789';
-  const res = await app.request('/', jsonReq('{}', {
-    'x-funcd-span-id': provided,
-    'x-funcd-span-links': '1111111111111111, 2222222222222222',
-  }));
+  const res = await app.request(
+    '/',
+    jsonReq('{}', {
+      'x-funcd-span-id': provided,
+      'x-funcd-span-links': '1111111111111111, 2222222222222222',
+    }),
+  );
   assert.equal(res.status, 200);
   const s = c.spans()[0];
   assert.equal(s.span_id, provided, 'the span uses the engine-provided span-id (not a minted one)');

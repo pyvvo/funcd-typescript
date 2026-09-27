@@ -44,5 +44,7 @@ for (const step of ['ingest', 'score', 'hi', 'lo', 'report']) {
   const contract = { input: inputSchema, output: outputSchema };
   writeFileSync(join(here, `${step}.schema.json`), JSON.stringify(contract, null, 2) + '\n');
   // eslint-disable-next-line no-console
-  console.log(`built ${step}.mjs` + (validatorSource ? ` (+ baked contract validators + ${step}.schema.json)` : ' (no contract)'));
+  console.log(
+    `built ${step}.mjs` + (validatorSource ? ` (+ baked contract validators + ${step}.schema.json)` : ' (no contract)'),
+  );
 }
