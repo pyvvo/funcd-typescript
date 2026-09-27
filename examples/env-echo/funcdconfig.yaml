@@ -1,5 +1,5 @@
 # Daemon config for the env-echo demo on real containerd (ADR-0093/0057). Part of the mounted example
-# bundle — the Lima demo (scripts/lima-env-echo.yaml + the `just lima-example-env-echo` recipe) runs funcd
+# bundle — the Lima demo (funcd's scripts/lanes.yaml `env-echo` lane + `just lima-example env-echo`) runs funcd
 # against it: file storage and the containerd runtime. No KV engine is needed (this lane only proves
 # config/secret env injection).
 apiVersion: funcd.io/v1alpha1

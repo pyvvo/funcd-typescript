@@ -61,7 +61,7 @@ layout (with the contract), applies `counter.yaml`, then POSTs twice and asserts
 `1 → 2` (KV persisted across invocations).
 
 ```bash
-nix develop -c just example-kv   # build-shim + the KV e2e (needs node on PATH)
+nix develop -c just example-kv   # the KV e2e (needs node on PATH)
 ```
 
 KV is **namespace-scoped** (a function reaches the KV in its own namespace); fine-grained per-workload
