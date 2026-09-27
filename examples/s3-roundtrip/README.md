@@ -110,7 +110,7 @@ node --experimental-strip-types build.ts    # → roundtrip.mjs (the SDK is bund
 ## Run the e2e
 
 ```bash
-nix develop -c just lima-example-s3
+nix develop -c just lima-example s3
 ```
 
 Boots a fresh containerd VM, deploys the function, and runs `e2e/s3.venom.yml` — one invoke asserts

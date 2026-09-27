@@ -1,5 +1,5 @@
 # Daemon config for the kv-counter demo on real containerd (ADR-0069). Part of the mounted example bundle —
-# the Lima demo (scripts/lima-kv.yaml + the `just lima-example-kv` recipe) runs funcd against it: file
+# the Lima demo (funcd's scripts/lanes.yaml `kv` lane + `just lima-example kv`) runs funcd against it: file
 # storage, the containerd runtime, and the DURABLE Badger KV engine the function reaches via context.kv.
 apiVersion: funcd.io/v1alpha1
 kind: FuncdConfig
