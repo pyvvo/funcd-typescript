@@ -1,5 +1,3 @@
-counter.mjs
-*.schema.json
 .*.entry.ts
 .*.validator.mjs
 node_modules

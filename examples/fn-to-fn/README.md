@@ -23,7 +23,7 @@ src/front.ts     # the caller  — calls context.invoke<…>("greeter", …); ty
 test/handlers.test.ts
 build.ts         # the CONTRACT build (ADR-0058/0060): per handler → JSON Schema + a baked validator + the .mjs
 package.json     # build = node build.ts
-tsconfig.json    # @funcd/shim-nodejs → ../../../shim/nodejs/src/types.ts (so context.invoke is typed)
+tsconfig.json    # @pyvvo/funcd-shim → ../../shim/src/types.ts (so context.invoke is typed)
 ```
 
 Each handler declares a typed **`FuncInput`/`FuncOutput`** (ADR-0058). `npm run build` (build.ts)

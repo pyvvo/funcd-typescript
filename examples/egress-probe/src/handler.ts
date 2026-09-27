@@ -5,7 +5,7 @@
 // EgressPolicy over the FORWARDER-ATTESTED destination and splices on ALLOW / refuses (403 or RST) on
 // DENY. So: a URL whose domain/CIDR:port is in the allow-list ⇒ { ok:true }; anything else ⇒ { ok:false }.
 // This is the containerd-lane counterpart to the in-process decision tests in internal/network/egress.
-import type { Handler } from '@funcd/shim-nodejs';
+import type { Handler } from '@pyvvo/funcd-shim';
 
 /** The destination to probe. `url` is a full URL (https://api.x.com/…), `expectPort` optional. */
 export interface FuncInput {

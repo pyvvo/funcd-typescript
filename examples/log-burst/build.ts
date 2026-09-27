@@ -4,7 +4,7 @@
 // PURPOSE is still the log BURST, but a push now requires a contract, and burst.ts already declares a
 // real, meaningful I/O shape (an optional {items,batch} in, {emitted} out — the count the e2e reads),
 // so the honest contract is that typed shape (a void {"type":"null"} output would reject the
-// {emitted} body at runtime). Mirror examples/js/kv-counter/build.ts:
+// {emitted} body at runtime). Mirror examples/kv-counter/build.ts:
 //   1. generate the closed JSON Schema from FuncInput/FuncOutput (ts-json-schema-generator),
 //   2. compile a precompiled, eval-free AJV-standalone validator baked into the bundle as
 //      __funcdValidateInput/__funcdValidateOutput (what the shim runs around the handler),
@@ -17,7 +17,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { build } from 'esbuild';
-import { buildContract } from '../../../shim/nodejs/src/build.ts';
+import { buildContract } from '../../shim/src/build.ts';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const src = join(here, 'src', 'burst.ts');

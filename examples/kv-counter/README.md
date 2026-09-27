@@ -27,7 +27,7 @@ const keys = await ctx.kv.list('counters', 'a');     // GET  /kv/counters?prefix
 
 ## Contract (ADR-0058/0060)
 
-`build.ts` is contract-aware (like `examples/js/fn-to-fn`): from the handler's `FuncInput` /
+`build.ts` is contract-aware (like `examples/fn-to-fn`): from the handler's `FuncInput` /
 `FuncOutput` types it generates the closed JSON Schema, **bakes an eval-free validator** into
 `counter.mjs`, and writes `counter-{input,output}.schema.json`. Those schemas are pushed as OCI
 metadata (`funcdctl push --contract-input/--contract-output`), so a malformed call is rejected (422)

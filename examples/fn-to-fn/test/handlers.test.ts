@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import type { CloudEvent, FunctionContext } from '@funcd/shim-nodejs';
+import type { CloudEvent, FunctionContext } from '@pyvvo/funcd-shim';
 import { handle as greeter, type FuncInput as GreeterInput } from '../src/greeter.ts';
 import { handle as front, type FuncInput as FrontInput } from '../src/front.ts';
 

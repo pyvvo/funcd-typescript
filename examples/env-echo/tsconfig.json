@@ -12,7 +12,7 @@
     "types": ["node"],
     "lib": ["ES2022"],
     "paths": {
-      "@funcd/shim-nodejs": ["../../../shim/nodejs/src/types.ts"]
+      "@pyvvo/funcd-shim": ["../../shim/src/types.ts"]
     }
   },
   "include": ["src"]

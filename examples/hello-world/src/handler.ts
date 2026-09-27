@@ -1,4 +1,4 @@
-import type { Handler } from '@funcd/shim-nodejs';
+import type { Handler } from '@pyvvo/funcd-shim';
 
 /**
  * The event payload this function accepts — the CloudEvent `data` (ADR-0058 I/O contract).

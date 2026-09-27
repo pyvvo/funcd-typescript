@@ -34,7 +34,7 @@ node --experimental-strip-types build.ts   # → burst.mjs (run via the shim's t
 ```
 
 `build.ts` is a plain esbuild bundle (no I/O contract — the logs are the point), mirroring
-`examples/js/kv-counter/build.ts` minus the contract step.
+`examples/kv-counter/build.ts` minus the contract step.
 
 ## Run it locally (`funcdctl dev`)
 

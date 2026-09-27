@@ -1,4 +1,4 @@
-import type { Handler } from '@funcd/shim-nodejs';
+import type { Handler } from '@pyvvo/funcd-shim';
 
 /** report — the join step (join: any). Its input is the fan-in composite keyed by parent step
  * name: exactly one of `hi`/`lo` is present (the surviving branch), the other Skipped. */

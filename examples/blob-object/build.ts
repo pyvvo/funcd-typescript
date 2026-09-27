@@ -12,7 +12,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { build } from 'esbuild';
-import { buildContract } from '../../../shim/nodejs/src/build.ts';
+import { buildContract } from '../../shim/src/build.ts';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const src = join(here, 'src', 'object.ts');

@@ -1,4 +1,4 @@
-import type { Handler } from '@funcd/shim-nodejs';
+import type { Handler } from '@pyvvo/funcd-shim';
 
 /**
  * What greeter accepts — the CloudEvent `data` (ADR-0058 I/O contract). The push build generates a

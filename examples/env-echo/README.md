@@ -56,7 +56,7 @@ nix develop -c just lima-example-env-echo
 The recipe builds `env-echo.mjs` + `env-echo.schema.json` (esbuild + the contract toolchain), stages them
 with the four manifests into the VM bundle, boots `scripts/lima-env-echo.yaml` (which pushes the artifact
 and applies configmap → secret → function, then probes the Function to `Ready` — both bindings resolved),
-and runs [`e2e/env-echo.venom.yml`](../../../e2e/env-echo.venom.yml).
+and runs `e2e/env-echo.venom.yml` in the funcd repo.
 
 ## Files
 

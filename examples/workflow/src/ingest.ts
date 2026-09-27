@@ -1,4 +1,4 @@
-import type { Handler } from '@funcd/shim-nodejs';
+import type { Handler } from '@pyvvo/funcd-shim';
 
 /** ingest — the root step. It receives the run input as the CloudEvent `data` (ADR-0094: the
  * dispatcher envelopes the flowing input; the shim validates it against this contract). */

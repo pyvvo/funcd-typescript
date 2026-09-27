@@ -22,8 +22,8 @@ manifest alone.
 ## Build
 
 ```bash
-npm install            # or: ln -sfn ../../../shim/nodejs/node_modules node_modules
-npm run build          # → <step>.mjs (baked contract validators) + <step>.schema.json
+yarn install                                    # at the repo root
+yarn workspace @funcd/example-workflow run build   # → <step>.mjs (baked contract validators) + <step>.schema.json
 ```
 
 ## Run it locally (`funcdctl dev`)

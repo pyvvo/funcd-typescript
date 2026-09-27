@@ -1,4 +1,4 @@
-import type { Handler } from '@funcd/shim-nodejs';
+import type { Handler } from '@pyvvo/funcd-shim';
 
 // A TYPE-only import of the callee's contract — erased at build, so front.mjs does NOT bundle
 // greeter's code. It borrows greeter's input/output types so the invoke is type-checked, aliased

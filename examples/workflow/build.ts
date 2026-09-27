@@ -5,14 +5,14 @@
 // are pushed with `--runtime nodejs22` so the workflow materializer resolves each step's runtime
 // from the manifest alone; the Workflow (workflow.yaml) materializes them into owned Functions.
 //
-// Run from the example dir with the shim's toolchain on NODE_PATH (see package.json `build`):
-//   NODE_PATH=../../../shim/nodejs/node_modules node --experimental-strip-types build.ts
+// Run from the repo root after `yarn install` (see package.json `build`):
+//   yarn workspace @funcd/example-workflow run build
 import { unlinkSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { build } from 'esbuild';
-import { buildContract } from '../../../shim/nodejs/src/build.ts';
+import { buildContract } from '../../shim/src/build.ts';
 
 const here = dirname(fileURLToPath(import.meta.url));
 

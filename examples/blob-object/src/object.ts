@@ -7,7 +7,7 @@
 // and returns {put, get, list, denied} (denied=true means step (d) was correctly rejected by the PDP).
 // Proves the function-facing blob path: context.blob → worker-node local API (UDS) → binding-gated,
 // S3Capability-authorized Facade → the SAME substrate the S3 frontend serves.
-import type { CloudEvent, FunctionContext } from '@funcd/shim-nodejs';
+import type { CloudEvent, FunctionContext } from '@pyvvo/funcd-shim';
 
 export interface FuncInput {
   /** Optional invocation tag woven into the object key (defaults to a counter-free constant). */

@@ -1,4 +1,4 @@
-import type { Handler } from '@funcd/shim-nodejs';
+import type { Handler } from '@pyvvo/funcd-shim';
 
 /** lo — the low branch. The exclusive complement of hi: it runs only when score <= 30. Exactly
  * one of hi/lo runs per run; the other is Skipped (its `when` was false). */

@@ -1,4 +1,4 @@
-import type { Handler } from '@funcd/shim-nodejs';
+import type { Handler } from '@pyvvo/funcd-shim';
 
 /** score — the second step. Its input is ingest's output verbatim ({ amount }). */
 export interface FuncInput {

@@ -5,7 +5,7 @@
 // and SHARED (present in BOTH — the Secret must win, config-then-secrets merge order). This is the
 // containerd-lane counterpart to the in-process scenario pkg/funcd/config_secret_e2e_test.go: it proves
 // the full path reconcile → resolve → materialize → process shim → running handler on real containerd.
-import type { Handler } from '@funcd/shim-nodejs';
+import type { Handler } from '@pyvvo/funcd-shim';
 
 /** This function takes no event payload — the void-input contract (ADR-0090). */
 export type FuncInput = void;

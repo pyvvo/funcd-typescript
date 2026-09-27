@@ -7,14 +7,14 @@ contract** of a handler.
 ## The handler + its I/O contract
 
 [`src/handler.ts`](src/handler.ts) exports `handle`, typed as `Handler<FuncInput, FuncOutput>`
-imported from `@funcd/shim-nodejs` — so `context`, the CloudEvent `event`, and the return value
+imported from `@pyvvo/funcd-shim` — so `context`, the CloudEvent `event`, and the return value
 are checked at compile time against the same contract the shim enforces at runtime (ADR-0037).
 
 The two exported interfaces **`FuncInput`** and **`FuncOutput`** *are* the I/O contract
 (ADR-0058). You write them as ordinary TypeScript types; the push build does the rest:
 
 ```ts
-import type { Handler } from '@funcd/shim-nodejs';
+import type { Handler } from '@pyvvo/funcd-shim';
 
 export interface FuncInput {
   name: string;
@@ -109,15 +109,15 @@ funcdctl apply -f function.yaml      # no digest — the platform pins it (ADR-0
 # then invoke it with the CloudEvent envelope — see "Run it locally (funcdctl dev)" above
 ```
 
-[`examples/funcdconfig.yaml`](../../funcdconfig.yaml) is the shared daemon config (in-memory
+`examples/funcdconfig.yaml` in the funcd repo is the shared daemon config (in-memory
 substrate + process runtime + localhost addresses); it's optional — `funcd` runs with all defaults
 if omitted. `just demo` runs this whole journey end to end.
 
 ## Notes
 
 - The typed contract is **path-mapped** to the in-repo shim types (`tsconfig.json` →
-  `shim/nodejs/src/types.ts`). When `@funcd/shim-nodejs` is published, this becomes a plain
-  `npm i -D @funcd/shim-nodejs` (ADR-0037 open question).
+  `shim/src/types.ts`). When `@pyvvo/funcd-shim` is published, this becomes a plain
+  `yarn add -D @pyvvo/funcd-shim` (ADR-0037 open question).
 - `import type { Handler }` is erased at build time, so `handler.mjs` carries **no** shim
   dependency — your function bundles only the libraries it actually uses at runtime. The
   generated validators are baked in by the push build, not imported.
