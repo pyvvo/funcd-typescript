@@ -28,6 +28,11 @@
           [ -d .git ] && lefthook install >/dev/null 2>&1 || true
         '';
       };
+
+      # npm 11 (bundled with node 24) for npm trusted publishing; the shim itself stays on node 22
+      publish = pkgs.mkShellNoCC {
+        packages = [ pkgs.nodejs_24 ];
+      };
     });
   };
 }

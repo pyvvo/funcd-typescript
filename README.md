@@ -11,6 +11,15 @@ The Node.js runtime shim and the TypeScript example functions for
 funcd pins this repo as a Go module at a release tag, embeds `shim/shim.mjs`, and runs the
 examples in its e2e lanes.
 
+## Use the types in your functions
+
+```bash
+yarn add -D @funcd-dev/shim
+```
+
+`import type { Handler, FunctionContext } from '@funcd-dev/shim'` types a handler, and
+`import { buildContract } from '@funcd-dev/shim/build'` builds its input and output contract.
+
 ## Develop
 
 ```bash

@@ -7,3 +7,5 @@ node_modules
 .pnp.*
 .direnv/
 .DS_Store
+# the npm package build (shim/dist), built at publish time
+dist/
