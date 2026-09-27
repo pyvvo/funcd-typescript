@@ -100,7 +100,8 @@ test('a handler over its memory quota OOMs its thread, not the pool', async () =
 test('a pooled handler enforces its embedded input validator (422 on mismatch)', async () => {
   const pool = createPool(
     writeHandlers({
-      c: 'export const __funcdValidateInput = (d) => (d && typeof d.hello === "string" ? [] : [{ message: "hello must be a string" }]);\n' +
+      c:
+        'export const __funcdValidateInput = (d) => (d && typeof d.hello === "string" ? [] : [{ message: "hello must be a string" }]);\n' +
         'export function handle(_, e) { return { echoed: e.data }; }',
     }),
   );

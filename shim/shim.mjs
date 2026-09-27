@@ -10648,7 +10648,12 @@ function parseLinks(header) {
 // src/shim.ts
 function createApp(handler, validators = {}, trace = {}) {
   const app = new Hono2();
-  const ctx = { log: (...args) => console.log(...args), invoke: makeInvoke(), kv: makeKV(), blob: makeBlob() };
+  const ctx = {
+    log: (...args) => console.log(...args),
+    invoke: makeInvoke(),
+    kv: makeKV(),
+    blob: makeBlob()
+  };
   const traceSink = trace.sink ?? null;
   const fnName = trace.fnName ?? "invoke";
   app.get("/health/liveness", (c) => c.text("ok"));

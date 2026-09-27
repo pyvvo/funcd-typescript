@@ -20,7 +20,13 @@
           go
           just
           git
+          lefthook
+          biome
         ];
+        # installs the git hooks from lefthook.yml; idempotent
+        shellHook = ''
+          [ -d .git ] && lefthook install >/dev/null 2>&1 || true
+        '';
       };
     });
   };

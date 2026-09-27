@@ -61,9 +61,7 @@ export function loadFromPath(path: string): { input: Validator; output: Validato
 /** loadValidators returns the compiled validators from FUNCD_CONTRACT_PATH, or null when the env is
  *  unset (the caller falls back to module-baked validators). A set-but-broken path throws
  *  ContractError (fail closed). */
-export function loadValidators(
-  env: NodeJS.ProcessEnv,
-): { input?: Validator; output?: Validator } | null {
+export function loadValidators(env: NodeJS.ProcessEnv): { input?: Validator; output?: Validator } | null {
   const path = env.FUNCD_CONTRACT_PATH;
   if (!path) return null;
   return loadFromPath(path);

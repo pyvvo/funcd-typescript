@@ -2,8 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createApp, resolveHandler, resolveValidators, type Validator } from '../src/shim.ts';
 
-const jsonReq = (body: string) =>
-  ({ method: 'POST', headers: { 'content-type': 'application/json' }, body }) as const;
+const jsonReq = (body: string) => ({ method: 'POST', headers: { 'content-type': 'application/json' }, body }) as const;
 
 // scenario: invoke-returns-object — POST / runs the handler and returns its object as 200 JSON.
 test('POST / invokes the handler and returns its object as 200 JSON', async () => {
@@ -22,7 +21,9 @@ test('POST / with no return value → 204', async () => {
 
 // scenario: invoke-throws → 500 with the error message.
 test('POST / when the handler throws → 500', async () => {
-  const app = createApp(() => { throw new Error('boom'); });
+  const app = createApp(() => {
+    throw new Error('boom');
+  });
   const res = await app.request('/', jsonReq('{}'));
   assert.equal(res.status, 500);
   const body = (await res.json()) as { error: string };
@@ -74,7 +75,10 @@ test('resolveHandler picks the named export / default.named / default; else thro
 
 // scenario: context-log — the handler receives a context with log().
 test('the handler context exposes log()', async () => {
-  const app = createApp((ctx) => { ctx.log('handling'); return { ok: true }; });
+  const app = createApp((ctx) => {
+    ctx.log('handling');
+    return { ok: true };
+  });
   assert.equal((await app.request('/', jsonReq('{}'))).status, 200);
 });
 
@@ -106,7 +110,13 @@ test('input validator + matching event.data runs the handler', async () => {
 // scenario: generated-input-contract (mismatch) → 422, handler never runs.
 test('input validator + mismatching event.data → 422 (handler not called)', async () => {
   let called = false;
-  const app = createApp(() => { called = true; return { ok: true }; }, { input: helloInput });
+  const app = createApp(
+    () => {
+      called = true;
+      return { ok: true };
+    },
+    { input: helloInput },
+  );
   const res = await app.request('/', ce({ hello: 123 }));
   assert.equal(res.status, 422);
   const body = (await res.json()) as { error: string; details: unknown[] };

@@ -49,4 +49,6 @@ if (validatorSource) unlinkSync(join(here, '.burst.validator.mjs'));
 const contract = { input: inputSchema, output: outputSchema };
 writeFileSync(join(here, 'burst.schema.json'), JSON.stringify(contract, null, 2) + '\n');
 // eslint-disable-next-line no-console
-console.log('built burst.mjs' + (validatorSource ? ' (+ baked contract validators + burst.schema.json)' : ' (no contract)'));
+console.log(
+  'built burst.mjs' + (validatorSource ? ' (+ baked contract validators + burst.schema.json)' : ' (no contract)'),
+);

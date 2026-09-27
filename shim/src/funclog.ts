@@ -147,7 +147,10 @@ export function openChannel(env: NodeJS.ProcessEnv): Sink | null {
  *  no channel is available it does nothing (console behaves normally → Path A). Returns true if
  *  capture was installed. The `env` arg is for testing; `sink` lets an entrypoint pass a channel it
  *  already opened (ADR-0101: log + trace capture share ONE channel), else it opens from env. */
-export function installConsoleCapture(env: NodeJS.ProcessEnv = process.env, sink: Sink | null = openChannel(env)): boolean {
+export function installConsoleCapture(
+  env: NodeJS.ProcessEnv = process.env,
+  sink: Sink | null = openChannel(env),
+): boolean {
   if (!sink) return false;
 
   const methods: ConsoleMethod[] = ['debug', 'log', 'info', 'warn', 'error'];

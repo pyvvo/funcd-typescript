@@ -72,7 +72,9 @@ async function workerMain(): Promise<void> {
   try {
     delivered = spec.contract ? loadFromPath(spec.contract) : null;
   } catch (err) {
-    process.stderr.write(`funcd-pool[${spec.name}]: contract error: ${err instanceof ContractError ? err.message : err}\n`);
+    process.stderr.write(
+      `funcd-pool[${spec.name}]: contract error: ${err instanceof ContractError ? err.message : err}\n`,
+    );
     process.exit(3);
   }
 
@@ -86,7 +88,12 @@ async function workerMain(): Promise<void> {
     process.stderr.write(`funcd-pool[${spec.name}]: shape error: ${err instanceof Error ? err.message : err}\n`);
     process.exit(3); // boot shape error → host fails pool readiness (the materialization shape-gate)
   }
-  const ctx: FunctionContext = { log: (...args) => console.log(`[${spec.name}]`, ...args), invoke: makeInvoke(), kv: makeKV(), blob: makeBlob() };
+  const ctx: FunctionContext = {
+    log: (...args) => console.log(`[${spec.name}]`, ...args),
+    invoke: makeInvoke(),
+    kv: makeKV(),
+    blob: makeBlob(),
+  };
 
   port.on('message', (req: Req) => {
     void (async () => {
@@ -95,7 +102,12 @@ async function workerMain(): Promise<void> {
         const errors = validators.input(event.data);
         if (errors.length > 0) {
           // ADR-0101: input-mismatch short-circuits before the handler → no invocation, no span.
-          port.postMessage({ id: req.id, status: 422, error: 'event data does not match the input contract', details: errors });
+          port.postMessage({
+            id: req.id,
+            status: 422,
+            error: 'event data does not match the input contract',
+            details: errors,
+          });
           return;
         }
       }
@@ -108,7 +120,12 @@ async function workerMain(): Promise<void> {
           const errors = validators.output(result === undefined ? null : result);
           if (errors.length > 0) {
             span.end('ERROR', 'handler result does not match the output contract');
-            port.postMessage({ id: req.id, status: 500, error: 'handler result does not match the output contract', details: errors });
+            port.postMessage({
+              id: req.id,
+              status: 500,
+              error: 'handler result does not match the output contract',
+              details: errors,
+            });
             return;
           }
         }
@@ -263,8 +280,10 @@ export function createPool(manifest: WorkerSpec[], limits?: { maxOldMB?: number;
     }
     // ADR-0101/0105: forward the trace + span-id + fan-in links headers to the worker.
     const res = await h.invoke(
-      event, c.req.header('traceparent'),
-      c.req.header('x-funcd-span-id'), parseLinks(c.req.header('x-funcd-span-links')),
+      event,
+      c.req.header('traceparent'),
+      c.req.header('x-funcd-span-id'),
+      parseLinks(c.req.header('x-funcd-span-links')),
     );
     if (res.status === 422) return c.json({ error: res.error, details: res.details }, 422);
     if (res.status === 503) return c.json({ error: res.error }, 503);

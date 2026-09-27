@@ -1,0 +1,22 @@
+# Git hooks, installed by the dev shell (`nix develop`). CI runs the same checks, so a commit
+# that passes here does not fail there on formatting, lint or its message.
+pre-commit:
+  commands:
+    gofmt:
+      glob: "*.go"
+      run: gofmt -w {staged_files}
+      stage_fixed: true
+    biome:
+      glob: "*.ts"
+      run: biome check --write --no-errors-on-unmatched {staged_files}
+      stage_fixed: true
+
+commit-msg:
+  commands:
+    conventional:
+      run: scripts/commit-msg-lint.sh {1}
+
+pre-push:
+  commands:
+    typecheck-and-test:
+      run: just typecheck test

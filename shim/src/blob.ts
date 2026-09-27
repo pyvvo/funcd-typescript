@@ -50,7 +50,8 @@ export interface BlobClient {
 const enc = encodeURIComponent;
 // key may be hierarchical ("a/b"); keep the "/" separators (the server's {key...} captures them), encode segments.
 const keyPath = (binding: string, key: string) => `/blob/${enc(binding)}/${key.split('/').map(enc).join('/')}`;
-const fail = (verb: string, r: Resp) => new Error(`context.blob.${verb} failed: ${r.status} ${r.body.toString('utf8')}`);
+const fail = (verb: string, r: Resp) =>
+  new Error(`context.blob.${verb} failed: ${r.status} ${r.body.toString('utf8')}`);
 const ok = (r: Resp) => r.status >= 200 && r.status < 300;
 
 /** Build the context.blob client. */

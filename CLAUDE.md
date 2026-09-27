@@ -25,7 +25,7 @@ the health endpoints, the invoke socket, log capture, trace spans) needs a funcd
 
 ## Toolchain
 
-`flake.nix` pins node 22, Yarn 4, Go and just. Run everything through the dev shell:
+`flake.nix` pins node 22, Yarn 4, Go, just, lefthook and Biome. Run everything through the dev shell:
 
 ```bash
 nix develop -c just ci
@@ -33,8 +33,13 @@ nix develop -c just ci
 
 Yarn workspaces cover `shim` and `examples/*`, with `nodeLinker: node-modules`.
 
+The dev shell also installs the lefthook git hooks. pre-commit formats and lints staged files
+with Biome and gofmt, commit-msg enforces Conventional Commits, and pre-push runs the typecheck
+and tests. CI runs the same checks, so never bypass a hook with `--no-verify`.
+
 ## Rules
 
+- **Biome owns formatting.** Run `just fmt` instead of formatting by hand. CI runs `biome ci`.
 - **Built files are committed.** After changing `shim/src/` or an example, run `just build` and
   commit the outputs. CI fails when a build changes a committed file.
 - **Conventional Commits.** A PR title must be a Conventional Commit, and CI checks it. PRs are

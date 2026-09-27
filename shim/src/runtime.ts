@@ -5,10 +5,7 @@ import type { Handler, Validator } from './types.ts';
 /** resolveHandler picks the handler export: `<name>`, `default.<name>`, or `default`. A
  *  non-function (missing handler) throws — the materialization shape-gate (ADR-0030). */
 export function resolveHandler(mod: Record<string, unknown>, name: string): Handler {
-  const candidate =
-    mod?.[name] ??
-    (mod?.default as Record<string, unknown> | undefined)?.[name] ??
-    mod?.default;
+  const candidate = mod?.[name] ?? (mod?.default as Record<string, unknown> | undefined)?.[name] ?? mod?.default;
   if (typeof candidate !== 'function') {
     throw new Error(`export "${name}" is not a function`);
   }

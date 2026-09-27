@@ -40,7 +40,12 @@ export function createApp(
   trace: { sink?: Sink | null; fnName?: string } = {},
 ): Hono {
   const app = new Hono();
-  const ctx: FunctionContext = { log: (...args) => console.log(...args), invoke: makeInvoke(), kv: makeKV(), blob: makeBlob() };
+  const ctx: FunctionContext = {
+    log: (...args) => console.log(...args),
+    invoke: makeInvoke(),
+    kv: makeKV(),
+    blob: makeBlob(),
+  };
   const traceSink = trace.sink ?? null; // ADR-0101: per-invocation span emitter (null ⇒ context only)
   const fnName = trace.fnName ?? 'invoke';
 
@@ -71,8 +76,11 @@ export function createApp(
     // the handler runs inside the span's context so its logs correlate. ADR-0105: a workflow step is
     // dispatched with the span-id to USE (X-Funcd-Span-Id) + its fan-in links (X-Funcd-Span-Links).
     const span = startSpan(
-      traceSink, fnName, c.req.header('traceparent'),
-      c.req.header('x-funcd-span-id'), parseLinks(c.req.header('x-funcd-span-links')),
+      traceSink,
+      fnName,
+      c.req.header('traceparent'),
+      c.req.header('x-funcd-span-id'),
+      parseLinks(c.req.header('x-funcd-span-links')),
     );
     try {
       const result = await span.run(() => handler(ctx, event));
