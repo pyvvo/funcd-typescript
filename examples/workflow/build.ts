@@ -6,7 +6,7 @@
 // from the manifest alone; the Workflow (workflow.yaml) materializes them into owned Functions.
 //
 // Run from the repo root after `yarn install` (see package.json `build`):
-//   yarn workspace @funcd/example-workflow run build
+//   yarn workspace @funcd-dev/example-workflow run build
 import { unlinkSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';

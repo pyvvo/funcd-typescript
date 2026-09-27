@@ -1,5 +1,5 @@
 {
-  "name": "@pyvvo/funcd-shim",
+  "name": "@funcd-dev/shim",
   "version": "0.1.0",
   "private": true,
   "type": "module",

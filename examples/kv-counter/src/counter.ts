@@ -1,7 +1,7 @@
 // kv-counter — a function that uses durable KV (ADR-0069). Each invoke reads a per-name counter from
 // the KV binding "counters" via context.kv, increments it, writes it back, and returns it. Proves the
 // function-facing KV path: context.kv → worker-node local API (UDS) → PDP Facade → durable driver.
-import type { CloudEvent, FunctionContext } from '@pyvvo/funcd-shim';
+import type { CloudEvent, FunctionContext } from '@funcd-dev/shim';
 
 export interface FuncInput {
   name?: string;

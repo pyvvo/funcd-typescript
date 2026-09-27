@@ -1,8 +1,8 @@
 {
-  "name": "@funcd/example-kv-counter",
+  "name": "@funcd-dev/example-kv-counter",
   "private": true,
   "type": "module",
-  "description": "A funcd KV example (ADR-0069): a function that increments a per-name counter via context.kv. Authored in TypeScript against @pyvvo/funcd-shim; the contract build generates the JSON Schema from FuncInput/FuncOutput, bakes an eval-free validator, and emits counter.mjs + the schema files.",
+  "description": "A funcd KV example (ADR-0069): a function that increments a per-name counter via context.kv. Authored in TypeScript against @funcd-dev/shim; the contract build generates the JSON Schema from FuncInput/FuncOutput, bakes an eval-free validator, and emits counter.mjs + the schema files.",
   "scripts": {
     "typecheck": "tsc --noEmit",
     "build": "node --experimental-strip-types build.ts"

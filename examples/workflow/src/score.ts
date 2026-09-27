@@ -1,4 +1,4 @@
-import type { Handler } from '@pyvvo/funcd-shim';
+import type { Handler } from '@funcd-dev/shim';
 
 /** score — the second step. Its input is ingest's output verbatim ({ amount }). */
 export interface FuncInput {

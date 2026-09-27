@@ -1,4 +1,4 @@
-import type { Handler } from '@pyvvo/funcd-shim';
+import type { Handler } from '@funcd-dev/shim';
 
 /**
  * The event payload this function accepts — the CloudEvent `data` (ADR-0058 I/O contract).

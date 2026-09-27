@@ -1,8 +1,8 @@
 {
-  "name": "@funcd/example-blob-object",
+  "name": "@funcd-dev/example-blob-object",
   "private": true,
   "type": "module",
-  "description": "A funcd blob example (ADR-0127): a function that put/get/lists objects NATIVELY via context.blob (bind-as-grant, no S3 keypair). Authored in TypeScript against @pyvvo/funcd-shim; the contract build generates the JSON Schema from FuncInput/FuncOutput, bakes an eval-free validator, and emits object.mjs + the schema files.",
+  "description": "A funcd blob example (ADR-0127): a function that put/get/lists objects NATIVELY via context.blob (bind-as-grant, no S3 keypair). Authored in TypeScript against @funcd-dev/shim; the contract build generates the JSON Schema from FuncInput/FuncOutput, bakes an eval-free validator, and emits object.mjs + the schema files.",
   "scripts": {
     "typecheck": "tsc --noEmit",
     "build": "node --experimental-strip-types build.ts"

@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import type { CloudEvent, FunctionContext } from '@pyvvo/funcd-shim';
+import type { CloudEvent, FunctionContext } from '@funcd-dev/shim';
 import { handle, type FuncInput } from '../src/handler.ts';
 
 // The author's unit tests exercise the handler directly — the platform owns input/output

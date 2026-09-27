@@ -15,7 +15,7 @@
 // requestChecksumCalculation/responseChecksumValidation = "WHEN_REQUIRED" — the SDK's default
 // streaming-CRC trailer breaks against the gateway (exactly as the Go scenario tests set
 // RequestChecksumCalculation=WhenRequired / ResponseChecksumValidation=WhenRequired).
-import type { CloudEvent, FunctionContext } from '@pyvvo/funcd-shim';
+import type { CloudEvent, FunctionContext } from '@funcd-dev/shim';
 
 import {
   S3Client,
