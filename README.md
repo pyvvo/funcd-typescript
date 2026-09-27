@@ -8,8 +8,8 @@ The Node.js runtime shim and the TypeScript example functions for
 | `shim/` | The shim that loads a function's handler inside a funcd worker |
 | `examples/` | Example functions, with their built bundles committed |
 
-funcd pins this repo as a Go module at a release tag, embeds `shim/shim.mjs`, and runs the
-examples in its e2e lanes.
+[funcd](https://github.com/pyvvo/funcd) pins this repo as a Go module at a release tag, embeds
+`shim/shim.mjs` and `shim/pool.mjs`, and runs the examples in its e2e tests and lanes.
 
 ## Use the types in your functions
 
@@ -34,7 +34,8 @@ message, and run the tests before a push.
 Versions follow semver and come from [release-please](https://github.com/googleapis/release-please).
 PR titles are Conventional Commits, and merging the release PR tags `vX.Y.Z`.
 
-Some example READMEs mention funcd's `just` recipes and `e2e/` suites. Those live in the funcd repo.
+Some example READMEs mention funcd's `just` recipes and `e2e/` suites. Those live in
+[pyvvo/funcd](https://github.com/pyvvo/funcd).
 
 ## License
 

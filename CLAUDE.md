@@ -1,7 +1,8 @@
 # funcd-typescript — agent working agreement
 
 This repo holds the TypeScript side of funcd: the Node runtime shim and the TypeScript example
-functions. The platform itself (Go daemon, API, CLI, e2e tests, ADRs) lives in the funcd repo.
+functions. The platform itself (Go daemon, API, CLI, e2e tests, ADRs) lives in
+[pyvvo/funcd](https://github.com/pyvvo/funcd).
 
 ## ⛔ Nothing about the dev machine ever enters the repo
 
@@ -11,7 +12,7 @@ examples or grep patterns. Paths are repo-root-relative. The only identity is `g
 
 ## Decisions live in funcd
 
-Design decisions are ADRs in the funcd repo (`docs/adr/`). This repo implements them and never
+Design decisions are ADRs in funcd ([`docs/adr/`](https://github.com/pyvvo/funcd/tree/main/docs/adr)). This repo implements them and never
 decides on its own. A change to the contract between funcd and the shim (the `FUNCD_*` env vars,
 the health endpoints, the invoke socket, log capture, trace spans) needs a funcd ADR first.
 
@@ -19,7 +20,7 @@ the health endpoints, the invoke socket, log capture, trace spans) needs a funcd
 
 | Path | What |
 |---|---|
-| `shim/` | The runtime shim. `src/*.ts` builds to `shim.mjs` and `pool.mjs`, both committed. `embed.go` is the Go package funcd imports |
+| `shim/` | The runtime shim. `src/*.ts` builds to `shim.mjs` and `pool.mjs`, both committed. `embed.go` is the Go package funcd imports (`Shim`, `Pool`) |
 | `shim/dist/` | The npm package `@funcd-dev/shim`: the `context` types (`.`) and `buildContract` (`./build`). Built, never committed |
 | `examples/*` | Example functions. Each commits its built bundle and contract schema |
 | `go.mod` | This repo is also a Go module. funcd pins it by git tag |
