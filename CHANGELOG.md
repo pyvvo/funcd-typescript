@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.0](https://github.com/pyvvo/funcd-typescript/compare/v0.2.0...v0.3.0) (2026-09-27)
+
+
+### Features
+
+* **shim:** embed and export the pool shim for funcd ([#10](https://github.com/pyvvo/funcd-typescript/issues/10)) ([6a6c68d](https://github.com/pyvvo/funcd-typescript/commit/6a6c68d294c372e3fc7755ff66ea5db8bb632d5f))
+
 ## [0.2.0](https://github.com/pyvvo/funcd-typescript/compare/v0.1.0...v0.2.0) (2026-09-27)
 
 
