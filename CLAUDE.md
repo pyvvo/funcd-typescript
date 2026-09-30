@@ -51,6 +51,7 @@ and tests. CI runs the same checks, so never bypass a hook with `--no-verify`.
 - **release-please owns versions.** Never edit `version.txt`, `CHANGELOG.md` or the `version` in
   `shim/package.json` by hand, and never create tags. The funcd release GitHub App opens the
   release PR, which goes through the merge queue like any other PR. Merging it tags `vX.Y.Z`.
+  CI skips its `ci` job: the PR only bumps versions on an already checked `main`.
 - **Every release publishes `@funcd-dev/shim` to npm** from the release workflow, with npm trusted
   publishing (no token). Its exports are a public API: removing or changing one is a `feat!:`.
 - **Before 1.0, a breaking change (`feat!:`) bumps the minor version.** From v2.0.0 on, Go requires
