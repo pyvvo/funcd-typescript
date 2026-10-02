@@ -177,6 +177,9 @@ test('issue 185: a pooled void input contract accepts absent or null data', asyn
     assert.equal((await post(pool.app, 'v', undefined)).status, 204, 'absent data → 204');
     assert.equal((await post(pool.app, 'v', null)).status, 204, 'null data → 204');
     assert.equal((await post(pool.app, 'v', { x: 1 })).status, 422, 'non-null data → 422');
+  } finally {
+    await pool.close();
+  }
 });
 
 // issue 186: a pooled handler's output contract checks the JSON the host sends, not the worker's JS
