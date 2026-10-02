@@ -1,5 +1,10 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { spawn } from 'node:child_process';
+import { mkdtempSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { createApp, resolveHandler, resolveValidators, type Validator } from '../src/shim.ts';
 
 const jsonReq = (body: string) => ({ method: 'POST', headers: { 'content-type': 'application/json' }, body }) as const;
@@ -176,3 +181,84 @@ test('resolveValidators reads __funcdValidateInput/Output, undefined when absent
   // a non-function export is ignored (treated as absent), not trusted.
   assert.equal(resolveValidators({ __funcdValidateInput: 'nope' }).input, undefined);
 });
+
+// A handler for the stray-fault tests. A 'wait' call blocks until a fault call has fired its stray
+// fault, so the fault is raised while a sibling call is in flight on the same event loop.
+const strayFaultHandler = `
+let markWaiting;
+let release;
+const waiting = new Promise((r) => { markWaiting = r; });
+const released = new Promise((r) => { release = r; });
+export async function handle(_ctx, event) {
+  const mode = event.data.mode;
+  if (mode === 'ping') return { ok: true };
+  if (mode === 'wait') {
+    markWaiting();
+    await released;
+    return { sibling: 'served' };
+  }
+  await waiting;
+  if (mode === 'rejection') Promise.reject(new Error('stray rejection'));
+  else setTimeout(() => { throw new Error('stray throw'); });
+  setTimeout(release, 50);
+  return { fine: true };
+}
+`;
+
+// startShim runs the real shim entrypoint over a temp artifact, as the process driver does, and
+// resolves once it listens.
+async function startShim(code: string) {
+  const artifact = join(mkdtempSync(join(tmpdir(), 'funcd-shim-test-')), 'handler.mjs');
+  writeFileSync(artifact, code);
+  const child = spawn(
+    process.execPath,
+    ['--experimental-strip-types', '--no-warnings', fileURLToPath(new URL('../src/shim.ts', import.meta.url))],
+    { env: { FUNCD_ARTIFACT: artifact }, stdio: ['ignore', 'ignore', 'pipe'] },
+  );
+  let stderr = '';
+  const exited = new Promise<number | null>((resolve) => child.on('exit', (code) => resolve(code)));
+  const port = await new Promise<number>((resolve, reject) => {
+    child.stderr.on('data', (chunk: Buffer) => {
+      stderr += chunk.toString();
+      const m = /listening on [^:]+:(\d+)/.exec(stderr);
+      if (m) resolve(Number(m[1]));
+    });
+    void exited.then((code) => reject(new Error(`shim exited ${code} before listening: ${stderr}`)));
+  });
+  const call = (mode: string) =>
+    fetch(`http://127.0.0.1:${port}/`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ data: { mode } }),
+    });
+  return { child, call, exited, stderr: () => stderr };
+}
+
+for (const kind of ['rejection', 'throw']) {
+  test(`issue 132: a stray ${kind} in one call does not cut off a concurrent call`, { timeout: 15_000 }, async () => {
+    const shim = await startShim(strayFaultHandler);
+    let exitCode: number | null | undefined;
+    void shim.exited.then((code) => {
+      exitCode = code;
+    });
+    try {
+      const sibling = shim.call('wait');
+      const fault = await shim.call(kind);
+      assert.equal(fault.status, 200);
+      assert.deepEqual(await fault.json(), { fine: true });
+
+      const res = await sibling.catch((err: unknown) =>
+        assert.fail(`the concurrent call was cut off (${err}); shim exit code ${exitCode}`),
+      );
+      assert.equal(res.status, 200);
+      assert.deepEqual(await res.json(), { sibling: 'served' });
+
+      const after = await shim.call('ping');
+      assert.equal(after.status, 200, 'the shim keeps serving after the stray fault');
+      assert.equal(exitCode, undefined, 'the shim process is still running');
+      assert.match(shim.stderr(), new RegExp(`stray ${kind}`), 'the stray fault is logged');
+    } finally {
+      shim.child.kill();
+    }
+  });
+}

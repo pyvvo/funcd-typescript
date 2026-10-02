@@ -16,6 +16,7 @@ import { serve } from '@hono/node-server';
 import { Hono } from 'hono';
 import { realpathSync, writeFileSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
+import { inspect } from 'node:util';
 
 import { resolveHandler, resolveValidators } from './runtime.ts';
 import { ContractError, loadValidators } from './contract.ts';
@@ -105,6 +106,15 @@ export function createApp(
   return app;
 }
 
+/** containStrayFaults logs, instead of exiting on, a rejection a handler left unhandled or a throw from
+ *  one of its callbacks after it returned: calls share one event loop (ADR-0030), so Node's default exit
+ *  would cut off every concurrent call. Installed once serving, so a boot failure still exits. */
+function containStrayFaults(): void {
+  const log = (kind: string) => (err: unknown) => process.stderr.write(`funcd-shim: ${kind}: ${inspect(err)}\n`);
+  process.on('unhandledRejection', log('unhandled rejection'));
+  process.on('uncaughtException', log('uncaught exception'));
+}
+
 /** main loads the artifact, resolves the handler, and serves the contract. */
 async function main(): Promise<void> {
   // ADR-0081 Path B + ADR-0101 traces: open the telemetry channel ONCE and share it between console
@@ -152,6 +162,7 @@ async function main(): Promise<void> {
   const fnName = process.env.FUNCD_FUNCTION ?? 'invoke';
   const appTrace = { sink: channel, fnName };
   serve({ fetch: createApp(handler, validators, appTrace).fetch, hostname, port: fixedPort }, (info) => {
+    containStrayFaults();
     if (portFile) writeFileSync(portFile, String(info.port));
     process.stderr.write(`funcd-shim: listening on ${hostname}:${info.port}\n`);
   });

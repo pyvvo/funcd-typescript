@@ -10260,6 +10260,7 @@ var Hono2 = class extends Hono {
 // src/shim.ts
 import { realpathSync, writeFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
+import { inspect } from "node:util";
 
 // src/runtime.ts
 function resolveHandler(mod, name) {
@@ -10707,6 +10708,12 @@ function createApp(handler, validators = {}, trace = {}) {
   });
   return app;
 }
+function containStrayFaults() {
+  const log = (kind) => (err) => process.stderr.write(`funcd-shim: ${kind}: ${inspect(err)}
+`);
+  process.on("unhandledRejection", log("unhandled rejection"));
+  process.on("uncaughtException", log("uncaught exception"));
+}
 async function main() {
   const channel = openChannel(process.env);
   installConsoleCapture(process.env, channel);
@@ -10741,6 +10748,7 @@ async function main() {
   const fnName = process.env.FUNCD_FUNCTION ?? "invoke";
   const appTrace = { sink: channel, fnName };
   serve({ fetch: createApp(handler, validators, appTrace).fetch, hostname, port: fixedPort }, (info) => {
+    containStrayFaults();
     if (portFile) writeFileSync(portFile, String(info.port));
     process.stderr.write(`funcd-shim: listening on ${hostname}:${info.port}
 `);
