@@ -42,6 +42,7 @@ jobs:
               - '!version.txt'
               - '!.release-please-manifest.json'
               - '!shim/package.json'
+              - '!vite-plugin/package.json'
 
   # release-please's PR only bumps the version and the changelog of an already checked main,
   # so it skips the ci job on the PR and in the merge queue. A release branch that touches
