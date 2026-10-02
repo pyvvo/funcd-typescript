@@ -27,11 +27,12 @@ const keys = await ctx.kv.list('counters', 'a');     // GET  /kv/counters?prefix
 
 ## Contract (ADR-0058/0060)
 
-`build.ts` is contract-aware (like `examples/fn-to-fn`): from the handler's `FuncInput` /
-`FuncOutput` types it generates the closed JSON Schema, **bakes an eval-free validator** into
-`counter.mjs`, and writes `counter-{input,output}.schema.json`. Those schemas are pushed as OCI
-metadata (`funcdctl push --contract-input/--contract-output`), so a malformed call is rejected (422)
-before the handler runs — KV functions are contract-validated, not just KV-enabled.
+The closed JSON Schema for the handler's `FuncInput` / `FuncOutput` lives in
+[`funcdctl.yaml`](funcdctl.yaml) (`contract.input` / `contract.output`), like `examples/fn-to-fn`.
+`yarn build` only bundles `counter.mjs`; `funcdctl push counter.mjs <ref>` reads the contract from the
+manifest beside the file and pushes it as OCI metadata, and the shim compiles a validator from it at
+worker start (ADR-0123), so a malformed call is rejected (422) before the handler runs — KV functions
+are contract-validated, not just KV-enabled.
 
 ## Run it locally (`funcdctl dev`)
 
@@ -56,8 +57,8 @@ curl -sS -XPOST http://127.0.0.1:3005/function/kv-counter \
 ## Run it (executed by the e2e)
 
 This example is **built and run** end-to-end by `pkg/funcd/kv_e2e_test.go`
-(`TestScenarioE2EKVCounterViaContextKV`): it builds `counter.mjs` + its schemas, pushes them to an OCI
-layout (with the contract), applies `counter.yaml`, then POSTs twice and asserts the count goes
+(`TestScenarioE2EKVCounterViaContextKV`): it builds `counter.mjs`, pushes it to an OCI layout (with
+the contract from `funcdctl.yaml`), applies `counter.yaml`, then POSTs twice and asserts the count goes
 `1 → 2` (KV persisted across invocations).
 
 ```bash

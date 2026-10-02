@@ -8,14 +8,14 @@ install:
     yarn install --immutable
 
 typecheck:
-    yarn workspaces foreach --all run typecheck
+    yarn workspaces foreach --all --topological-dev run typecheck
 
 test:
-    yarn workspaces foreach --all run test
+    yarn workspaces foreach --all --topological-dev run test
 
-# rebuild shim.mjs, pool.mjs and every example's committed bundle and schema
+# rebuild shim.mjs, pool.mjs, the Vite plugin, then every example's committed bundle with it
 build:
-    yarn workspaces foreach --all run build
+    yarn workspaces foreach --all --topological-dev run build
 
 # format the TS sources and apply Biome's safe lint fixes
 fmt:

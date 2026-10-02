@@ -6,6 +6,7 @@ The Node.js runtime shim and the TypeScript example functions for
 | Path | What |
 |---|---|
 | `shim/` | The shim that loads a function's handler inside a funcd worker |
+| `vite-plugin/` | `@funcd-dev/vite-plugin`, which bundles each function into one self-contained `.mjs` |
 | `examples/` | Example functions, with their built bundles committed |
 
 [funcd](https://github.com/pyvvo/funcd) pins this repo as a Go module at a release tag, embeds
@@ -19,6 +20,24 @@ yarn add -D @funcd-dev/shim
 
 `import type { Handler, FunctionContext } from '@funcd-dev/shim'` types a handler, and
 `import { buildContract } from '@funcd-dev/shim/build'` builds its input and output contract.
+
+## Bundle your functions
+
+```bash
+yarn add -D vite @funcd-dev/vite-plugin
+```
+
+```ts
+// vite.config.ts
+import { funcd } from '@funcd-dev/vite-plugin';
+import { defineConfig } from 'vite';
+
+export default defineConfig({ plugins: [funcd({ functions: { counter: 'src/counter.ts' } })] });
+```
+
+`vite build` writes `dist/counter.mjs` and the function's `funcdctl.yaml` beside it as
+`dist/counter.funcdctl.yaml`, so `funcdctl push dist/counter.mjs <ref>` reads the contract from it.
+See [`vite-plugin/README.md`](vite-plugin/README.md).
 
 ## Develop
 

@@ -15,15 +15,16 @@ ingest ── score ──┬── hi  (when score > 30) ──┐
 
 Each step is an ordinary contract-bearing function (`src/<step>.ts`, `FuncInput`/`FuncOutput`): the
 dispatcher delivers the flowing input as a CloudEvent `data`, the shim validates it against the
-baked contract, and the return value flows on. The step images are pushed with `--runtime nodejs22`
-(the `dev.funcd.runtime.v1` annotation) so the materializer resolves each step's runtime from the
+step's contract (declared in `<step>.funcdctl.yaml`, compiled at worker start), and the return value
+flows on. `funcdctl push` records each step's runtime (`nodejs22`, the `dev.funcd.runtime.v1`
+annotation) from that manifest, so the materializer resolves each step's runtime from the
 manifest alone.
 
 ## Build
 
 ```bash
 yarn install                                    # at the repo root
-yarn workspace @funcd-dev/example-workflow run build   # → <step>.mjs (baked contract validators) + <step>.schema.json
+yarn workspace @funcd-dev/example-workflow run build   # → <step>.mjs (one self-contained bundle per step)
 ```
 
 ## Run it locally (`funcdctl dev`)
@@ -59,7 +60,7 @@ cancel lifecycle over `funcdctl workflow …`.
 ## Deploy manually
 
 ```bash
-funcdctl push ingest.mjs oci-layout://<registry>:ingest --schema ingest.schema.json --runtime nodejs22
+funcdctl push ingest.mjs oci-layout://<registry>:ingest   # reads contract + runtime from ingest.funcdctl.yaml
 # … repeat for score, hi, lo, report …
 funcdctl apply -f workflow.yaml
 funcdctl workflow run orders my-run --input '{"amount":4}'   # score 40 > 30 → the hi branch

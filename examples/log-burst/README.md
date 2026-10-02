@@ -30,11 +30,12 @@ log records (≈115 for the default 100 items). It returns `{ emitted }` (the ex
 ## Build it
 
 ```bash
-node --experimental-strip-types build.ts   # → burst.mjs (run via the shim's toolchain; see package.json)
+yarn build   # → burst.mjs (see vite.config.ts)
 ```
 
-`build.ts` is a plain esbuild bundle (no I/O contract — the logs are the point), mirroring
-`examples/kv-counter/build.ts` minus the contract step.
+[`vite.config.ts`](vite.config.ts) bundles `src/burst.ts` into one self-contained `burst.mjs` with
+`@funcd-dev/vite-plugin` (ADR-0144), like every other example. The build derives no contract; the
+I/O contract lives in [`funcdctl.yaml`](funcdctl.yaml).
 
 ## Run it locally (`funcdctl dev`)
 

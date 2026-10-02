@@ -54,15 +54,17 @@ nix develop -c just lima-example env-echo
 ```
 
 Run it in [pyvvo/funcd](https://github.com/pyvvo/funcd). The recipe stages this example's committed
-`env-echo.mjs` + `env-echo.schema.json` with the four manifests into the VM bundle, boots the generic lane
+`env-echo.mjs` with the four manifests into the VM bundle, boots the generic lane
 VM (which pushes the artifact and applies configmap → secret → function, then probes the Function to
 `Ready` — both bindings resolved), and runs `e2e/env-echo.venom.yml`.
 
 ## Files
 
 - `src/handler.ts` — the typed void-input handler that echoes the injected env.
-- `build.ts`, `package.json`, `tsconfig.json` — the contract-aware build (emits `env-echo.mjs` +
-  `env-echo.schema.json`, both gitignored).
+- `vite.config.ts`, `package.json`, `tsconfig.json` — the build (`yarn build` bundles
+  `src/handler.ts` into the self-contained `env-echo.mjs`, committed beside the manifests).
+- `funcdctl.yaml` — the client push/dev config: runtime, handler, bindings and the I/O contract
+  (`funcdctl push env-echo.mjs <ref>` reads it from beside the file).
 - `configmap.yaml` — the `app-config` ConfigMap (`APP_MODE=prod`, `SHARED=from-config`).
 - `secret.yaml` — the `app-secret` Secret (`API_KEY=s3cr3t`, `SHARED=from-secret`, base64-encoded).
 - `function.yaml` — the `env-echo` Function binding both.

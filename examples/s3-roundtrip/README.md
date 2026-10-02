@@ -103,8 +103,8 @@ aws s3 ls s3://lakehouse/gold/ --endpoint-url http://127.0.0.1:3006
 ## Build it
 
 ```bash
-npm install                                 # @aws-sdk/client-s3 + esbuild
-node --experimental-strip-types build.ts    # → roundtrip.mjs (the SDK is bundled in)
+yarn install   # @aws-sdk/client-s3 + vite
+yarn build     # → roundtrip.mjs (the SDK is bundled in)
 ```
 
 ## Run the e2e

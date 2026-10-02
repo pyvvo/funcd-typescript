@@ -22,7 +22,8 @@ the health endpoints, the invoke socket, log capture, trace spans) needs a funcd
 |---|---|
 | `shim/` | The runtime shim. `src/*.ts` builds to `shim.mjs` and `pool.mjs`, both committed. `embed.go` is the Go package funcd imports (`Shim`, `Pool`) |
 | `shim/dist/` | The npm package `@funcd-dev/shim`: the `context` types (`.`) and `buildContract` (`./build`). Built, never committed |
-| `examples/*` | Example functions. Each commits its built bundle and contract schema |
+| `vite-plugin/` | The npm package `@funcd-dev/vite-plugin` (funcd ADR-0144): one Vite environment per function, each built into one self-contained `<name>.mjs`. Its `dist/` is built, never committed |
+| `examples/*` | Example functions. Each builds with the Vite plugin and commits its `.mjs`; the contract lives only in its `funcdctl.yaml` |
 | `go.mod` | This repo is also a Go module. funcd pins it by git tag |
 
 ## Toolchain
@@ -33,7 +34,8 @@ the health endpoints, the invoke socket, log capture, trace spans) needs a funcd
 nix develop -c just ci
 ```
 
-Yarn workspaces cover `shim` and `examples/*`, with `nodeLinker: node-modules`.
+Yarn workspaces cover `shim`, `vite-plugin` and `examples/*`, with `nodeLinker: node-modules`. The
+recipes run them in dependency order (`--topological-dev`), so the plugin builds before the examples.
 
 The dev shell also installs the lefthook git hooks. pre-commit formats and lints staged files
 with Biome and gofmt, commit-msg enforces Conventional Commits, and pre-push runs the typecheck
@@ -49,11 +51,12 @@ and tests. CI runs the same checks, so never bypass a hook with `--no-verify`.
   nobody can edit the message at merge time. The queue checks that exact message again before it
   lands. `main` takes no direct pushes, and the ruleset has no bypass, not even for admins.
 - **release-please owns versions.** Never edit `version.txt`, `CHANGELOG.md` or the `version` in
-  `shim/package.json` by hand, and never create tags. The funcd release GitHub App opens the
-  release PR, which goes through the merge queue like any other PR. Merging it tags `vX.Y.Z`.
+  `shim/package.json` or `vite-plugin/package.json` by hand, and never create tags. The funcd release
+  GitHub App opens the release PR, which goes through the merge queue like any other PR. Merging it tags `vX.Y.Z`.
   CI skips its `ci` job: the PR only bumps versions on an already checked `main`.
-- **Every release publishes `@funcd-dev/shim` to npm** from the release workflow, with npm trusted
-  publishing (no token). Its exports are a public API: removing or changing one is a `feat!:`.
+- **Every release publishes `@funcd-dev/shim` and `@funcd-dev/vite-plugin` to npm** from the release
+  workflow, with npm trusted publishing (no token). Their exports are a public API: removing or
+  changing one is a `feat!:`.
 - **Before 1.0, a breaking change (`feat!:`) bumps the minor version.** From v2.0.0 on, Go requires
   a `/v2` module path, so stay below v2.
 - YAML is block style, imports sit at the top of the module, and comments explain why, not what.

@@ -21,24 +21,26 @@ client ──HTTP──▶ front ──context.invoke("greeter")──▶ [worke
 src/greeter.ts   # the callee  — Handler<GreeterInput, GreeterOutput>
 src/front.ts     # the caller  — calls context.invoke<…>("greeter", …); type-only import of greeter's contract
 test/handlers.test.ts
-build.ts         # the CONTRACT build (ADR-0058/0060): per handler → JSON Schema + a baked validator + the .mjs
-package.json     # build = node build.ts
+vite.config.ts   # the build (ADR-0144): @funcd-dev/vite-plugin bundles each handler to one self-contained .mjs
+package.json     # build = vite build
+*.funcdctl.yaml  # per function (greeter, front): runtime + I/O contract, read by funcdctl push
 tsconfig.json    # @funcd-dev/shim → ../../shim/src/types.ts (so context.invoke is typed)
 ```
 
-Each handler declares a typed **`FuncInput`/`FuncOutput`** (ADR-0058). `npm run build` (build.ts)
-does the real contract build: it generates a closed **JSON Schema** from those types, **bakes** an
-eval-free `__funcdValidate*` validator into the `.mjs` (the shim runs it — bad input → **422**, before
-the handler), and writes `<fn>-{input,output}.schema.json` for `funcdctl push --contract-*`. So the
-typed contracts are *enforced*, not decoration — and a fn-to-fn invoke with a bad payload gets the
-target's 422 **propagated back** (see the e2e). `greeter` requires `name`; `front` makes it optional
-so it can forward a payload greeter rejects.
+Each handler declares a typed **`FuncInput`/`FuncOutput`** (ADR-0058). `yarn build` only bundles: it
+writes one self-contained `.mjs` per handler (dependencies inlined) and derives no schema from the
+types. The I/O contract lives in each function's **`<fn>.funcdctl.yaml`** (`contract.input` /
+`contract.output`): `funcdctl push <fn>.mjs <ref>` reads it from the manifest beside the file, and the
+shim compiles a validator from the pushed contract at worker start (ADR-0123) and runs it — bad input →
+**422**, before the handler. So the typed contracts are *enforced*, not decoration — and a fn-to-fn
+invoke with a bad payload gets the target's 422 **propagated back** (see the e2e). `greeter` requires
+`name`; `front` makes it optional so it can forward a payload greeter rejects.
 
 ```bash
-npm install
-npm run typecheck   # both handlers type-checked against the same contract the platform enforces
-npm test            # unit tests (front's invoke is mocked)
-npm run build       # → greeter.mjs + front.mjs (baked validators) + *-{input,output}.schema.json
+yarn install
+yarn typecheck   # both handlers type-checked against the same contract the platform enforces
+yarn test        # unit tests (front's invoke is mocked)
+yarn build       # → greeter.mjs + front.mjs (self-contained bundles)
 ```
 
 ## The link (on `front`'s Function resource)
@@ -86,13 +88,12 @@ Build the artifacts, push them to an OCI store (a registry, or a **local layout*
 `apply` the manifests; the daemon pulls the artifacts by digest and runs them:
 
 ```bash
-npm run build   # → greeter.mjs + front.mjs (baked validators) + *-{input,output}.schema.json
+yarn build   # → greeter.mjs + front.mjs
 
-# push each handler WITH its generated contract (gated against the funcd profile, embedded as OCI metadata)
-funcdctl push greeter.mjs oci-layout://./registry:greeter \
-  --contract-input greeter-input.schema.json --contract-output greeter-output.schema.json
-funcdctl push front.mjs oci-layout://./registry:front \
-  --contract-input front-input.schema.json --contract-output front-output.schema.json
+# push each handler; funcdctl reads its contract + runtime from <fn>.funcdctl.yaml beside the .mjs
+# (gated against the funcd profile, embedded as OCI metadata)
+funcdctl push greeter.mjs oci-layout://./registry:greeter
+funcdctl push front.mjs oci-layout://./registry:front
 
 funcdctl apply -f greeter.yaml                             # the daemon pulls + runs
 funcdctl apply -f front.yaml

@@ -71,5 +71,12 @@ jobs:
           nix develop --command yarn workspace @funcd-dev/shim run build:lib
           nix develop --command yarn workspace @funcd-dev/shim pack --out "$RUNNER_TEMP/shim.tgz"
 
+      - name: Build and pack @funcd-dev/vite-plugin
+        run: |
+          nix develop --command yarn workspace @funcd-dev/vite-plugin run build
+          nix develop --command yarn workspace @funcd-dev/vite-plugin pack --out "$RUNNER_TEMP/vite-plugin.tgz"
+
       - name: Publish to npm
-        run: nix develop .#publish --command npm publish "$RUNNER_TEMP/shim.tgz" --access public
+        run: |
+          nix develop .#publish --command npm publish "$RUNNER_TEMP/shim.tgz" --access public
+          nix develop .#publish --command npm publish "$RUNNER_TEMP/vite-plugin.tgz" --access public

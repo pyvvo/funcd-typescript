@@ -2,16 +2,15 @@
   "name": "@funcd-dev/example-workflow",
   "private": true,
   "type": "module",
-  "description": "A five-step funcd Workflow example (ADR-0094): ingest → score → {hi | lo, exclusive via when} → report (join: any). Each step is an ordinary contract-bearing TypeScript function; the Workflow materializes them into owned Functions the engine drives. Authored against @funcd-dev/shim; build.ts bakes each step's contract and emits <step>.mjs + <step>.schema.json.",
+  "description": "A five-step funcd Workflow example (ADR-0094): ingest → score → {hi | lo, exclusive via when} → report (join: any). Each step is an ordinary contract-bearing TypeScript function; the Workflow materializes them into owned Functions the engine drives. Authored against @funcd-dev/shim; vite build (@funcd-dev/vite-plugin) bundles each step to a self-contained <step>.mjs; each step's I/O contract lives in its <step>.funcdctl.yaml.",
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "build": "node --experimental-strip-types build.ts"
+    "build": "vite build"
   },
   "devDependencies": {
+    "@funcd-dev/vite-plugin": "workspace:*",
     "@types/node": "^22.0.0",
-    "ajv": "^8.20.0",
-    "esbuild": "^0.28.1",
-    "ts-json-schema-generator": "^2.9.0",
-    "typescript": "^5.7.0"
+    "typescript": "^5.7.0",
+    "vite": "^8.3.2"
   }
 }
