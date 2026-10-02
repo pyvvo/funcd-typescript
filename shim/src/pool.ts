@@ -16,13 +16,13 @@ import { readFileSync, realpathSync, writeFileSync } from 'node:fs';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { isMainThread, parentPort, Worker, workerData } from 'node:worker_threads';
 
-import { resolveHandler, resolveValidators } from './runtime.ts';
+import { resolveHandler, resolveValidators, toWire } from './runtime.ts';
 import { ContractError, loadFromPath } from './contract.ts';
 import type { CloudEvent, FunctionContext, Handler, Validator } from './types.ts';
 import { makeInvoke } from './invoke.ts';
 import { makeKV } from './kv.ts';
 import { makeBlob } from './blob.ts';
-import { installConsoleCapture, openChannel } from './funclog.ts';
+import { type ChannelLock, installConsoleCapture, newChannelLock, openChannel, releaseChannelLock } from './funclog.ts';
 import { startSpan, parseLinks } from './tracespan.ts';
 
 // --- the wire between host and worker ---
@@ -31,6 +31,9 @@ interface WorkerSpec {
   artifact: string; // absolute local path, resolved like the single shim's FUNCD_ARTIFACT
   handler?: string; // export name, default "handle"
   contract?: string; // ADR-0123: delivered contract-blob path; the worker compiles its validator from it
+}
+interface WorkerInit extends WorkerSpec {
+  channelLock: ChannelLock; // one per pool: every worker writes the same FUNCD_LOG_FD
 }
 interface Req {
   id: number;
@@ -56,14 +59,14 @@ const requestTimeoutMs = 30_000;
 // Worker side: load one artifact, validate + run its handler on each request message.
 // =====================================================================================
 async function workerMain(): Promise<void> {
-  const spec = workerData as WorkerSpec;
+  const spec = workerData as WorkerInit;
   const port = parentPort;
   if (!port) return;
 
   // ADR-0081 Path B + ADR-0101 traces: open the worker's telemetry channel ONCE and share it between
   // console capture and the per-invocation span (a single channel per worker). No channel env ⇒ null
   // ⇒ both no-op. The pool's OWN operational lines go to process.stderr, never the patched console.
-  const channel = openChannel(process.env);
+  const channel = openChannel(process.env, spec.channelLock);
   installConsoleCapture(process.env, channel);
 
   // ADR-0123: compile the delivered contract AHEAD of the handler import (the m3 reorder). A
@@ -99,7 +102,8 @@ async function workerMain(): Promise<void> {
     void (async () => {
       const event = req.event ?? ({} as CloudEvent);
       if (validators.input) {
-        const errors = validators.input(event.data);
+        // ADR-0090: absent `data` is null, so a void (`{"type":"null"}`) input contract accepts it.
+        const errors = validators.input(event.data ?? null);
         if (errors.length > 0) {
           // ADR-0101: input-mismatch short-circuits before the handler → no invocation, no span.
           port.postMessage({
@@ -115,9 +119,9 @@ async function workerMain(): Promise<void> {
       // emitted on the worker's channel; the handler runs inside the span's context so logs correlate.
       const span = startSpan(channel, spec.name, req.traceparent, req.spanId, req.links ?? []);
       try {
-        const result = await span.run(() => handler(ctx, event));
+        const result = toWire(await span.run(() => handler(ctx, event)));
         if (validators.output) {
-          const errors = validators.output(result === undefined ? null : result);
+          const errors = validators.output(result);
           if (errors.length > 0) {
             span.end('ERROR', 'handler result does not match the output contract');
             port.postMessage({
@@ -130,7 +134,7 @@ async function workerMain(): Promise<void> {
           }
         }
         span.end('OK');
-        if (result === undefined || result === null) {
+        if (result === null) {
           port.postMessage({ id: req.id, none: true });
         } else {
           port.postMessage({ id: req.id, result });
@@ -165,9 +169,11 @@ class PooledHandler {
   private readonly spec: WorkerSpec;
   private readonly entry: string;
   private readonly limits: { maxOld: number; maxYoung: number };
+  private readonly channelLock: ChannelLock;
 
-  constructor(spec: WorkerSpec, entry: string, limits: { maxOld: number; maxYoung: number }) {
+  constructor(spec: WorkerSpec, entry: string, limits: { maxOld: number; maxYoung: number }, channelLock: ChannelLock) {
     this.spec = spec;
+    this.channelLock = channelLock;
     this.entry = entry;
     this.limits = limits;
     this.ready = new Promise<void>((res, rej) => {
@@ -179,9 +185,10 @@ class PooledHandler {
 
   private spawn(): void {
     this.worker = new Worker(this.entry, {
-      workerData: this.spec,
+      workerData: { ...this.spec, channelLock: this.channelLock } satisfies WorkerInit,
       resourceLimits: { maxOldGenerationSizeMb: this.limits.maxOld, maxYoungGenerationSizeMb: this.limits.maxYoung },
     });
+    const threadId = this.worker.threadId;
     this.worker.on('message', (msg: Res & { ready?: boolean }) => {
       if (msg.ready) {
         this.booted = true;
@@ -197,7 +204,10 @@ class PooledHandler {
       }
     });
     this.worker.on('error', () => this.fault());
-    this.worker.on('exit', () => this.fault());
+    this.worker.on('exit', () => {
+      releaseChannelLock(this.channelLock, threadId);
+      this.fault();
+    });
   }
 
   // fault handles a worker error/exit (incl. a resourceLimits OOM): fail in-flight requests with
@@ -251,8 +261,9 @@ export function createPool(manifest: WorkerSpec[], limits?: { maxOldMB?: number;
   const entry = fileURLToPath(import.meta.url); // spawn this same file as the worker (isMainThread=false)
   const resolved = { maxOld: limits?.maxOldMB ?? maxOldMB, maxYoung: limits?.maxYoungMB ?? maxYoungMB };
   const handlers = new Map<string, PooledHandler>();
+  const channelLock = newChannelLock();
   for (const spec of manifest) {
-    handlers.set(spec.name, new PooledHandler(spec, entry, resolved));
+    handlers.set(spec.name, new PooledHandler(spec, entry, resolved, channelLock));
   }
 
   const app = new Hono();

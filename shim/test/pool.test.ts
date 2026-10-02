@@ -1,8 +1,10 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, writeFileSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
+import { closeSync, constants, createReadStream, mkdtempSync, openSync, writeFileSync } from 'node:fs';
+import { once } from 'node:events';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 
 import type { Hono } from 'hono';
 
@@ -111,6 +113,102 @@ test('a pooled handler enforces its embedded input validator (422 on mismatch)',
     const bad = await post(pool.app, 'c', { hello: 123 });
     assert.equal(bad.status, 422);
     assert.match(((await bad.json()) as { error: string }).error, /input contract/);
+  } finally {
+    await pool.close();
+  }
+});
+
+// The process runtime hands the whole pool one pipe as fd 3 (FUNCD_LOG_FD), so every worker writes
+// to it. A pipe write larger than PIPE_BUF is not atomic: unserialized records splice into each other
+// and the host Reader drops both as unreadable. A FIFO stands in for that pipe.
+test('issue 81: pooled functions logging concurrently on one fd 3 pipe keep every record whole', async () => {
+  const fifo = join(mkdtempSync(join(tmpdir(), 'funcd-pool-fd-')), 'channel');
+  execFileSync('mkfifo', [fifo]);
+  // a non-blocking reader lets the blocking write end open; the stream then reads in the threadpool.
+  const probe = openSync(fifo, constants.O_RDONLY | constants.O_NONBLOCK);
+  const writeFd = openSync(fifo, constants.O_WRONLY);
+  const reader = createReadStream(fifo);
+  await once(reader, 'open');
+  closeSync(probe);
+  const chunks: Buffer[] = [];
+  reader.on('data', (chunk) => chunks.push(chunk as Buffer));
+  const drained = once(reader, 'end');
+
+  const lines = 400;
+  const handler = (tag: string) =>
+    `export function handle(_, e) { const pad = "x".repeat(8192); for (let i = 0; i < e.data.n; i++) console.log("${tag}", pad); }`;
+  process.env.FUNCD_LOG_FD = String(writeFd);
+  const pool = createPool(writeHandlers({ a: handler('a'), b: handler('b') }));
+  delete process.env.FUNCD_LOG_FD;
+  try {
+    await pool.ready;
+    const res = await Promise.all([post(pool.app, 'a', { n: lines }), post(pool.app, 'b', { n: lines })]);
+    assert.deepEqual(
+      res.map((r) => r.status),
+      [204, 204],
+    );
+  } finally {
+    await pool.close();
+    closeSync(writeFd);
+  }
+  await drained;
+
+  const bodies = { a: 0, b: 0, unreadable: 0 };
+  for (const line of Buffer.concat(chunks).toString('utf8').split('\n')) {
+    if (line.length === 0) continue;
+    try {
+      const body = (JSON.parse(line) as { body?: string }).body;
+      if (body === 'a' || body === 'b') bodies[body]++;
+    } catch {
+      bodies.unreadable++;
+    }
+  }
+  assert.deepEqual(bodies, { a: lines, b: lines, unreadable: 0 }, 'one whole NDJSON record per console call');
+});
+
+// ADR-0090 Decision 2: a pooled null-typed input accepts absent or null `data`; non-null data → 422.
+test('issue 185: a pooled void input contract accepts absent or null data', async () => {
+  const [spec] = writeHandlers({ v: 'export function handle() {}' });
+  const contract = join(dirname(spec.artifact), 'contract.json');
+  writeFileSync(contract, JSON.stringify({ input: { type: 'null' }, output: { type: 'null' } }));
+  const pool = createPool([{ ...spec, contract }]);
+  await pool.ready;
+  try {
+    assert.equal((await post(pool.app, 'v', undefined)).status, 204, 'absent data → 204');
+    assert.equal((await post(pool.app, 'v', null)).status, 204, 'null data → 204');
+    assert.equal((await post(pool.app, 'v', { x: 1 })).status, 422, 'non-null data → 422');
+  } finally {
+    await pool.close();
+  }
+});
+
+// issue 186: a pooled handler's output contract checks the JSON the host sends, not the worker's JS
+// value (NaN is sent as null; an undefined key is not sent at all).
+test('issue 186: a pooled output contract checks the JSON that is sent', async () => {
+  const [spec] = writeHandlers({
+    w: 'export function handle(_, e) { return e.data.nan ? { a: "x", n: NaN } : { a: "x", n: 1, extra: undefined }; }',
+  });
+  const contract = join(dirname(spec.artifact), 'contract.json');
+  writeFileSync(
+    contract,
+    JSON.stringify({
+      input: {},
+      output: {
+        type: 'object',
+        properties: { a: { type: 'string' }, n: { type: 'number' } },
+        required: ['a', 'n'],
+        additionalProperties: false,
+      },
+    }),
+  );
+  const pool = createPool([{ ...spec, contract }]);
+  await pool.ready;
+  try {
+    const nan = await post(pool.app, 'w', { nan: true });
+    assert.equal(nan.status, 500, `NaN: sent as ${await nan.text()}`);
+    const dropped = await post(pool.app, 'w', {});
+    assert.equal(dropped.status, 200, 'an undefined key is not sent');
+    assert.equal(await dropped.text(), '{"a":"x","n":1}');
   } finally {
     await pool.close();
   }

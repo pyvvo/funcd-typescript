@@ -125,6 +125,41 @@ test('FUNCD_LOG_FD: synchronous write lands NDJSON on the fd, debug→DEBUG / wa
   assert.equal(records[1].sev, 'WARN');
 });
 
+test('issue 82: attrs.args keeps Error message and stack, Map entries and Set values', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'funcd-funclog-issue82-'));
+  const file = join(dir, 'channel.ndjson');
+  const fd = openSync(file, 'w');
+
+  const restoreConsole = snapshotConsole();
+  try {
+    installConsoleCapture({ FUNCD_LOG_FD: String(fd) } as NodeJS.ProcessEnv);
+    console.error(new Error('boom-detail'));
+    console.error('failed:', new Error('second-boom', { cause: new Error('root-cause') }));
+    console.log('collections', new Map([['k', 'v']]), new Set([1, 2]));
+  } finally {
+    restoreConsole();
+    closeSync(fd);
+  }
+
+  const args = parseLines(readFileSync(file, 'utf8')).map(
+    (r) => JSON.parse((r.attrs as Record<string, string>).args) as unknown[],
+  );
+  assert.equal(args.length, 3);
+
+  const [lone] = args[0] as Record<string, string>[];
+  assert.equal(lone.name, 'Error');
+  assert.equal(lone.message, 'boom-detail');
+  assert.match(lone.stack, /^Error: boom-detail\n\s+at /);
+
+  const second = args[1][1] as Record<string, Record<string, string> | string>;
+  assert.equal(args[1][0], 'failed:');
+  assert.equal(second.message, 'second-boom');
+  assert.match(second.stack as string, /second-boom/);
+  assert.equal((second.cause as Record<string, string>).message, 'root-cause');
+
+  assert.deepEqual(args[2], ['collections', [['k', 'v']], [1, 2]]);
+});
+
 // scenario: no channel env → no capture (console stays as-is, → Path A / stdout).
 test('no channel env → installConsoleCapture is a no-op (returns false, console untouched)', () => {
   const before = console.log;

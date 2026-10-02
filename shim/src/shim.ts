@@ -16,8 +16,9 @@ import { serve } from '@hono/node-server';
 import { Hono } from 'hono';
 import { realpathSync, writeFileSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
+import { inspect } from 'node:util';
 
-import { resolveHandler, resolveValidators } from './runtime.ts';
+import { resolveHandler, resolveValidators, toWire } from './runtime.ts';
 import { ContractError, loadValidators } from './contract.ts';
 import type { CloudEvent, FunctionContext, Handler, Validator } from './types.ts';
 import { makeInvoke } from './invoke.ts';
@@ -66,7 +67,8 @@ export function createApp(
       return c.text('request body must be a JSON object (CloudEvent envelope)', 400);
     }
     if (validators.input) {
-      const errors = validators.input(event.data);
+      // ADR-0090: absent `data` is null, so a void (`{"type":"null"}`) input contract accepts it.
+      const errors = validators.input(event.data ?? null);
       if (errors.length > 0) {
         // ADR-0101: an input-mismatch short-circuits BEFORE the handler → no invocation, no span.
         return c.json({ error: 'event data does not match the input contract', details: errors }, 422);
@@ -83,18 +85,16 @@ export function createApp(
       parseLinks(c.req.header('x-funcd-span-links')),
     );
     try {
-      const result = await span.run(() => handler(ctx, event));
+      const result = toWire(await span.run(() => handler(ctx, event)));
       if (validators.output) {
-        // normalize an absent return to null so a `void` validator (accepts empty) and a typed
-        // validator (rejects empty) both see a concrete value.
-        const errors = validators.output(result === undefined ? null : result);
+        const errors = validators.output(result);
         if (errors.length > 0) {
           span.end('ERROR', 'handler result does not match the output contract');
           return c.json({ error: 'handler result does not match the output contract', details: errors }, 500);
         }
       }
       span.end('OK');
-      if (result === undefined || result === null) return c.body(null, 204);
+      if (result === null) return c.body(null, 204);
       return c.json(result as Record<string, unknown>);
     } catch (err) {
       span.end('ERROR', String(err instanceof Error ? err.message : err));
@@ -103,6 +103,15 @@ export function createApp(
   });
 
   return app;
+}
+
+/** containStrayFaults logs, instead of exiting on, a rejection a handler left unhandled or a throw from
+ *  one of its callbacks after it returned: calls share one event loop (ADR-0030), so Node's default exit
+ *  would cut off every concurrent call. Installed once serving, so a boot failure still exits. */
+function containStrayFaults(): void {
+  const log = (kind: string) => (err: unknown) => process.stderr.write(`funcd-shim: ${kind}: ${inspect(err)}\n`);
+  process.on('unhandledRejection', log('unhandled rejection'));
+  process.on('uncaughtException', log('uncaught exception'));
 }
 
 /** main loads the artifact, resolves the handler, and serves the contract. */
@@ -152,6 +161,7 @@ async function main(): Promise<void> {
   const fnName = process.env.FUNCD_FUNCTION ?? 'invoke';
   const appTrace = { sink: channel, fnName };
   serve({ fetch: createApp(handler, validators, appTrace).fetch, hostname, port: fixedPort }, (info) => {
+    containStrayFaults();
     if (portFile) writeFileSync(portFile, String(info.port));
     process.stderr.write(`funcd-shim: listening on ${hostname}:${info.port}\n`);
   });
