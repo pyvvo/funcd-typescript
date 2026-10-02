@@ -27,7 +27,12 @@ export interface FunctionContext {
   log(...args: unknown[]): void;
   /** Synchronously invoke a linked function by its spec.links alias (ADR-0064). The input is
    *  validated against the target's contract by the target's shim; its result is returned. Fails
-   *  closed (rejects) if the caller declares no such link. */
+   *  closed (rejects) if the caller declares no such link.
+   *
+   *  The target receives `input` as its `event.data`, except that an object with a top-level `data` or
+   *  `specversion` key is taken as a full CloudEvent envelope (ADR-0134): the target receives only its
+   *  `data`, and the other keys are dropped. To send an object that has its own `data` key, wrap it in an
+   *  envelope: `{ specversion: '1.0', data: { data: [1], page: 2 } }`. */
   invoke<I = unknown, O = unknown>(alias: string, input: I): Promise<O>;
   /** Namespace-scoped key-value storage (ADR-0069): get/put/del a binding's key, or list keys. */
   kv: KVClient;
