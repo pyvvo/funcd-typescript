@@ -31,8 +31,11 @@ contract:
         type: number
       denied:
         type: boolean
+      granted:
+        type: boolean
     required:
       - put
       - get
       - list
       - denied
+      - granted

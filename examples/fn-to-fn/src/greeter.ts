@@ -1,10 +1,10 @@
 import type { Handler } from '@funcd-dev/shim';
 
 /**
- * What greeter accepts — the CloudEvent `data` (ADR-0058 I/O contract). The push build generates a
- * closed JSON Schema from this type and bakes an eval-free validator the shim runs BEFORE the
- * handler: a wrong-shaped input (missing/!string `name`) is rejected with **422** and never reaches
- * `handle`. `name` is required.
+ * What greeter accepts — the CloudEvent `data` (ADR-0058 I/O contract). The matching closed JSON
+ * Schema lives in greeter.funcdctl.yaml (`contract.input`); the shim compiles a validator from the
+ * pushed contract at worker start and runs it BEFORE the handler: a wrong-shaped input
+ * (missing/!string `name`) is rejected with **422** and never reaches `handle`. `name` is required.
  */
 export interface FuncInput {
   name: string;

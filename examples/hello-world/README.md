@@ -10,8 +10,9 @@ contract** of a handler.
 imported from `@funcd-dev/shim` — so `context`, the CloudEvent `event`, and the return value
 are checked at compile time against the same contract the shim enforces at runtime (ADR-0037).
 
-The two exported interfaces **`FuncInput`** and **`FuncOutput`** *are* the I/O contract
-(ADR-0058). You write them as ordinary TypeScript types; the push build does the rest:
+The two exported interfaces **`FuncInput`** and **`FuncOutput`** are the TypeScript side of the I/O
+contract (ADR-0058). You write them as ordinary TypeScript types; the matching JSON Schema lives in
+[`funcdctl.yaml`](funcdctl.yaml) (`contract.input` / `contract.output`):
 
 ```ts
 import type { Handler } from '@funcd-dev/shim';
@@ -33,14 +34,16 @@ export const handle: Handler<FuncInput, FuncOutput> = (context, event) => {
 
 ### How the contract is enforced (ADR-0058 / ADR-0060)
 
-You supply a *type*, never a validator. At `funcdctl push` the build:
+You supply a *schema*, never a validator. The build (`yarn build`) only bundles the handler; it
+derives no schema from the types. Instead:
 
-1. generates a closed **JSON Schema** from `FuncInput` / `FuncOutput`
-   (`ts-json-schema-generator`, `additionalProperties: false`);
-2. gates it against the supported **profile** (the bounded subset — closed records, scalars,
-   enums, arrays, string-keyed maps, discriminated unions, `Json`; no open records, no
-   recursion). An out-of-profile type fails the push;
-3. compiles a **precompiled, eval-free validator** (AJV-standalone) and bakes it into the bundle.
+1. `funcdctl.yaml` declares the closed **JSON Schema** for the input and output
+   (`additionalProperties: false`), within the supported **profile** (the bounded subset — closed
+   records, scalars, enums, arrays, string-keyed maps, discriminated unions, `Json`; no open
+   records, no recursion);
+2. `funcdctl push handler.mjs <ref>` reads the contract and runtime from the manifest beside the
+   file and ships them with the artifact;
+3. at worker start the shim compiles a validator from the pushed contract (ADR-0123).
 
 At runtime the shim runs those validators around your handler:
 
@@ -64,11 +67,10 @@ export type FuncOutput =                            // discriminated union — `
 export type FuncOutput = void;                      // returns nothing → 204
 ```
 
-A `Json` field inside a record works the same way — the field becomes the empty schema `{}` while
-the record stays closed. A discriminated union (each branch a closed record sharing a required
-literal tag, here `kind`) is generated as a tagged `oneOf` + `discriminator` and validated
-end-to-end — the build converts the `anyOf` ts-json-schema-generator emits into the form the
-profile gate accepts.
+A `Json` field inside a record works the same way — the field is the empty schema `{}` in the
+manifest while the record stays closed. A discriminated union (each branch a closed record sharing a
+required literal tag, here `kind`) is written in the manifest as a tagged `oneOf` + `discriminator`
+and validated end-to-end.
 
 ## Run it locally (`funcdctl dev`)
 
@@ -93,14 +95,15 @@ curl -sS -XPOST http://127.0.0.1:3005/function/hello-world \
 ## Author workflow
 
 ```bash
-npm install
-npm run typecheck   # tsc --noEmit — proves the handler conforms to Handler<FuncInput, FuncOutput>
-npm test            # node --test — exercises the handler's behavior
-npm run build       # esbuild → handler.mjs (the single self-contained artifact to deploy)
+yarn install
+yarn typecheck   # tsc --noEmit — proves the handler conforms to Handler<FuncInput, FuncOutput>
+yarn test        # node --test — exercises the handler's behavior
+yarn build       # vite build → handler.mjs (the single self-contained artifact to deploy)
 ```
 
-`npm run build` bundles `src/handler.ts` (plus any npm libraries you import) into one
-`handler.mjs` — the same way the shim itself is bundled. That file is the OCI artifact:
+`yarn build` bundles `src/handler.ts` (plus any npm libraries you import) into one
+`handler.mjs` with `@funcd-dev/vite-plugin` (see [`vite.config.ts`](vite.config.ts), ADR-0144).
+That file is the OCI artifact:
 
 ```bash
 funcd --config ../../funcdconfig.yaml &           # start the daemon (zero-infra dev config, ADR-0061)
@@ -120,4 +123,5 @@ if omitted. `just demo` runs this whole journey end to end.
   `yarn add -D @funcd-dev/shim` (ADR-0037 open question).
 - `import type { Handler }` is erased at build time, so `handler.mjs` carries **no** shim
   dependency — your function bundles only the libraries it actually uses at runtime. The
-  generated validators are baked in by the push build, not imported.
+  validators are not in the bundle at all: the shim compiles them from the pushed contract at
+  worker start (ADR-0123).

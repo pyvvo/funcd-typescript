@@ -2,16 +2,15 @@
   "name": "@funcd-dev/example-egress-probe",
   "private": true,
   "type": "module",
-  "description": "A funcd egress-enforcement example (ADR-0117, F81): a probe function that tries to open an outbound connection to a given URL and reports whether the in-binary egress gateway ALLOWED or REFUSED it — proving default-deny, allow-list permits, and the sni-spoof/forwarder-attestation invariant on real containerd. Authored in TypeScript against @funcd-dev/shim; the contract build generates the JSON Schema from FuncInput/FuncOutput, bakes an eval-free validator, and emits probe.mjs + the schema file.",
+  "description": "A funcd egress-enforcement example (ADR-0117, F81): a probe function that tries to open an outbound connection to a given URL and reports whether the in-binary egress gateway ALLOWED or REFUSED it — proving default-deny, allow-list permits, and the sni-spoof/forwarder-attestation invariant on real containerd. Authored in TypeScript against @funcd-dev/shim; vite build (@funcd-dev/vite-plugin) bundles it to a self-contained probe.mjs; the I/O contract lives in funcdctl.yaml.",
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "build": "node --experimental-strip-types build.ts"
+    "build": "vite build"
   },
   "devDependencies": {
+    "@funcd-dev/vite-plugin": "workspace:*",
     "@types/node": "^22.0.0",
-    "ajv": "^8.20.0",
-    "esbuild": "^0.28.1",
-    "ts-json-schema-generator": "^2.9.0",
-    "typescript": "^5.7.0"
+    "typescript": "^5.7.0",
+    "vite": "^8.3.2"
   }
 }

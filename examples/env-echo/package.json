@@ -2,16 +2,15 @@
   "name": "@funcd-dev/example-env-echo",
   "private": true,
   "type": "module",
-  "description": "A funcd config+secret example (ADR-0093/0057): a void-input function that echoes the env injected by its bindings — spec.config (a ConfigMap) and spec.secrets (a Secret) — proving both reach the running handler (and the Secret wins a key present in both). Authored in TypeScript against @funcd-dev/shim; the contract build generates the JSON Schema from FuncInput/FuncOutput, bakes an eval-free validator, and emits env-echo.mjs + the schema file.",
+  "description": "A funcd config+secret example (ADR-0093/0057): a void-input function that echoes the env injected by its bindings — spec.config (a ConfigMap) and spec.secrets (a Secret) — proving both reach the running handler (and the Secret wins a key present in both). Authored in TypeScript against @funcd-dev/shim; vite build (@funcd-dev/vite-plugin) bundles it to a self-contained env-echo.mjs; the I/O contract lives in funcdctl.yaml.",
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "build": "node --experimental-strip-types build.ts"
+    "build": "vite build"
   },
   "devDependencies": {
+    "@funcd-dev/vite-plugin": "workspace:*",
     "@types/node": "^22.0.0",
-    "ajv": "^8.20.0",
-    "esbuild": "^0.28.1",
-    "ts-json-schema-generator": "^2.9.0",
-    "typescript": "^5.7.0"
+    "typescript": "^5.7.0",
+    "vite": "^8.3.2"
   }
 }

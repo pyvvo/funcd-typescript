@@ -2,16 +2,15 @@
   "name": "@funcd-dev/example-blob-object",
   "private": true,
   "type": "module",
-  "description": "A funcd blob example (ADR-0127): a function that put/get/lists objects NATIVELY via context.blob (bind-as-grant, no S3 keypair). Authored in TypeScript against @funcd-dev/shim; the contract build generates the JSON Schema from FuncInput/FuncOutput, bakes an eval-free validator, and emits object.mjs + the schema files.",
+  "description": "A funcd blob example (ADR-0127): a function that put/get/lists objects NATIVELY via context.blob (bind-as-grant, no S3 keypair). Authored in TypeScript against @funcd-dev/shim; vite build (@funcd-dev/vite-plugin) bundles it to a self-contained object.mjs; the I/O contract lives in funcdctl.yaml.",
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "build": "node --experimental-strip-types build.ts"
+    "build": "vite build"
   },
   "devDependencies": {
+    "@funcd-dev/vite-plugin": "workspace:*",
     "@types/node": "^22.0.0",
-    "ajv": "^8.20.0",
-    "esbuild": "^0.28.1",
-    "ts-json-schema-generator": "^2.9.0",
-    "typescript": "^5.7.0"
+    "typescript": "^5.7.0",
+    "vite": "^8.3.2"
   }
 }

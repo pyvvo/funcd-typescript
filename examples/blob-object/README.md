@@ -38,7 +38,7 @@ function does **not** declare the `other` alias, so a write there is `Forbidden`
 ## Build
 
 ```bash
-npm install && npm run build   # → object.mjs (+ baked contract validators + object.schema.json)
+yarn install && yarn build   # → object.mjs (self-contained; the contract stays in funcdctl.yaml)
 ```
 
 The in-process end-to-end lane lives at `pkg/funcd/blob_e2e_test.go` (`just test-e2e`): it builds this

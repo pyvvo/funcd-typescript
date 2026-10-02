@@ -10,6 +10,11 @@
           "type": "json",
           "path": "shim/package.json",
           "jsonpath": "$.version"
+        },
+        {
+          "type": "json",
+          "path": "vite-plugin/package.json",
+          "jsonpath": "$.version"
         }
       ]
     }

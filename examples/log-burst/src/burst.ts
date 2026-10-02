@@ -4,7 +4,8 @@
 // Lima e2e deploys this and asserts ≥100 captured log records land in the funcd-system log store —
 // proving the runtime-shim's console.* capture producer end to end on real containerd.
 //
-// Authored in TypeScript against @funcd-dev/shim; build.ts bundles it to burst.mjs.
+// Authored in TypeScript against @funcd-dev/shim; `yarn build` (vite.config.ts) bundles it to
+// burst.mjs.
 import type { CloudEvent, FunctionContext } from '@funcd-dev/shim';
 
 export interface FuncInput {
