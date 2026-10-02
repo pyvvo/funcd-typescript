@@ -34,6 +34,10 @@ the health endpoints, the invoke socket, log capture, trace spans) needs a funcd
 nix develop -c just ci
 ```
 
+For many short commands (agents, scripts), use `scripts/agent/d <cmd>` instead: the same pinned environment
+from a cached `nix print-dev-env` (regenerated when `flake.nix` or `flake.lock` change), about 0.02 s per call
+instead of about 2 s. It caches this repo's flake; funcd and the other language repo ship the same script for their own.
+
 Yarn workspaces cover `shim`, `vite-plugin` and `examples/*`, with `nodeLinker: node-modules`. The
 recipes run them in dependency order (`--topological-dev`), so the plugin builds before the examples.
 

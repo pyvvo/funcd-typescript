@@ -9,3 +9,5 @@ node_modules
 .DS_Store
 # the npm package build (shim/dist), built at publish time
 dist/
+# scripts/agent/d's cached dev-shell environment
+.cache/
