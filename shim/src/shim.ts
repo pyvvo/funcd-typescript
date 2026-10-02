@@ -67,7 +67,8 @@ export function createApp(
       return c.text('request body must be a JSON object (CloudEvent envelope)', 400);
     }
     if (validators.input) {
-      const errors = validators.input(event.data);
+      // ADR-0090: absent `data` is null, so a void (`{"type":"null"}`) input contract accepts it.
+      const errors = validators.input(event.data ?? null);
       if (errors.length > 0) {
         // ADR-0101: an input-mismatch short-circuits BEFORE the handler → no invocation, no span.
         return c.json({ error: 'event data does not match the input contract', details: errors }, 422);

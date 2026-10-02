@@ -102,7 +102,8 @@ async function workerMain(): Promise<void> {
     void (async () => {
       const event = req.event ?? ({} as CloudEvent);
       if (validators.input) {
-        const errors = validators.input(event.data);
+        // ADR-0090: absent `data` is null, so a void (`{"type":"null"}`) input contract accepts it.
+        const errors = validators.input(event.data ?? null);
         if (errors.length > 0) {
           // ADR-0101: input-mismatch short-circuits before the handler → no invocation, no span.
           port.postMessage({

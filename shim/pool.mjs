@@ -11028,7 +11028,7 @@ async function workerMain() {
     void (async () => {
       const event = req.event ?? {};
       if (validators.input) {
-        const errors = validators.input(event.data);
+        const errors = validators.input(event.data ?? null);
         if (errors.length > 0) {
           port.postMessage({
             id: req.id,

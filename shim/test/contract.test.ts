@@ -126,3 +126,16 @@ test('issue 133: the compiled validator enforces the profile string formats', as
     assert.equal(res.status, 422, `${format}: a mismatch → 422`);
   }
 });
+
+// ADR-0090 Decision 2: a null-typed input accepts absent or null `data`; non-null data → 422.
+test('issue 185: a void input contract accepts absent or null data', async () => {
+  const v = loadFromPath(writeContract({ input: { type: 'null' }, output: { type: 'null' } }));
+  const app = createApp(() => undefined, v);
+  const post = (body: string) =>
+    app.request('/', { method: 'POST', headers: { 'content-type': 'application/json' }, body });
+
+  for (const body of ['', '{}', '{"data":null}', '{"specversion":"1.0","id":"x","type":"t","source":"s"}']) {
+    assert.equal((await post(body)).status, 204, `body ${JSON.stringify(body)} → 204`);
+  }
+  assert.equal((await post('{"data":{"x":1}}')).status, 422, 'non-null data → 422');
+});

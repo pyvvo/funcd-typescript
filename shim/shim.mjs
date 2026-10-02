@@ -11014,7 +11014,7 @@ function createApp(handler, validators = {}, trace = {}) {
       return c.text("request body must be a JSON object (CloudEvent envelope)", 400);
     }
     if (validators.input) {
-      const errors = validators.input(event.data);
+      const errors = validators.input(event.data ?? null);
       if (errors.length > 0) {
         return c.json({ error: "event data does not match the input contract", details: errors }, 422);
       }

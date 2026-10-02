@@ -4,7 +4,7 @@ import { execFileSync } from 'node:child_process';
 import { closeSync, constants, createReadStream, mkdtempSync, openSync, writeFileSync } from 'node:fs';
 import { once } from 'node:events';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 
 import type { Hono } from 'hono';
 
@@ -164,4 +164,20 @@ test('issue 81: pooled functions logging concurrently on one fd 3 pipe keep ever
     }
   }
   assert.deepEqual(bodies, { a: lines, b: lines, unreadable: 0 }, 'one whole NDJSON record per console call');
+});
+
+// ADR-0090 Decision 2: a pooled null-typed input accepts absent or null `data`; non-null data → 422.
+test('issue 185: a pooled void input contract accepts absent or null data', async () => {
+  const [spec] = writeHandlers({ v: 'export function handle() {}' });
+  const contract = join(dirname(spec.artifact), 'contract.json');
+  writeFileSync(contract, JSON.stringify({ input: { type: 'null' }, output: { type: 'null' } }));
+  const pool = createPool([{ ...spec, contract }]);
+  await pool.ready;
+  try {
+    assert.equal((await post(pool.app, 'v', undefined)).status, 204, 'absent data → 204');
+    assert.equal((await post(pool.app, 'v', null)).status, 204, 'null data → 204');
+    assert.equal((await post(pool.app, 'v', { x: 1 })).status, 422, 'non-null data → 422');
+  } finally {
+    await pool.close();
+  }
 });
