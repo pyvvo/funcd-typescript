@@ -5,7 +5,8 @@ import http from 'node:http';
 
 /** Build the context.invoke implementation. The returned function POSTs `input` to
  *  /invoke/<alias> over the worker-node UDS and resolves the target's JSON output, or rejects on a
- *  non-2xx (no link → 403, unknown target → 404, bad input → 422, target down/timeout → 503). */
+ *  non-2xx (no link → 403, unknown target → 404, bad input → 422, target down/timeout → 503) or on a
+ *  2xx body that is not JSON. */
 export function makeInvoke(): <I = unknown, O = unknown>(alias: string, input: I) => Promise<O> {
   return <I, O>(alias: string, input: I): Promise<O> =>
     new Promise<O>((resolve, reject) => {
@@ -29,7 +30,14 @@ export function makeInvoke(): <I = unknown, O = unknown>(alias: string, input: I
             const text = Buffer.concat(chunks).toString('utf8');
             const status = res.statusCode ?? 0;
             if (status >= 200 && status < 300) {
-              resolve((text ? JSON.parse(text) : null) as O);
+              // This listener runs outside the Promise executor: a parse error thrown here would be uncaught.
+              try {
+                resolve((text ? JSON.parse(text) : null) as O);
+              } catch (err) {
+                reject(
+                  new Error(`context.invoke("${alias}") failed: ${status} reply is not JSON: ${text}`, { cause: err }),
+                );
+              }
             } else {
               reject(new Error(`context.invoke("${alias}") failed: ${status} ${text}`));
             }

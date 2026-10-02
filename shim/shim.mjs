@@ -10336,7 +10336,13 @@ function makeInvoke() {
           const text = Buffer.concat(chunks).toString("utf8");
           const status = res.statusCode ?? 0;
           if (status >= 200 && status < 300) {
-            resolve(text ? JSON.parse(text) : null);
+            try {
+              resolve(text ? JSON.parse(text) : null);
+            } catch (err) {
+              reject(
+                new Error(`context.invoke("${alias}") failed: ${status} reply is not JSON: ${text}`, { cause: err })
+              );
+            }
           } else {
             reject(new Error(`context.invoke("${alias}") failed: ${status} ${text}`));
           }
