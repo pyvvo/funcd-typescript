@@ -10591,6 +10591,10 @@ function resolveValidators(mod) {
   const pick = (v) => typeof v === "function" ? v : void 0;
   return { input: pick(mod?.__funcdValidateInput), output: pick(mod?.__funcdValidateOutput) };
 }
+function toWire(result) {
+  const text = JSON.stringify(result);
+  return text === void 0 ? null : JSON.parse(text);
+}
 
 // src/contract.ts
 var import_ajv = __toESM(require_ajv(), 1);
@@ -11041,9 +11045,9 @@ async function workerMain() {
       }
       const span = startSpan(channel, spec.name, req.traceparent, req.spanId, req.links ?? []);
       try {
-        const result = await span.run(() => handler(ctx, event));
+        const result = toWire(await span.run(() => handler(ctx, event)));
         if (validators.output) {
-          const errors = validators.output(result === void 0 ? null : result);
+          const errors = validators.output(result);
           if (errors.length > 0) {
             span.end("ERROR", "handler result does not match the output contract");
             port.postMessage({
@@ -11056,7 +11060,7 @@ async function workerMain() {
           }
         }
         span.end("OK");
-        if (result === void 0 || result === null) {
+        if (result === null) {
           port.postMessage({ id: req.id, none: true });
         } else {
           port.postMessage({ id: req.id, result });

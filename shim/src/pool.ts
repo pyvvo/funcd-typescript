@@ -16,7 +16,7 @@ import { readFileSync, realpathSync, writeFileSync } from 'node:fs';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { isMainThread, parentPort, Worker, workerData } from 'node:worker_threads';
 
-import { resolveHandler, resolveValidators } from './runtime.ts';
+import { resolveHandler, resolveValidators, toWire } from './runtime.ts';
 import { ContractError, loadFromPath } from './contract.ts';
 import type { CloudEvent, FunctionContext, Handler, Validator } from './types.ts';
 import { makeInvoke } from './invoke.ts';
@@ -119,9 +119,9 @@ async function workerMain(): Promise<void> {
       // emitted on the worker's channel; the handler runs inside the span's context so logs correlate.
       const span = startSpan(channel, spec.name, req.traceparent, req.spanId, req.links ?? []);
       try {
-        const result = await span.run(() => handler(ctx, event));
+        const result = toWire(await span.run(() => handler(ctx, event)));
         if (validators.output) {
-          const errors = validators.output(result === undefined ? null : result);
+          const errors = validators.output(result);
           if (errors.length > 0) {
             span.end('ERROR', 'handler result does not match the output contract');
             port.postMessage({
@@ -134,7 +134,7 @@ async function workerMain(): Promise<void> {
           }
         }
         span.end('OK');
-        if (result === undefined || result === null) {
+        if (result === null) {
           port.postMessage({ id: req.id, none: true });
         } else {
           port.postMessage({ id: req.id, result });

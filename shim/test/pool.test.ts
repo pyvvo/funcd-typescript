@@ -177,6 +177,35 @@ test('issue 185: a pooled void input contract accepts absent or null data', asyn
     assert.equal((await post(pool.app, 'v', undefined)).status, 204, 'absent data → 204');
     assert.equal((await post(pool.app, 'v', null)).status, 204, 'null data → 204');
     assert.equal((await post(pool.app, 'v', { x: 1 })).status, 422, 'non-null data → 422');
+});
+
+// issue 186: a pooled handler's output contract checks the JSON the host sends, not the worker's JS
+// value (NaN is sent as null; an undefined key is not sent at all).
+test('issue 186: a pooled output contract checks the JSON that is sent', async () => {
+  const [spec] = writeHandlers({
+    w: 'export function handle(_, e) { return e.data.nan ? { a: "x", n: NaN } : { a: "x", n: 1, extra: undefined }; }',
+  });
+  const contract = join(dirname(spec.artifact), 'contract.json');
+  writeFileSync(
+    contract,
+    JSON.stringify({
+      input: {},
+      output: {
+        type: 'object',
+        properties: { a: { type: 'string' }, n: { type: 'number' } },
+        required: ['a', 'n'],
+        additionalProperties: false,
+      },
+    }),
+  );
+  const pool = createPool([{ ...spec, contract }]);
+  await pool.ready;
+  try {
+    const nan = await post(pool.app, 'w', { nan: true });
+    assert.equal(nan.status, 500, `NaN: sent as ${await nan.text()}`);
+    const dropped = await post(pool.app, 'w', {});
+    assert.equal(dropped.status, 200, 'an undefined key is not sent');
+    assert.equal(await dropped.text(), '{"a":"x","n":1}');
   } finally {
     await pool.close();
   }

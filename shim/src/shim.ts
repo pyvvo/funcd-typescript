@@ -18,7 +18,7 @@ import { realpathSync, writeFileSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 import { inspect } from 'node:util';
 
-import { resolveHandler, resolveValidators } from './runtime.ts';
+import { resolveHandler, resolveValidators, toWire } from './runtime.ts';
 import { ContractError, loadValidators } from './contract.ts';
 import type { CloudEvent, FunctionContext, Handler, Validator } from './types.ts';
 import { makeInvoke } from './invoke.ts';
@@ -85,18 +85,16 @@ export function createApp(
       parseLinks(c.req.header('x-funcd-span-links')),
     );
     try {
-      const result = await span.run(() => handler(ctx, event));
+      const result = toWire(await span.run(() => handler(ctx, event)));
       if (validators.output) {
-        // normalize an absent return to null so a `void` validator (accepts empty) and a typed
-        // validator (rejects empty) both see a concrete value.
-        const errors = validators.output(result === undefined ? null : result);
+        const errors = validators.output(result);
         if (errors.length > 0) {
           span.end('ERROR', 'handler result does not match the output contract');
           return c.json({ error: 'handler result does not match the output contract', details: errors }, 500);
         }
       }
       span.end('OK');
-      if (result === undefined || result === null) return c.body(null, 204);
+      if (result === null) return c.body(null, 204);
       return c.json(result as Record<string, unknown>);
     } catch (err) {
       span.end('ERROR', String(err instanceof Error ? err.message : err));

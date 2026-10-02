@@ -10591,6 +10591,10 @@ function resolveValidators(mod) {
   const pick = (v) => typeof v === "function" ? v : void 0;
   return { input: pick(mod?.__funcdValidateInput), output: pick(mod?.__funcdValidateOutput) };
 }
+function toWire(result) {
+  const text = JSON.stringify(result);
+  return text === void 0 ? null : JSON.parse(text);
+}
 
 // src/contract.ts
 var import_ajv = __toESM(require_ajv(), 1);
@@ -11027,16 +11031,16 @@ function createApp(handler, validators = {}, trace = {}) {
       parseLinks(c.req.header("x-funcd-span-links"))
     );
     try {
-      const result = await span.run(() => handler(ctx, event));
+      const result = toWire(await span.run(() => handler(ctx, event)));
       if (validators.output) {
-        const errors = validators.output(result === void 0 ? null : result);
+        const errors = validators.output(result);
         if (errors.length > 0) {
           span.end("ERROR", "handler result does not match the output contract");
           return c.json({ error: "handler result does not match the output contract", details: errors }, 500);
         }
       }
       span.end("OK");
-      if (result === void 0 || result === null) return c.body(null, 204);
+      if (result === null) return c.body(null, 204);
       return c.json(result);
     } catch (err) {
       span.end("ERROR", String(err instanceof Error ? err.message : err));

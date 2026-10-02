@@ -20,3 +20,11 @@ export function resolveValidators(mod: Record<string, unknown>): { input?: Valid
   const pick = (v: unknown): Validator | undefined => (typeof v === 'function' ? (v as Validator) : undefined);
   return { input: pick(mod?.__funcdValidateInput), output: pick(mod?.__funcdValidateOutput) };
 }
+
+/** toWire returns the handler result as the JSON value the shim sends: JSON.stringify applies toJSON,
+ *  maps NaN/Infinity to null and drops undefined, functions and symbols. The output contract checks
+ *  this value, so a 200 body always matches it (ADR-0058). null means no body (204). */
+export function toWire(result: unknown): unknown {
+  const text: string | undefined = JSON.stringify(result);
+  return text === undefined ? null : JSON.parse(text);
+}

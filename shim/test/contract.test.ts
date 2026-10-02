@@ -139,3 +139,54 @@ test('issue 185: a void input contract accepts absent or null data', async () =>
   }
   assert.equal((await post('{"data":{"x":1}}')).status, 422, 'non-null data → 422');
 });
+
+// issue 186: the output contract checks the JSON the shim sends, not the handler's JS value, which
+// JSON.stringify rewrites (toJSON, NaN/Infinity → null, undefined keys dropped, Date → string).
+const WIRE_OUTPUT = {
+  input: {},
+  output: {
+    type: 'object',
+    properties: { a: { type: 'string' }, n: { type: 'number' } },
+    required: ['a', 'n'],
+    additionalProperties: false,
+  },
+};
+const wireCE = { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{"data":{}}' } as const;
+
+class Sneaky {
+  a = 'x';
+  n = 1;
+  toJSON() {
+    return { evil: 1 };
+  }
+}
+
+test('issue 186: a result whose JSON breaks the output contract → 500, never 200', async () => {
+  const v = loadFromPath(writeContract(WIRE_OUTPUT));
+  for (const [name, result] of [
+    ['toJSON', new Sneaky()],
+    ['NaN', { a: 'x', n: Number.NaN }],
+    ['Infinity', { a: 'x', n: Number.POSITIVE_INFINITY }],
+  ] as const) {
+    const res = await createApp(() => result, v).request('/', wireCE);
+    assert.equal(res.status, 500, `${name}: sent as ${await res.text()}`);
+  }
+});
+
+test('issue 186: a result whose JSON meets the output contract → 200 with exactly that JSON', async () => {
+  const v = loadFromPath(writeContract(WIRE_OUTPUT));
+  const dropped = await createApp(() => ({ a: 'x', n: 1, extra: undefined }), v).request('/', wireCE);
+  assert.equal(dropped.status, 200, 'an undefined key is not sent');
+  assert.equal(await dropped.text(), '{"a":"x","n":1}');
+  const date = await createApp(() => ({ a: new Date(0), n: 1 }), v).request('/', wireCE);
+  assert.equal(date.status, 200, 'a Date is sent as a string');
+  assert.deepEqual(await date.json(), { a: '1970-01-01T00:00:00.000Z', n: 1 });
+});
+
+test('issue 186: a result with no JSON form sends no body (204), not an empty 200', async () => {
+  const json = loadFromPath(writeContract({ input: {}, output: {} }));
+  for (const validators of [json, {}]) {
+    const res = await createApp(() => Symbol('s'), validators).request('/', wireCE);
+    assert.equal(res.status, 204);
+  }
+});
