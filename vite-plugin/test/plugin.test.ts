@@ -83,7 +83,8 @@ test('scenario: vite-missing-manifest-fails', async () => {
   const root = fixture(shared);
   await assert.rejects(build(root, { functions: { front: 'src/front.ts' } }), (err: Error) => {
     assert.match(err.message, /front\.funcdctl\.yaml/);
-    assert.match(err.message, /funcdctl\.yaml/);
+    // the generic path, which the stem path cannot satisfy
+    assert.match(err.message, /[/\\]funcdctl\.yaml/);
     return true;
   });
 });
