@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.0](https://github.com/pyvvo/funcd-typescript/compare/v0.3.0...v0.4.0) (2026-10-02)
+
+
+### Features
+
+* add @funcd-dev/vite-plugin and build the examples with it ([#14](https://github.com/pyvvo/funcd-typescript/issues/14)) ([f2c04dc](https://github.com/pyvvo/funcd-typescript/commit/f2c04dc1a323ae5e4f011384ce13fd8bb13ac221))
+
 ## [0.3.0](https://github.com/pyvvo/funcd-typescript/compare/v0.2.0...v0.3.0) (2026-09-27)
 
 
