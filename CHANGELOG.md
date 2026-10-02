@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.1](https://github.com/pyvvo/funcd-typescript/compare/v0.4.0...v0.4.1) (2026-10-02)
+
+
+### Bug Fixes
+
+* **shim:** harden contract checks, logging and invoke handling ([#19](https://github.com/pyvvo/funcd-typescript/issues/19)) ([622be06](https://github.com/pyvvo/funcd-typescript/commit/622be0691a9471acb5f180cae24aa338ca3c9c00))
+
 ## [0.4.0](https://github.com/pyvvo/funcd-typescript/compare/v0.3.0...v0.4.0) (2026-10-02)
 
 
