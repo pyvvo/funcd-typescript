@@ -45,7 +45,8 @@ export type Sink = (line: string) => void;
 
 /** safeStringify serializes an arbitrary value to JSON, tolerating circular refs and BigInt; any
  *  value that still can't be represented falls back to String(x). Used for the lossless attrs.args
- *  and for stringifying non-string attr values. */
+ *  and for stringifying non-string attr values. Errors, Maps and Sets keep their data, which plain
+ *  JSON.stringify would reduce to `{}` (their contents are non-enumerable or internal slots). */
 function safeStringify(value: unknown): string {
   const seen = new WeakSet<object>();
   try {
@@ -54,6 +55,10 @@ function safeStringify(value: unknown): string {
       if (typeof v === 'object' && v !== null) {
         if (seen.has(v)) return '[Circular]';
         seen.add(v);
+        if (v instanceof Error) {
+          return { ...v, name: v.name, message: v.message, stack: v.stack, cause: v.cause };
+        }
+        if (v instanceof Map || v instanceof Set) return [...v];
       }
       return v as unknown;
     });

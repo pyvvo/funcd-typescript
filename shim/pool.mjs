@@ -10817,6 +10817,10 @@ function safeStringify(value) {
       if (typeof v === "object" && v !== null) {
         if (seen.has(v)) return "[Circular]";
         seen.add(v);
+        if (v instanceof Error) {
+          return { ...v, name: v.name, message: v.message, stack: v.stack, cause: v.cause };
+        }
+        if (v instanceof Map || v instanceof Set) return [...v];
       }
       return v;
     });
