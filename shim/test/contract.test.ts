@@ -93,3 +93,36 @@ test('compiled validators enforce 422/500/204 through createApp', async () => {
   const nonEmpty = createApp(() => ({ surprise: true }), voidV);
   assert.equal((await nonEmpty.request('/', ce({}))).status, 500, 'void non-empty → 500');
 });
+
+// The ADR-0058 profile's string formats are enforced (advertised == enforced, ADR-0123), as the
+// Python shim's fastjsonschema does: a mismatch is a 422, never passed to the handler.
+test('issue 133: the compiled validator enforces the profile string formats', async () => {
+  const valid: Record<string, string> = {
+    'date-time': '2026-10-02T12:00:00Z',
+    uuid: '3f2b8c1e-9d4a-4b6e-8f10-2a7c5e9d1b34',
+    email: 'someone@example.com',
+    uri: 'https://example.com/a?b=c',
+  };
+  for (const [format, ok] of Object.entries(valid)) {
+    const v = loadFromPath(
+      writeContract({
+        input: {
+          type: 'object',
+          properties: { v: { type: 'string', format } },
+          required: ['v'],
+          additionalProperties: false,
+        },
+        output: {},
+      }),
+    );
+    assert.equal(v.input({ v: ok }).length, 0, `${format}: a valid value → no errors`);
+    assert.ok(v.input({ v: 'not a valid value' }).length > 0, `${format}: a mismatch → errors`);
+    const app = createApp((_ctx, e) => e.data, v);
+    const res = await app.request('/', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ data: { v: 'not a valid value' } }),
+    });
+    assert.equal(res.status, 422, `${format}: a mismatch → 422`);
+  }
+});

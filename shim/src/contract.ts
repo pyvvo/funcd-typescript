@@ -14,6 +14,7 @@
 // FUNCD_CONTRACT_PATH is unset, loadValidators returns null and the caller falls back to the
 // module-baked validators (transition back-compat).
 import Ajv from 'ajv';
+import addFormats from 'ajv-formats';
 import { readFileSync } from 'node:fs';
 
 import type { Validator } from './types.ts';
@@ -22,10 +23,12 @@ import type { Validator } from './types.ts';
  *  must fail closed (never serve un-validated); the shim turns this into exit code 3. */
 export class ContractError extends Error {}
 
-// One Ajv instance per worker. strict:false so in-profile constructs (e.g. an ignored `format`
-// keyword, or a `discriminator` on a tagged union) never throw at compile; allErrors so a 422/500
-// carries every mismatch, matching the fastjsonschema side's error detail.
+// One Ajv instance per worker. strict:false so in-profile constructs (e.g. a `discriminator` on a
+// tagged union) never throw at compile; allErrors so a 422/500 carries every mismatch, matching the
+// fastjsonschema side's error detail. ajv-formats enforces the profile's `format` keywords
+// (ADR-0058), which Ajv alone ignores — advertised == enforced (ADR-0123).
 const ajv = new Ajv({ strict: false, allErrors: true });
+addFormats(ajv);
 
 function compileSide(schema: unknown): Validator {
   const validate = ajv.compile(schema as object);
