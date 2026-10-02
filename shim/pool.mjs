@@ -10792,6 +10792,7 @@ function makeBlob() {
 // src/funclog.ts
 import { writeSync } from "node:fs";
 import { connect } from "node:net";
+import { threadId } from "node:worker_threads";
 
 // src/invcontext.ts
 import { AsyncLocalStorage } from "node:async_hooks";
@@ -10854,15 +10855,31 @@ function buildRecord(method, args) {
     "funcd.source": "console"
   };
 }
-function openChannel(env) {
+function newChannelLock() {
+  return new Int32Array(new SharedArrayBuffer(Int32Array.BYTES_PER_ELEMENT));
+}
+function acquire(lock) {
+  for (; ; ) {
+    const holder = Atomics.compareExchange(lock, 0, 0, threadId + 1);
+    if (holder === 0) return;
+    Atomics.wait(lock, 0, holder);
+  }
+}
+function releaseChannelLock(lock, holderThreadId = threadId) {
+  if (Atomics.compareExchange(lock, 0, holderThreadId + 1, 0) === holderThreadId + 1) Atomics.notify(lock, 0, 1);
+}
+function openChannel(env, lock) {
   const fdRaw = env.FUNCD_LOG_FD;
   if (fdRaw !== void 0 && fdRaw !== "") {
     const fd = Number(fdRaw);
     if (!Number.isInteger(fd) || fd < 0) return null;
     return (line) => {
+      if (lock) acquire(lock);
       try {
         writeSync(fd, line);
       } catch {
+      } finally {
+        if (lock) releaseChannelLock(lock);
       }
     };
   }
@@ -10974,7 +10991,7 @@ async function workerMain() {
   const spec = workerData;
   const port = parentPort;
   if (!port) return;
-  const channel = openChannel(process.env);
+  const channel = openChannel(process.env, spec.channelLock);
   installConsoleCapture(process.env, channel);
   let delivered;
   try {
@@ -11061,8 +11078,10 @@ var PooledHandler = class {
   spec;
   entry;
   limits;
-  constructor(spec, entry, limits) {
+  channelLock;
+  constructor(spec, entry, limits, channelLock) {
     this.spec = spec;
+    this.channelLock = channelLock;
     this.entry = entry;
     this.limits = limits;
     this.ready = new Promise((res, rej) => {
@@ -11073,9 +11092,10 @@ var PooledHandler = class {
   }
   spawn() {
     this.worker = new Worker(this.entry, {
-      workerData: this.spec,
+      workerData: { ...this.spec, channelLock: this.channelLock },
       resourceLimits: { maxOldGenerationSizeMb: this.limits.maxOld, maxYoungGenerationSizeMb: this.limits.maxYoung }
     });
+    const threadId2 = this.worker.threadId;
     this.worker.on("message", (msg) => {
       if (msg.ready) {
         this.booted = true;
@@ -11091,7 +11111,10 @@ var PooledHandler = class {
       }
     });
     this.worker.on("error", () => this.fault());
-    this.worker.on("exit", () => this.fault());
+    this.worker.on("exit", () => {
+      releaseChannelLock(this.channelLock, threadId2);
+      this.fault();
+    });
   }
   // fault handles a worker error/exit (incl. a resourceLimits OOM): fail in-flight requests with
   // 503, then — boot-time → fail readiness fast (shape error); post-boot → restart the worker so
@@ -11133,8 +11156,9 @@ function createPool(manifest, limits) {
   const entry = fileURLToPath(import.meta.url);
   const resolved = { maxOld: limits?.maxOldMB ?? maxOldMB, maxYoung: limits?.maxYoungMB ?? maxYoungMB };
   const handlers = /* @__PURE__ */ new Map();
+  const channelLock = newChannelLock();
   for (const spec of manifest) {
-    handlers.set(spec.name, new PooledHandler(spec, entry, resolved));
+    handlers.set(spec.name, new PooledHandler(spec, entry, resolved, channelLock));
   }
   const app = new Hono2();
   app.get("/health/liveness", (c) => c.text("ok"));

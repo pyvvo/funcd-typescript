@@ -1,6 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, writeFileSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
+import { closeSync, constants, createReadStream, mkdtempSync, openSync, writeFileSync } from 'node:fs';
+import { once } from 'node:events';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -114,4 +116,52 @@ test('a pooled handler enforces its embedded input validator (422 on mismatch)',
   } finally {
     await pool.close();
   }
+});
+
+// The process runtime hands the whole pool one pipe as fd 3 (FUNCD_LOG_FD), so every worker writes
+// to it. A pipe write larger than PIPE_BUF is not atomic: unserialized records splice into each other
+// and the host Reader drops both as unreadable. A FIFO stands in for that pipe.
+test('issue 81: pooled functions logging concurrently on one fd 3 pipe keep every record whole', async () => {
+  const fifo = join(mkdtempSync(join(tmpdir(), 'funcd-pool-fd-')), 'channel');
+  execFileSync('mkfifo', [fifo]);
+  // a non-blocking reader lets the blocking write end open; the stream then reads in the threadpool.
+  const probe = openSync(fifo, constants.O_RDONLY | constants.O_NONBLOCK);
+  const writeFd = openSync(fifo, constants.O_WRONLY);
+  const reader = createReadStream(fifo);
+  await once(reader, 'open');
+  closeSync(probe);
+  const chunks: Buffer[] = [];
+  reader.on('data', (chunk) => chunks.push(chunk as Buffer));
+  const drained = once(reader, 'end');
+
+  const lines = 400;
+  const handler = (tag: string) =>
+    `export function handle(_, e) { const pad = "x".repeat(8192); for (let i = 0; i < e.data.n; i++) console.log("${tag}", pad); }`;
+  process.env.FUNCD_LOG_FD = String(writeFd);
+  const pool = createPool(writeHandlers({ a: handler('a'), b: handler('b') }));
+  delete process.env.FUNCD_LOG_FD;
+  try {
+    await pool.ready;
+    const res = await Promise.all([post(pool.app, 'a', { n: lines }), post(pool.app, 'b', { n: lines })]);
+    assert.deepEqual(
+      res.map((r) => r.status),
+      [204, 204],
+    );
+  } finally {
+    await pool.close();
+    closeSync(writeFd);
+  }
+  await drained;
+
+  const bodies = { a: 0, b: 0, unreadable: 0 };
+  for (const line of Buffer.concat(chunks).toString('utf8').split('\n')) {
+    if (line.length === 0) continue;
+    try {
+      const body = (JSON.parse(line) as { body?: string }).body;
+      if (body === 'a' || body === 'b') bodies[body]++;
+    } catch {
+      bodies.unreadable++;
+    }
+  }
+  assert.deepEqual(bodies, { a: lines, b: lines, unreadable: 0 }, 'one whole NDJSON record per console call');
 });

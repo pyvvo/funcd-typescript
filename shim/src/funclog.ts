@@ -9,9 +9,10 @@
 //   FUNCD_LOG_SOCK = a unix socket path        → net.connect(path), write lines to it
 //   neither set                                → no capture; console stays as-is (Path A / stdout)
 //
-// Pure Node, built-ins only (node:fs, node:net) — no npm deps, so it bundles into shim.mjs/pool.mjs.
+// Pure Node, built-ins only (node:fs, node:net, node:worker_threads) — no npm deps, so it bundles into shim.mjs/pool.mjs.
 import { writeSync } from 'node:fs';
 import { connect, type Socket } from 'node:net';
+import { threadId } from 'node:worker_threads';
 
 import { currentInv } from './invcontext.ts';
 
@@ -105,19 +106,46 @@ function buildRecord(method: ConsoleMethod, args: unknown[]): LogRecord {
   };
 }
 
+/** A lock shared by the threads that write one fd channel. The pool's workers all write the one
+ *  fd 3 pipe, and a pipe write larger than PIPE_BUF is not atomic, so unserialized records splice
+ *  into each other. The cell is 0 when free, else the holder's threadId + 1. */
+export type ChannelLock = Int32Array;
+
+export function newChannelLock(): ChannelLock {
+  return new Int32Array(new SharedArrayBuffer(Int32Array.BYTES_PER_ELEMENT));
+}
+
+function acquire(lock: ChannelLock): void {
+  for (;;) {
+    const holder = Atomics.compareExchange(lock, 0, 0, threadId + 1);
+    if (holder === 0) return;
+    Atomics.wait(lock, 0, holder);
+  }
+}
+
+/** releaseChannelLock frees the lock if the given thread holds it. The pool host calls it when a
+ *  worker exits, since a thread terminated mid-write (a heap-limit OOM) never runs its own release. */
+export function releaseChannelLock(lock: ChannelLock, holderThreadId: number = threadId): void {
+  if (Atomics.compareExchange(lock, 0, holderThreadId + 1, 0) === holderThreadId + 1) Atomics.notify(lock, 0, 1);
+}
+
 /** openChannel resolves the side channel from the env contract, returning a synchronous-ish line
  *  sink (fd: truly synchronous write; UDS: net.Socket.write), or null when no channel env is set.
- *  Exported so an entrypoint opens the channel ONCE and shares it between log + trace capture. */
-export function openChannel(env: NodeJS.ProcessEnv): Sink | null {
+ *  Exported so an entrypoint opens the channel ONCE and shares it between log + trace capture.
+ *  `lock` serializes the fd writes of threads sharing that fd. */
+export function openChannel(env: NodeJS.ProcessEnv, lock?: ChannelLock): Sink | null {
   const fdRaw = env.FUNCD_LOG_FD;
   if (fdRaw !== undefined && fdRaw !== '') {
     const fd = Number(fdRaw);
     if (!Number.isInteger(fd) || fd < 0) return null;
     return (line) => {
+      if (lock) acquire(lock);
       try {
         writeSync(fd, line);
       } catch {
         // a closed/broken channel must never crash the function — drop the line.
+      } finally {
+        if (lock) releaseChannelLock(lock);
       }
     };
   }

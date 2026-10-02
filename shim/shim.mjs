@@ -10797,6 +10797,7 @@ function makeBlob() {
 // src/funclog.ts
 import { writeSync } from "node:fs";
 import { connect } from "node:net";
+import { threadId } from "node:worker_threads";
 
 // src/invcontext.ts
 import { AsyncLocalStorage } from "node:async_hooks";
@@ -10859,15 +10860,28 @@ function buildRecord(method, args) {
     "funcd.source": "console"
   };
 }
-function openChannel(env) {
+function acquire(lock) {
+  for (; ; ) {
+    const holder = Atomics.compareExchange(lock, 0, 0, threadId + 1);
+    if (holder === 0) return;
+    Atomics.wait(lock, 0, holder);
+  }
+}
+function releaseChannelLock(lock, holderThreadId = threadId) {
+  if (Atomics.compareExchange(lock, 0, holderThreadId + 1, 0) === holderThreadId + 1) Atomics.notify(lock, 0, 1);
+}
+function openChannel(env, lock) {
   const fdRaw = env.FUNCD_LOG_FD;
   if (fdRaw !== void 0 && fdRaw !== "") {
     const fd = Number(fdRaw);
     if (!Number.isInteger(fd) || fd < 0) return null;
     return (line) => {
+      if (lock) acquire(lock);
       try {
         writeSync(fd, line);
       } catch {
+      } finally {
+        if (lock) releaseChannelLock(lock);
       }
     };
   }
