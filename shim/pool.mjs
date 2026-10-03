@@ -11058,6 +11058,8 @@ function parseLinks(header) {
 var maxOldMB = Number(process.env.FUNCD_POOL_MAX_OLD_MB ?? 64);
 var maxYoungMB = Number(process.env.FUNCD_POOL_MAX_YOUNG_MB ?? 16);
 var requestTimeoutMs = 3e4;
+var restartBaseMs = 50;
+var restartMaxMs = 1e4;
 async function workerMain() {
   const spec = workerData;
   const port = parentPort;
@@ -11147,6 +11149,9 @@ var PooledHandler = class {
   rejectReady;
   booted = false;
   closed = false;
+  restarts = 0;
+  // restarts since a worker last booted
+  restartTimer;
   spec;
   entry;
   limits;
@@ -11171,6 +11176,7 @@ var PooledHandler = class {
     this.worker.on("message", (msg) => {
       if (msg.ready) {
         this.booted = true;
+        this.restarts = 0;
         this.healthy = true;
         this.resolveReady();
         return;
@@ -11209,9 +11215,11 @@ var PooledHandler = class {
       this.rejectReady(new Error(`function ${this.spec.name}: worker exited at boot (shape error)`));
       return;
     }
-    setTimeout(() => {
+    const delay = Math.min(restartBaseMs * 2 ** this.restarts, restartMaxMs);
+    this.restarts++;
+    this.restartTimer = setTimeout(() => {
       if (!this.closed) this.spawn();
-    }, 50);
+    }, delay);
   }
   async invoke(event, traceparent, spanId, links) {
     if (!this.healthy) return { id: -1, status: 503, error: `function ${this.spec.name} unavailable` };
@@ -11227,6 +11235,7 @@ var PooledHandler = class {
   }
   async close() {
     this.closed = true;
+    clearTimeout(this.restartTimer);
     await this.worker.terminate();
   }
 };

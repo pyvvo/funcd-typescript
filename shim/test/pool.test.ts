@@ -1,7 +1,7 @@
 import { type TestContext, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { closeSync, constants, createReadStream, openSync, readFileSync, writeFileSync } from 'node:fs';
+import { closeSync, constants, createReadStream, openSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { once } from 'node:events';
 import { dirname, join } from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
@@ -315,4 +315,44 @@ export function handle(_, e) {
   const after = readFileSync(beats, 'utf8').length;
   await sleep(200);
   assert.equal(readFileSync(beats, 'utf8').length, after, 'a worker still runs after close()');
+});
+
+// The handler module loads only while `gone` is absent, so once the first worker is up the test can
+// make every restart fail at boot (exit 3). Each import appends a line to `boots`.
+test('issue r36: a worker that fails to boot on restart is retried with a growing delay', {
+  timeout: 20_000,
+}, async (t) => {
+  const dir = tempDir(t, 'funcd-pool-r36-');
+  const boots = join(dir, 'boots');
+  const gone = join(dir, 'gone');
+  writeFileSync(boots, '');
+  const [spec] = writeHandlers(t, {
+    flaky: `import { appendFileSync, existsSync } from 'node:fs';
+appendFileSync(${JSON.stringify(boots)}, 'b\\n');
+if (existsSync(${JSON.stringify(gone)})) throw new Error('dependency gone');
+export function handle(_, e) {
+  if (e.data.mode === 'die') process.exit(1);
+  return { ok: true };
+}`,
+  });
+  const failedBoots = () => readFileSync(boots, 'utf8').split('\n').length - 2;
+  const pool = createPool([spec]);
+  try {
+    await pool.ready;
+    writeFileSync(gone, '');
+    assert.equal((await post(pool.app, 'flaky', { mode: 'die' })).status, 503);
+    await sleep(3_000);
+    const failed = failedBoots();
+    assert.ok(failed >= 1, 'the faulted worker was not restarted');
+    assert.ok(failed <= 6, `${failed} failed boots in 3 s: the restarts do not back off`);
+
+    rmSync(gone);
+    const deadline = Date.now() + 12_000;
+    while ((await post(pool.app, 'flaky', { mode: 'ping' })).status !== 200) {
+      assert.ok(Date.now() < deadline, 'the worker did not come back once its handler loaded again');
+      await sleep(50);
+    }
+  } finally {
+    await pool.close();
+  }
 });

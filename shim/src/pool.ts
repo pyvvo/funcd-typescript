@@ -54,6 +54,8 @@ interface Res {
 const maxOldMB = Number(process.env.FUNCD_POOL_MAX_OLD_MB ?? 64);
 const maxYoungMB = Number(process.env.FUNCD_POOL_MAX_YOUNG_MB ?? 16);
 const requestTimeoutMs = 30_000;
+const restartBaseMs = 50;
+const restartMaxMs = 10_000;
 
 // =====================================================================================
 // Worker side: load one artifact, validate + run its handler on each request message.
@@ -167,6 +169,8 @@ class PooledHandler {
   private rejectReady!: (e: Error) => void;
   private booted = false;
   private closed = false;
+  private restarts = 0; // restarts since a worker last booted
+  private restartTimer?: ReturnType<typeof setTimeout>;
   private readonly spec: WorkerSpec;
   private readonly entry: string;
   private readonly limits: { maxOld: number; maxYoung: number };
@@ -193,6 +197,7 @@ class PooledHandler {
     this.worker.on('message', (msg: Res & { ready?: boolean }) => {
       if (msg.ready) {
         this.booted = true;
+        this.restarts = 0;
         this.healthy = true;
         this.resolveReady();
         return;
@@ -234,9 +239,13 @@ class PooledHandler {
       this.rejectReady(new Error(`function ${this.spec.name}: worker exited at boot (shape error)`));
       return;
     }
-    setTimeout(() => {
+    // A restart that faults before it boots (its handler no longer loads) doubles the next delay, so a
+    // handler that cannot load is not re-imported every 50 ms.
+    const delay = Math.min(restartBaseMs * 2 ** this.restarts, restartMaxMs);
+    this.restarts++;
+    this.restartTimer = setTimeout(() => {
       if (!this.closed) this.spawn();
-    }, 50);
+    }, delay);
   }
 
   async invoke(event: CloudEvent, traceparent?: string, spanId?: string, links?: string[]): Promise<Res> {
@@ -254,6 +263,7 @@ class PooledHandler {
 
   async close(): Promise<void> {
     this.closed = true;
+    clearTimeout(this.restartTimer);
     await this.worker.terminate();
   }
 }
