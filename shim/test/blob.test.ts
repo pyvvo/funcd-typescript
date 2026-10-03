@@ -1,14 +1,13 @@
 // Scenario tests for context.blob (ADR-0127): the Node client over a minimal fake worker-node local API
 // (HTTP-over-UDS), proving the get/put/delete/list/signedUrl wire without a real platform.
 import assert from 'node:assert';
-import { mkdtempSync } from 'node:fs';
 import http from 'node:http';
-import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { test } from 'node:test';
+import { type TestContext, test } from 'node:test';
 
 import { makeBlob, type BlobClient } from '../src/blob.ts';
 import { type Reply, send } from './reply.ts';
+import { tempDir } from './tempdir.ts';
 
 interface Recorded {
   method: string;
@@ -19,8 +18,8 @@ interface Recorded {
 // withServer spins a UDS HTTP server that records requests and replies from `handler`, points
 // FUNCD_INVOKE_SOCKET at it, runs fn(blob, recorded), then tears it all down.
 function withServer(handler: (req: Recorded) => Reply, fn: (blob: BlobClient, recorded: Recorded[]) => Promise<void>) {
-  return async () => {
-    const sock = join(mkdtempSync(join(tmpdir(), 'funcd-blob-')), 'api.sock');
+  return async (t: TestContext) => {
+    const sock = join(tempDir(t, 'funcd-blob-'), 'api.sock');
     const recorded: Recorded[] = [];
     const server = http.createServer((req, res) => {
       const chunks: Buffer[] = [];

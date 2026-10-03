@@ -1,20 +1,19 @@
 // Scenario tests for the context.kv typed read accessors (ADR-0070): getText/getJSON over a minimal fake
 // worker-node local API (HTTP-over-UDS), proving the client-side decoders without a real platform.
 import assert from 'node:assert';
-import { mkdtempSync } from 'node:fs';
 import http from 'node:http';
-import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { test } from 'node:test';
+import { type TestContext, test } from 'node:test';
 
 import { makeKV, type KVClient } from '../src/kv.ts';
 import { type Reply, send } from './reply.ts';
+import { tempDir } from './tempdir.ts';
 
 // withServer spins a UDS HTTP server serving `routes` (path → {status, body}; 404 otherwise), points
 // FUNCD_INVOKE_SOCKET at it, runs fn(kv), then tears it all down.
 function withServer(routes: Record<string, Reply>, fn: (kv: KVClient) => Promise<void>) {
-  return async () => {
-    const sock = join(mkdtempSync(join(tmpdir(), 'funcd-kv-')), 'api.sock');
+  return async (t: TestContext) => {
+    const sock = join(tempDir(t, 'funcd-kv-'), 'api.sock');
     const server = http.createServer((req, res) => {
       const r = routes[req.url ?? ''];
       if (!r) {

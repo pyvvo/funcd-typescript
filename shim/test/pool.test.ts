@@ -1,18 +1,18 @@
-import { test } from 'node:test';
+import { type TestContext, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { closeSync, constants, createReadStream, mkdtempSync, openSync, writeFileSync } from 'node:fs';
+import { closeSync, constants, createReadStream, openSync, writeFileSync } from 'node:fs';
 import { once } from 'node:events';
-import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 
 import type { Hono } from 'hono';
 
 import { createPool } from '../src/pool.ts';
+import { tempDir } from './tempdir.ts';
 
 // writeHandlers writes each handler to a temp .mjs and returns the pool manifest.
-function writeHandlers(handlers: Record<string, string>): { name: string; artifact: string }[] {
-  const dir = mkdtempSync(join(tmpdir(), 'funcd-pool-test-'));
+function writeHandlers(t: TestContext, handlers: Record<string, string>): { name: string; artifact: string }[] {
+  const dir = tempDir(t, 'funcd-pool-test-');
   return Object.entries(handlers).map(([name, code]) => {
     const artifact = join(dir, `${name}.mjs`);
     writeFileSync(artifact, code);
@@ -28,9 +28,9 @@ const post = (app: Hono, name: string, data: unknown) =>
   });
 
 // scenario: pool-routes — POST /function/<name> reaches the right handler's worker; unknown → 404.
-test('routes each function to its own worker; unknown → 404', async () => {
+test('routes each function to its own worker; unknown → 404', async (t) => {
   const pool = createPool(
-    writeHandlers({
+    writeHandlers(t, {
       a: 'export function handle(_, e) { return { from: "a", data: e.data }; }',
       b: 'export function handle(_, e) { return { from: "b", data: e.data }; }',
     }),
@@ -53,9 +53,9 @@ test('routes each function to its own worker; unknown → 404', async () => {
 
 // scenario: pool-isolation — a throwing handler 500s and a worker-killing handler 503s, while a
 // sibling keeps serving and the pool process survives.
-test('a faulting handler is isolated; siblings keep serving', async () => {
+test('a faulting handler is isolated; siblings keep serving', async (t) => {
   const pool = createPool(
-    writeHandlers({
+    writeHandlers(t, {
       boom: 'export function handle() { throw new Error("kaboom"); }',
       die: 'export function handle() { process.exit(1); }', // exits the worker thread, not the process
       ok: 'export function handle() { return { ok: true }; }',
@@ -76,9 +76,9 @@ test('a faulting handler is isolated; siblings keep serving', async () => {
 
 // scenario: pool-quota — a handler exceeding its resourceLimits OOMs its worker thread (not the
 // process); its request fails and a sibling keeps serving — the per-artifact memory quota holds.
-test('a handler over its memory quota OOMs its thread, not the pool', async () => {
+test('a handler over its memory quota OOMs its thread, not the pool', async (t) => {
   const pool = createPool(
-    writeHandlers({
+    writeHandlers(t, {
       greedy: 'export function handle() { const a = []; for (;;) a.push(new Array(1e6).fill(7)); }',
       ok: 'export function handle() { return { ok: true }; }',
     }),
@@ -99,9 +99,9 @@ test('a handler over its memory quota OOMs its thread, not the pool', async () =
 // scenario: pool-contract — each pooled handler keeps its ADR-0058 input contract: the precompiled
 // __funcdValidateInput (generated at push from FuncInput) rejects a mismatching event.data with 422
 // before the handler runs.
-test('a pooled handler enforces its embedded input validator (422 on mismatch)', async () => {
+test('a pooled handler enforces its embedded input validator (422 on mismatch)', async (t) => {
   const pool = createPool(
-    writeHandlers({
+    writeHandlers(t, {
       c:
         'export const __funcdValidateInput = (d) => (d && typeof d.hello === "string" ? [] : [{ message: "hello must be a string" }]);\n' +
         'export function handle(_, e) { return { echoed: e.data }; }',
@@ -121,8 +121,8 @@ test('a pooled handler enforces its embedded input validator (422 on mismatch)',
 // The process runtime hands the whole pool one pipe as fd 3 (FUNCD_LOG_FD), so every worker writes
 // to it. A pipe write larger than PIPE_BUF is not atomic: unserialized records splice into each other
 // and the host Reader drops both as unreadable. A FIFO stands in for that pipe.
-test('issue 81: pooled functions logging concurrently on one fd 3 pipe keep every record whole', async () => {
-  const fifo = join(mkdtempSync(join(tmpdir(), 'funcd-pool-fd-')), 'channel');
+test('issue 81: pooled functions logging concurrently on one fd 3 pipe keep every record whole', async (t) => {
+  const fifo = join(tempDir(t, 'funcd-pool-fd-'), 'channel');
   execFileSync('mkfifo', [fifo]);
   // a non-blocking reader lets the blocking write end open; the stream then reads in the threadpool.
   const probe = openSync(fifo, constants.O_RDONLY | constants.O_NONBLOCK);
@@ -138,7 +138,7 @@ test('issue 81: pooled functions logging concurrently on one fd 3 pipe keep ever
   const handler = (tag: string) =>
     `export function handle(_, e) { const pad = "x".repeat(8192); for (let i = 0; i < e.data.n; i++) console.log("${tag}", pad); }`;
   process.env.FUNCD_LOG_FD = String(writeFd);
-  const pool = createPool(writeHandlers({ a: handler('a'), b: handler('b') }));
+  const pool = createPool(writeHandlers(t, { a: handler('a'), b: handler('b') }));
   delete process.env.FUNCD_LOG_FD;
   try {
     await pool.ready;
@@ -167,8 +167,8 @@ test('issue 81: pooled functions logging concurrently on one fd 3 pipe keep ever
 });
 
 // ADR-0090 Decision 2: a pooled null-typed input accepts absent or null `data`; non-null data → 422.
-test('issue 185: a pooled void input contract accepts absent or null data', async () => {
-  const [spec] = writeHandlers({ v: 'export function handle() {}' });
+test('issue 185: a pooled void input contract accepts absent or null data', async (t) => {
+  const [spec] = writeHandlers(t, { v: 'export function handle() {}' });
   const contract = join(dirname(spec.artifact), 'contract.json');
   writeFileSync(contract, JSON.stringify({ input: { type: 'null' }, output: { type: 'null' } }));
   const pool = createPool([{ ...spec, contract }]);
@@ -184,8 +184,8 @@ test('issue 185: a pooled void input contract accepts absent or null data', asyn
 
 // issue 186: a pooled handler's output contract checks the JSON the host sends, not the worker's JS
 // value (NaN is sent as null; an undefined key is not sent at all).
-test('issue 186: a pooled output contract checks the JSON that is sent', async () => {
-  const [spec] = writeHandlers({
+test('issue 186: a pooled output contract checks the JSON that is sent', async (t) => {
+  const [spec] = writeHandlers(t, {
     w: 'export function handle(_, e) { return e.data.nan ? { a: "x", n: NaN } : { a: "x", n: 1, extra: undefined }; }',
   });
   const contract = join(dirname(spec.artifact), 'contract.json');
@@ -254,9 +254,9 @@ function captureStderr(): { text: () => string; restore: () => void } {
 }
 
 for (const kind of ['rejection', 'throw']) {
-  test(`issue r22: a stray ${kind} in a pooled handler does not fail other calls`, { timeout: 15_000 }, async () => {
+  test(`issue r22: a stray ${kind} in a pooled handler does not fail other calls`, { timeout: 15_000 }, async (t) => {
     const stderr = captureStderr();
-    const pool = createPool(writeHandlers({ fa: strayFaultHandler }));
+    const pool = createPool(writeHandlers(t, { fa: strayFaultHandler }));
     try {
       await pool.ready;
       const sibling = post(pool.app, 'fa', { mode: 'wait' });

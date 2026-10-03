@@ -1,15 +1,15 @@
-import { test } from 'node:test';
+import { type TestContext, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { ContractError, loadFromPath, loadValidators } from '../src/contract.ts';
 import { createApp } from '../src/shim.ts';
+import { tempDir } from './tempdir.ts';
 
 // write a contract blob to a temp file and return its path.
-function writeContract(blob: unknown): string {
-  const dir = mkdtempSync(join(tmpdir(), 'funcd-contract-'));
+function writeContract(t: TestContext, blob: unknown): string {
+  const dir = tempDir(t, 'funcd-contract-');
   const path = join(dir, 'contract.json');
   writeFileSync(path, JSON.stringify(blob));
   return path;
@@ -24,32 +24,32 @@ const CLOSED = {
 
 // scenario: runtime-compiles-validator — ajv.compile from the delivered schema produces a
 // (data) => errors[] validator that enforces the shape.
-test('loadFromPath compiles a validator per side and enforces it', () => {
-  const v = loadFromPath(writeContract({ input: CLOSED, output: {} }));
+test('loadFromPath compiles a validator per side and enforces it', (t) => {
+  const v = loadFromPath(writeContract(t, { input: CLOSED, output: {} }));
   assert.equal(v.input({ hello: 'world' }).length, 0, 'valid input → no errors');
   assert.ok(v.input({ hello: 5 }).length > 0, 'wrong-typed field → errors');
 });
 
 // a void side ({"type":"null"}) accepts only null.
-test('a void side accepts only null', () => {
-  const v = loadFromPath(writeContract({ input: { type: 'null' }, output: { type: 'null' } }));
+test('a void side accepts only null', (t) => {
+  const v = loadFromPath(writeContract(t, { input: { type: 'null' }, output: { type: 'null' } }));
   assert.equal(v.input(null).length, 0);
   assert.ok(v.input({ x: 1 }).length > 0, 'a non-null value against a void side is invalid');
 });
 
 // the empty schema {} (the `Json` form) accepts anything.
-test('a Json side ({}) accepts any value', () => {
-  const v = loadFromPath(writeContract({ input: {}, output: {} }));
+test('a Json side ({}) accepts any value', (t) => {
+  const v = loadFromPath(writeContract(t, { input: {}, output: {} }));
   assert.equal(v.input(['literally', 1, true]).length, 0);
 });
 
 // scenario: no-fail-open — a missing / unparseable / half contract throws ContractError.
-test('fail-closed: missing / unparseable / half contract throws', () => {
+test('fail-closed: missing / unparseable / half contract throws', (t) => {
   assert.throws(() => loadFromPath('/nope/does-not-exist.json'), ContractError);
-  const bad = writeContract('{'); // writeContract JSON-stringifies, so craft a broken file directly
+  const bad = writeContract(t, '{'); // writeContract JSON-stringifies, so craft a broken file directly
   writeFileSync(bad, '{not json');
   assert.throws(() => loadFromPath(bad), ContractError);
-  assert.throws(() => loadFromPath(writeContract({ input: { type: 'null' } })), ContractError); // no output
+  assert.throws(() => loadFromPath(writeContract(t, { input: { type: 'null' } })), ContractError); // no output
 });
 
 // loadValidators is env-driven: unset → null (back-compat), set-but-broken → throws.
@@ -63,9 +63,9 @@ test('loadValidators: unset → null, set-but-broken → throws', () => {
 
 // scenario: runtime-compiles-validator (wire) — the compiled validators drive the same 422/500/204
 // contract through createApp, byte-identical to the baked path.
-test('compiled validators enforce 422/500/204 through createApp', async () => {
+test('compiled validators enforce 422/500/204 through createApp', async (t) => {
   const v = loadFromPath(
-    writeContract({
+    writeContract(t, {
       input: CLOSED,
       output: {
         type: 'object',
@@ -87,7 +87,7 @@ test('compiled validators enforce 422/500/204 through createApp', async () => {
   const good = createApp(() => ({ ok: true }), v);
   assert.equal((await good.request('/', ce({ hello: 'hi' }))).status, 200, 'good in/out → 200');
 
-  const voidV = loadFromPath(writeContract({ input: {}, output: { type: 'null' } }));
+  const voidV = loadFromPath(writeContract(t, { input: {}, output: { type: 'null' } }));
   const empty = createApp(() => undefined, voidV);
   assert.equal((await empty.request('/', ce({}))).status, 204, 'void empty → 204');
   const nonEmpty = createApp(() => ({ surprise: true }), voidV);
@@ -96,7 +96,7 @@ test('compiled validators enforce 422/500/204 through createApp', async () => {
 
 // The ADR-0058 profile's string formats are enforced (advertised == enforced, ADR-0123), as the
 // Python shim's fastjsonschema does: a mismatch is a 422, never passed to the handler.
-test('issue 133: the compiled validator enforces the profile string formats', async () => {
+test('issue 133: the compiled validator enforces the profile string formats', async (t) => {
   const valid: Record<string, string> = {
     'date-time': '2026-10-02T12:00:00Z',
     uuid: '3f2b8c1e-9d4a-4b6e-8f10-2a7c5e9d1b34',
@@ -105,7 +105,7 @@ test('issue 133: the compiled validator enforces the profile string formats', as
   };
   for (const [format, ok] of Object.entries(valid)) {
     const v = loadFromPath(
-      writeContract({
+      writeContract(t, {
         input: {
           type: 'object',
           properties: { v: { type: 'string', format } },
@@ -128,8 +128,8 @@ test('issue 133: the compiled validator enforces the profile string formats', as
 });
 
 // ADR-0090 Decision 2: a null-typed input accepts absent or null `data`; non-null data → 422.
-test('issue 185: a void input contract accepts absent or null data', async () => {
-  const v = loadFromPath(writeContract({ input: { type: 'null' }, output: { type: 'null' } }));
+test('issue 185: a void input contract accepts absent or null data', async (t) => {
+  const v = loadFromPath(writeContract(t, { input: { type: 'null' }, output: { type: 'null' } }));
   const app = createApp(() => undefined, v);
   const post = (body: string) =>
     app.request('/', { method: 'POST', headers: { 'content-type': 'application/json' }, body });
@@ -161,8 +161,8 @@ class Sneaky {
   }
 }
 
-test('issue 186: a result whose JSON breaks the output contract → 500, never 200', async () => {
-  const v = loadFromPath(writeContract(WIRE_OUTPUT));
+test('issue 186: a result whose JSON breaks the output contract → 500, never 200', async (t) => {
+  const v = loadFromPath(writeContract(t, WIRE_OUTPUT));
   for (const [name, result] of [
     ['toJSON', new Sneaky()],
     ['NaN', { a: 'x', n: Number.NaN }],
@@ -173,8 +173,8 @@ test('issue 186: a result whose JSON breaks the output contract → 500, never 2
   }
 });
 
-test('issue 186: a result whose JSON meets the output contract → 200 with exactly that JSON', async () => {
-  const v = loadFromPath(writeContract(WIRE_OUTPUT));
+test('issue 186: a result whose JSON meets the output contract → 200 with exactly that JSON', async (t) => {
+  const v = loadFromPath(writeContract(t, WIRE_OUTPUT));
   const dropped = await createApp(() => ({ a: 'x', n: 1, extra: undefined }), v).request('/', wireCE);
   assert.equal(dropped.status, 200, 'an undefined key is not sent');
   assert.equal(await dropped.text(), '{"a":"x","n":1}');
@@ -183,8 +183,8 @@ test('issue 186: a result whose JSON meets the output contract → 200 with exac
   assert.deepEqual(await date.json(), { a: '1970-01-01T00:00:00.000Z', n: 1 });
 });
 
-test('issue 186: a result with no JSON form sends no body (204), not an empty 200', async () => {
-  const json = loadFromPath(writeContract({ input: {}, output: {} }));
+test('issue 186: a result with no JSON form sends no body (204), not an empty 200', async (t) => {
+  const json = loadFromPath(writeContract(t, { input: {}, output: {} }));
   for (const validators of [json, {}]) {
     const res = await createApp(() => Symbol('s'), validators).request('/', wireCE);
     assert.equal(res.status, 204);
