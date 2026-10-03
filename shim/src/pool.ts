@@ -16,7 +16,7 @@ import { readFileSync, realpathSync, writeFileSync } from 'node:fs';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { isMainThread, parentPort, Worker, workerData } from 'node:worker_threads';
 
-import { resolveHandler, resolveValidators, toWire } from './runtime.ts';
+import { containStrayFaults, resolveHandler, resolveValidators, toWire } from './runtime.ts';
 import { ContractError, loadFromPath } from './contract.ts';
 import type { CloudEvent, FunctionContext, Handler, Validator } from './types.ts';
 import { makeInvoke } from './invoke.ts';
@@ -145,6 +145,7 @@ async function workerMain(): Promise<void> {
       }
     })();
   });
+  containStrayFaults(`funcd-pool[${spec.name}]`);
   port.postMessage({ ready: true });
 }
 

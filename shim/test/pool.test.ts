@@ -213,3 +213,66 @@ test('issue 186: a pooled output contract checks the JSON that is sent', async (
     await pool.close();
   }
 });
+
+// A handler for the stray-fault test. A 'wait' call blocks until a fault call has fired its stray
+// fault, so the fault is raised while a sibling call is in flight on the same worker.
+const strayFaultHandler = `
+let markWaiting;
+let release;
+const waiting = new Promise((r) => { markWaiting = r; });
+const released = new Promise((r) => { release = r; });
+export async function handle(_ctx, event) {
+  const mode = event.data.mode;
+  if (mode === 'ping') return { ok: true };
+  if (mode === 'wait') {
+    markWaiting();
+    await released;
+    return { sibling: 'served' };
+  }
+  await waiting;
+  if (mode === 'rejection') Promise.reject(new Error('stray rejection'));
+  else setTimeout(() => { throw new Error('stray throw'); });
+  setTimeout(release, 50);
+  return { fine: true };
+}
+`;
+
+// captureStderr records this process's stderr, which every pool worker's stderr is piped into.
+function captureStderr(): { text: () => string; restore: () => void } {
+  const write = process.stderr.write;
+  let text = '';
+  process.stderr.write = ((...args: Parameters<typeof write>) => {
+    text += String(args[0]);
+    return write.apply(process.stderr, args);
+  }) as typeof write;
+  return {
+    text: () => text,
+    restore: () => {
+      process.stderr.write = write;
+    },
+  };
+}
+
+for (const kind of ['rejection', 'throw']) {
+  test(`issue r22: a stray ${kind} in a pooled handler does not fail other calls`, { timeout: 15_000 }, async () => {
+    const stderr = captureStderr();
+    const pool = createPool(writeHandlers({ fa: strayFaultHandler }));
+    try {
+      await pool.ready;
+      const sibling = post(pool.app, 'fa', { mode: 'wait' });
+      const fault = await post(pool.app, 'fa', { mode: kind });
+      const res = await sibling;
+      assert.equal(res.status, 200, `the in-flight call was failed: ${await res.clone().text()}`);
+      assert.deepEqual(await res.json(), { sibling: 'served' });
+      assert.equal(fault.status, 200);
+      assert.deepEqual(await fault.json(), { fine: true });
+
+      const after = await post(pool.app, 'fa', { mode: 'ping' });
+      assert.equal(after.status, 200, 'the worker keeps serving after the stray fault');
+      assert.match(stderr.text(), new RegExp(`funcd-pool\\[fa\\]: .*stray ${kind}`), 'the stray fault is logged');
+    } finally {
+      stderr.restore();
+      await pool.close();
+    }
+  });
+}

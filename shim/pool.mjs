@@ -10580,6 +10580,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { isMainThread, parentPort, Worker, workerData } from "node:worker_threads";
 
 // src/runtime.ts
+import { inspect } from "node:util";
 function resolveHandler(mod, name) {
   const candidate = mod?.[name] ?? mod?.default?.[name] ?? mod?.default;
   if (typeof candidate !== "function") {
@@ -10594,6 +10595,12 @@ function resolveValidators(mod) {
 function toWire(result) {
   const text = JSON.stringify(result);
   return text === void 0 ? null : JSON.parse(text);
+}
+function containStrayFaults(prefix) {
+  const log = (kind) => (err) => process.stderr.write(`${prefix}: ${kind}: ${inspect(err)}
+`);
+  process.on("unhandledRejection", log("unhandled rejection"));
+  process.on("uncaughtException", log("uncaught exception"));
 }
 
 // src/contract.ts
@@ -11089,6 +11096,7 @@ async function workerMain() {
       }
     })();
   });
+  containStrayFaults(`funcd-pool[${spec.name}]`);
   port.postMessage({ ready: true });
 }
 var PooledHandler = class {

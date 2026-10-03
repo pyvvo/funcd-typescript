@@ -10577,9 +10577,9 @@ var Hono2 = class extends Hono {
 // src/shim.ts
 import { realpathSync, writeFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
-import { inspect } from "node:util";
 
 // src/runtime.ts
+import { inspect } from "node:util";
 function resolveHandler(mod, name) {
   const candidate = mod?.[name] ?? mod?.default?.[name] ?? mod?.default;
   if (typeof candidate !== "function") {
@@ -10594,6 +10594,12 @@ function resolveValidators(mod) {
 function toWire(result) {
   const text = JSON.stringify(result);
   return text === void 0 ? null : JSON.parse(text);
+}
+function containStrayFaults(prefix) {
+  const log = (kind) => (err) => process.stderr.write(`${prefix}: ${kind}: ${inspect(err)}
+`);
+  process.on("unhandledRejection", log("unhandled rejection"));
+  process.on("uncaughtException", log("uncaught exception"));
 }
 
 // src/contract.ts
@@ -11067,12 +11073,6 @@ function createApp(handler, validators = {}, trace = {}) {
   });
   return app;
 }
-function containStrayFaults() {
-  const log = (kind) => (err) => process.stderr.write(`funcd-shim: ${kind}: ${inspect(err)}
-`);
-  process.on("unhandledRejection", log("unhandled rejection"));
-  process.on("uncaughtException", log("uncaught exception"));
-}
 async function main() {
   const channel = openChannel(process.env);
   installConsoleCapture(process.env, channel);
@@ -11107,7 +11107,7 @@ async function main() {
   const fnName = process.env.FUNCD_FUNCTION ?? "invoke";
   const appTrace = { sink: channel, fnName };
   serve({ fetch: createApp(handler, validators, appTrace).fetch, hostname, port: fixedPort }, (info) => {
-    containStrayFaults();
+    containStrayFaults("funcd-shim");
     if (portFile) writeFileSync(portFile, String(info.port));
     process.stderr.write(`funcd-shim: listening on ${hostname}:${info.port}
 `);

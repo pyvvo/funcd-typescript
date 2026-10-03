@@ -1,5 +1,8 @@
 // Shared handler/contract resolution for the funcd Node shims (single-tenant shim.ts and the
-// pooled pool.ts, ADR-0037/0058/0044). No HTTP, no run-guard — just the materialization shape-gate.
+// pooled pool.ts, ADR-0037/0058/0044). No HTTP, no run-guard — the materialization shape-gate and
+// the stray-fault containment both hosts install.
+import { inspect } from 'node:util';
+
 import type { Handler, Validator } from './types.ts';
 
 /** resolveHandler picks the handler export: `<name>`, `default.<name>`, or `default`. A
@@ -27,4 +30,14 @@ export function resolveValidators(mod: Record<string, unknown>): { input?: Valid
 export function toWire(result: unknown): unknown {
   const text: string | undefined = JSON.stringify(result);
   return text === undefined ? null : JSON.parse(text);
+}
+
+/** containStrayFaults logs, instead of exiting on, a rejection a handler left unhandled or a throw from
+ *  one of its callbacks after it returned: concurrent calls share one event loop (the solo shim's,
+ *  ADR-0030; a pool worker's, ADR-0044), so Node's default exit would cut off every one of them. Install
+ *  it once serving, so a boot failure still exits. */
+export function containStrayFaults(prefix: string): void {
+  const log = (kind: string) => (err: unknown) => process.stderr.write(`${prefix}: ${kind}: ${inspect(err)}\n`);
+  process.on('unhandledRejection', log('unhandled rejection'));
+  process.on('uncaughtException', log('uncaught exception'));
 }
