@@ -1,5 +1,6 @@
-import { test } from 'node:test';
+import { type TestContext, test } from 'node:test';
 import assert from 'node:assert/strict';
+import { on, once } from 'node:events';
 import { createServer, type Server, type Socket } from 'node:net';
 import { openSync, readFileSync, closeSync } from 'node:fs';
 import { join } from 'node:path';
@@ -28,25 +29,44 @@ function parseLines(buf: string): Record<string, unknown>[] {
     .map((l) => JSON.parse(l) as Record<string, unknown>);
 }
 
+// logServer listens on a UDS standing in for the host Reader and stops when the test ends, dropping the
+// live connections first, since server.close() waits for them. A delayMs reader holds each connection's
+// data back that long, like a Reader on a loaded host.
+async function logServer(t: TestContext, sockPath: string, delayMs = 0): Promise<Server> {
+  const conns: Socket[] = [];
+  const server = createServer({ pauseOnConnect: delayMs > 0 }, (conn) => {
+    conns.push(conn);
+    if (delayMs > 0) setTimeout(() => conn.resume(), delayMs);
+  });
+  await new Promise<void>((resolve) => server.listen(sockPath, resolve));
+  t.after(async () => {
+    for (const c of conns) c.destroy();
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+  });
+  return server;
+}
+
+// readLines returns what the server's next connection sends, up to its nth newline. The shim connects
+// and writes asynchronously, so the test waits for the data, not for a fixed time, and fails after 10 s.
+// The server accepts on a later event-loop turn, so a call right after the shim connects is in time.
+async function readLines(server: Server, n: number): Promise<string> {
+  const signal = AbortSignal.timeout(10_000);
+  const [conn] = (await once(server, 'connection', { signal })) as [Socket];
+  let received = '';
+  for await (const [chunk] of on(conn, 'data', { signal })) {
+    received += (chunk as Buffer).toString('utf8');
+    if (received.split('\n').length > n) break;
+  }
+  return received;
+}
+
 // scenario: console-no-double-capture (FUNCD_LOG_SOCK / UDS transport) — the patched console writes
 // each call as ONE NDJSON line to the side channel, channel-only. We prove "no double-capture" by
 // installing sentinel spies as the ORIGINAL console methods BEFORE patching: the patched wrappers
 // write channel-only and never delegate, so the originals must stay untouched (zero stdout echo).
 test('console-no-double-capture over FUNCD_LOG_SOCK: two NDJSON lines, body/sev/attrs correct, no original-console delegation', async (t) => {
-  const dir = tempDir(t, 'funcd-funclog-');
-  const sockPath = join(dir, 'log.sock');
-
-  // a UDS server standing in for the host Reader: accumulate everything the shim writes. Track the
-  // live connection so we can destroy it on teardown — otherwise server.close() blocks on it.
-  let received = '';
-  const conns: Socket[] = [];
-  const server: Server = createServer((conn) => {
-    conns.push(conn);
-    conn.on('data', (chunk) => {
-      received += chunk.toString('utf8');
-    });
-  });
-  await new Promise<void>((resolve) => server.listen(sockPath, resolve));
+  const sockPath = join(tempDir(t, 'funcd-funclog-'), 'log.sock');
+  const server = await logServer(t, sockPath);
 
   const restoreConsole = snapshotConsole();
   // sentinels standing in for the real stdout/stderr writers: if the patched console delegated to the
@@ -65,14 +85,10 @@ test('console-no-double-capture over FUNCD_LOG_SOCK: two NDJSON lines, body/sev/
 
     console.log('user', { id: 7 });
     console.error('boom');
-
-    // give the async UDS write time to flush to the in-process server.
-    await new Promise<void>((resolve) => setTimeout(resolve, 150));
   } finally {
     restoreConsole();
-    for (const c of conns) c.destroy(); // drop live connections so close() can complete
-    await new Promise<void>((resolve) => server.close(() => resolve()));
   }
+  const received = await readLines(server, 2);
 
   // CRUCIAL: the patched console never called the original method → no Path A double-capture.
   assert.equal(originalCalls, 0, 'patched console writes channel-only — never delegates to stdout/stderr');
@@ -97,6 +113,25 @@ test('console-no-double-capture over FUNCD_LOG_SOCK: two NDJSON lines, body/sev/
   // console.error("boom") → body "boom", sev ERROR.
   assert.equal(second.body, 'boom');
   assert.equal(second.sev, 'ERROR');
+});
+
+test('issue r30: both FUNCD_LOG_SOCK records are read when they arrive after 300 ms', async (t) => {
+  const sockPath = join(tempDir(t, 'funcd-funclog-issue-r30-'), 'log.sock');
+  const server = await logServer(t, sockPath, 300);
+
+  const restoreConsole = snapshotConsole();
+  try {
+    installConsoleCapture({ FUNCD_LOG_SOCK: sockPath } as NodeJS.ProcessEnv);
+    console.log('user');
+    console.error('boom');
+  } finally {
+    restoreConsole();
+  }
+
+  assert.deepEqual(
+    parseLines(await readLines(server, 2)).map((r) => r.body),
+    ['user', 'boom'],
+  );
 });
 
 // scenario: FUNCD_LOG_FD transport — the SYNCHRONOUS fd write path lands NDJSON on the given fd.
