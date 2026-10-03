@@ -8,6 +8,7 @@ import { join } from 'node:path';
 import { test } from 'node:test';
 
 import { makeBlob, type BlobClient } from '../src/blob.ts';
+import { type Reply, send } from './reply.ts';
 
 interface Recorded {
   method: string;
@@ -17,10 +18,7 @@ interface Recorded {
 
 // withServer spins a UDS HTTP server that records requests and replies from `handler`, points
 // FUNCD_INVOKE_SOCKET at it, runs fn(blob, recorded), then tears it all down.
-function withServer(
-  handler: (req: Recorded) => { status: number; body: string },
-  fn: (blob: BlobClient, recorded: Recorded[]) => Promise<void>,
-) {
+function withServer(handler: (req: Recorded) => Reply, fn: (blob: BlobClient, recorded: Recorded[]) => Promise<void>) {
   return async () => {
     const sock = join(mkdtempSync(join(tmpdir(), 'funcd-blob-')), 'api.sock');
     const recorded: Recorded[] = [];
@@ -30,12 +28,12 @@ function withServer(
       req.on('end', () => {
         const rec = { method: req.method ?? '', url: req.url ?? '', body: Buffer.concat(chunks) };
         recorded.push(rec);
-        const r = handler(rec);
-        res.statusCode = r.status;
-        res.end(r.body);
+        send(res, handler(rec));
       });
     });
     await new Promise<void>((resolve) => server.listen(sock, resolve));
+    // unref: a call that never settles then fails the test instead of hanging the file.
+    server.unref();
     const prev = process.env.FUNCD_INVOKE_SOCKET;
     process.env.FUNCD_INVOKE_SOCKET = sock;
     try {
@@ -104,6 +102,19 @@ test(
     () => ({ status: 403, body: 'forbidden' }),
     async (blob) => {
       await assert.rejects(() => blob.get('nope', 'k'), /context\.blob\.get failed: 403/);
+    },
+  ),
+);
+
+test(
+  'issue r21: a reply that drops mid-body rejects blob.get',
+  withServer(
+    () => ({ status: 200, body: 'hello', cut: true }),
+    async (blob) => {
+      await assert.rejects(
+        blob.get('files', 'report.txt'),
+        /context\.blob GET \/blob\/files\/report\.txt failed: connection closed before the reply ended/,
+      );
     },
   ),
 );

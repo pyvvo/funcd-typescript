@@ -10655,6 +10655,12 @@ function makeInvoke() {
       },
       (res) => {
         const chunks = [];
+        res.on(
+          "error",
+          (err) => reject(
+            new Error(`context.invoke("${alias}") failed: connection closed before the reply ended`, { cause: err })
+          )
+        );
         res.on("data", (c) => chunks.push(c));
         res.on("end", () => {
           const text = Buffer.concat(chunks).toString("utf8");
@@ -10691,6 +10697,12 @@ function request(method, path, body) {
     if (body) headers["content-length"] = body.byteLength;
     const req = http2.request({ socketPath, path, method, headers }, (res) => {
       const chunks = [];
+      res.on(
+        "error",
+        (err) => reject(
+          new Error(`context.kv ${method} ${path} failed: connection closed before the reply ended`, { cause: err })
+        )
+      );
       res.on("data", (c) => chunks.push(c));
       res.on("end", () => resolve({ status: res.statusCode ?? 0, body: Buffer.concat(chunks) }));
     });
@@ -10754,6 +10766,12 @@ function request2(method, path, body) {
     if (body) headers["content-length"] = body.byteLength;
     const req = http3.request({ socketPath, path, method, headers }, (res) => {
       const chunks = [];
+      res.on(
+        "error",
+        (err) => reject(
+          new Error(`context.blob ${method} ${path} failed: connection closed before the reply ended`, { cause: err })
+        )
+      );
       res.on("data", (c) => chunks.push(c));
       res.on("end", () => resolve({ status: res.statusCode ?? 0, body: Buffer.concat(chunks) }));
     });

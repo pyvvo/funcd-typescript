@@ -25,6 +25,12 @@ export function makeInvoke(): <I = unknown, O = unknown>(alias: string, input: I
         },
         (res) => {
           const chunks: Buffer[] = [];
+          // A connection that drops mid-body errors the response, not the request, and never ends it.
+          res.on('error', (err) =>
+            reject(
+              new Error(`context.invoke("${alias}") failed: connection closed before the reply ended`, { cause: err }),
+            ),
+          );
           res.on('data', (c: Buffer) => chunks.push(c));
           res.on('end', () => {
             const text = Buffer.concat(chunks).toString('utf8');

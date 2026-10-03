@@ -8,10 +8,11 @@ import { join } from 'node:path';
 import { test } from 'node:test';
 
 import { makeKV, type KVClient } from '../src/kv.ts';
+import { type Reply, send } from './reply.ts';
 
 // withServer spins a UDS HTTP server serving `routes` (path → {status, body}; 404 otherwise), points
 // FUNCD_INVOKE_SOCKET at it, runs fn(kv), then tears it all down.
-function withServer(routes: Record<string, { status: number; body: string }>, fn: (kv: KVClient) => Promise<void>) {
+function withServer(routes: Record<string, Reply>, fn: (kv: KVClient) => Promise<void>) {
   return async () => {
     const sock = join(mkdtempSync(join(tmpdir(), 'funcd-kv-')), 'api.sock');
     const server = http.createServer((req, res) => {
@@ -21,10 +22,11 @@ function withServer(routes: Record<string, { status: number; body: string }>, fn
         res.end('not found');
         return;
       }
-      res.statusCode = r.status;
-      res.end(r.body);
+      send(res, r);
     });
     await new Promise<void>((resolve) => server.listen(sock, resolve));
+    // unref: a call that never settles then fails the test instead of hanging the file.
+    server.unref();
     const prev = process.env.FUNCD_INVOKE_SOCKET;
     process.env.FUNCD_INVOKE_SOCKET = sock;
     try {
@@ -65,5 +67,15 @@ test(
     const b = await kv.get('counters', 'n');
     assert.ok(b instanceof Uint8Array);
     assert.strictEqual(new TextDecoder().decode(b!), '5');
+  }),
+);
+
+test(
+  'issue r21: a reply that drops mid-body rejects kv.get',
+  withServer({ '/kv/counters/n': { status: 200, body: '5', cut: true } }, async (kv) => {
+    await assert.rejects(
+      kv.get('counters', 'n'),
+      /context\.kv GET \/kv\/counters\/n failed: connection closed before the reply ended/,
+    );
   }),
 );
