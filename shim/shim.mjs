@@ -10825,6 +10825,7 @@ function makeBlob() {
 // src/funclog.ts
 import { writeSync } from "node:fs";
 import { connect } from "node:net";
+import { inspect as inspect2 } from "node:util";
 import { threadId } from "node:worker_threads";
 
 // src/invcontext.ts
@@ -10848,6 +10849,8 @@ function safeStringify(value) {
   try {
     return JSON.stringify(value, function(_k, v) {
       if (typeof v === "bigint") return v.toString();
+      if (v === void 0 || typeof v === "function" || typeof v === "symbol") return inspect2(v);
+      if (typeof v === "number" && !Number.isFinite(v)) return inspect2(v);
       if (typeof v !== "object" || v === null) return v;
       while (holders.length > 0 && holders[holders.length - 1] !== this) {
         holders.pop();
@@ -10855,8 +10858,13 @@ function safeStringify(value) {
       }
       if (origins.includes(v)) return "[Circular]";
       let out = v;
-      if (v instanceof Error) out = { ...v, name: v.name, message: v.message, stack: v.stack, cause: v.cause };
-      else if (v instanceof Map || v instanceof Set) out = [...v];
+      if (v instanceof Error) {
+        out = { ...v, name: v.name, message: v.message, stack: v.stack };
+        if ("cause" in v) out.cause = v.cause;
+      } else if (v instanceof Map || v instanceof Set) out = [...v];
+      else if (v instanceof RegExp) return inspect2(v);
+      else if (ArrayBuffer.isView(v) && !(v instanceof DataView))
+        out = Array.from(v);
       holders.push(out);
       origins.push(v);
       return out;

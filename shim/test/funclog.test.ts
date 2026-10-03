@@ -191,6 +191,33 @@ test('issue r23: attrs.args keeps a repeated object, only a real cycle becomes [
   ]);
 });
 
+test('issue r24: attrs.args keeps undefined, functions, symbols, RegExp, typed arrays and NaN readable', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'funcd-funclog-issue-r24-'));
+  const file = join(dir, 'channel.ndjson');
+  const fd = openSync(file, 'w');
+
+  const restoreConsole = snapshotConsole();
+  try {
+    installConsoleCapture({ FUNCD_LOG_FD: String(fd) } as NodeJS.ProcessEnv);
+    console.log('x', undefined, () => 1, Symbol('s'));
+    console.log('re', /ab+c/g, new Uint8Array([1, 2]), NaN, Infinity);
+    console.log('obj', { u: undefined, f: function named() {}, s: Symbol('t') });
+    console.error(new Error('no-cause'));
+  } finally {
+    restoreConsole();
+    closeSync(fd);
+  }
+
+  const args = parseLines(readFileSync(file, 'utf8')).map(
+    (r) => JSON.parse((r.attrs as Record<string, string>).args) as unknown[],
+  );
+  assert.equal(args.length, 4);
+  assert.deepEqual(args[0], ['x', 'undefined', '[Function (anonymous)]', 'Symbol(s)']);
+  assert.deepEqual(args[1], ['re', '/ab+c/g', [1, 2], 'NaN', 'Infinity']);
+  assert.deepEqual(args[2], ['obj', { u: 'undefined', f: '[Function: named]', s: 'Symbol(t)' }]);
+  assert.equal('cause' in (args[3][0] as object), false, 'an Error without a cause gets no cause key');
+});
+
 // scenario: no channel env → no capture (console stays as-is, → Path A / stdout).
 test('no channel env → installConsoleCapture is a no-op (returns false, console untouched)', () => {
   const before = console.log;
