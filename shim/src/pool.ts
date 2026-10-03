@@ -204,10 +204,18 @@ class PooledHandler {
         p.resolve(msg);
       }
     });
-    this.worker.on('error', () => this.fault());
+    // A worker that dies of an uncaught error or a resourceLimits OOM emits both 'error' and 'exit':
+    // fault it once, or it is restarted twice and the first replacement is orphaned.
+    let faulted = false;
+    const fault = () => {
+      if (faulted) return;
+      faulted = true;
+      this.fault();
+    };
+    this.worker.on('error', fault);
     this.worker.on('exit', () => {
       releaseChannelLock(this.channelLock, threadId);
-      this.fault();
+      fault();
     });
   }
 

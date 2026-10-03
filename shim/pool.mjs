@@ -11156,10 +11156,16 @@ var PooledHandler = class {
         p.resolve(msg);
       }
     });
-    this.worker.on("error", () => this.fault());
+    let faulted = false;
+    const fault = () => {
+      if (faulted) return;
+      faulted = true;
+      this.fault();
+    };
+    this.worker.on("error", fault);
     this.worker.on("exit", () => {
       releaseChannelLock(this.channelLock, threadId2);
-      this.fault();
+      fault();
     });
   }
   // fault handles a worker error/exit (incl. a resourceLimits OOM): fail in-flight requests with
