@@ -1,11 +1,11 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer, type Server, type Socket } from 'node:net';
-import { mkdtempSync, openSync, readFileSync, closeSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { openSync, readFileSync, closeSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { installConsoleCapture } from '../src/funclog.ts';
+import { tempDir } from './tempdir.ts';
 
 // snapshotConsole restores the five patched methods after installConsoleCapture() mutates the global,
 // keeping the tests isolated.
@@ -32,8 +32,8 @@ function parseLines(buf: string): Record<string, unknown>[] {
 // each call as ONE NDJSON line to the side channel, channel-only. We prove "no double-capture" by
 // installing sentinel spies as the ORIGINAL console methods BEFORE patching: the patched wrappers
 // write channel-only and never delegate, so the originals must stay untouched (zero stdout echo).
-test('console-no-double-capture over FUNCD_LOG_SOCK: two NDJSON lines, body/sev/attrs correct, no original-console delegation', async () => {
-  const dir = mkdtempSync(join(tmpdir(), 'funcd-funclog-'));
+test('console-no-double-capture over FUNCD_LOG_SOCK: two NDJSON lines, body/sev/attrs correct, no original-console delegation', async (t) => {
+  const dir = tempDir(t, 'funcd-funclog-');
   const sockPath = join(dir, 'log.sock');
 
   // a UDS server standing in for the host Reader: accumulate everything the shim writes. Track the
@@ -100,8 +100,8 @@ test('console-no-double-capture over FUNCD_LOG_SOCK: two NDJSON lines, body/sev/
 });
 
 // scenario: FUNCD_LOG_FD transport — the SYNCHRONOUS fd write path lands NDJSON on the given fd.
-test('FUNCD_LOG_FD: synchronous write lands NDJSON on the fd, debug→DEBUG / warn→WARN', () => {
-  const dir = mkdtempSync(join(tmpdir(), 'funcd-funclog-fd-'));
+test('FUNCD_LOG_FD: synchronous write lands NDJSON on the fd, debug→DEBUG / warn→WARN', (t) => {
+  const dir = tempDir(t, 'funcd-funclog-fd-');
   const file = join(dir, 'channel.ndjson');
   const fd = openSync(file, 'w'); // a regular file fd is a fine stand-in for the pipe fd 3
 
@@ -125,8 +125,8 @@ test('FUNCD_LOG_FD: synchronous write lands NDJSON on the fd, debug→DEBUG / wa
   assert.equal(records[1].sev, 'WARN');
 });
 
-test('issue 82: attrs.args keeps Error message and stack, Map entries and Set values', () => {
-  const dir = mkdtempSync(join(tmpdir(), 'funcd-funclog-issue82-'));
+test('issue 82: attrs.args keeps Error message and stack, Map entries and Set values', (t) => {
+  const dir = tempDir(t, 'funcd-funclog-issue82-');
   const file = join(dir, 'channel.ndjson');
   const fd = openSync(file, 'w');
 
@@ -158,6 +158,64 @@ test('issue 82: attrs.args keeps Error message and stack, Map entries and Set va
   assert.equal((second.cause as Record<string, string>).message, 'root-cause');
 
   assert.deepEqual(args[2], ['collections', [['k', 'v']], [1, 2]]);
+});
+
+test('issue r23: attrs.args keeps a repeated object, only a real cycle becomes [Circular]', (t) => {
+  const dir = tempDir(t, 'funcd-funclog-issue-r23-');
+  const file = join(dir, 'channel.ndjson');
+  const fd = openSync(file, 'w');
+  const o = { a: 1 };
+  const loop: Record<string, unknown> = { id: 'loop' };
+  loop.self = loop;
+  const selfMap = new Map<string, unknown>();
+  selfMap.set('me', selfMap);
+
+  const restoreConsole = snapshotConsole();
+  try {
+    installConsoleCapture({ FUNCD_LOG_FD: String(fd) } as NodeJS.ProcessEnv);
+    console.log('x', o, o);
+    console.log('shared', { left: o, right: o });
+    console.log('cycle', loop, selfMap);
+  } finally {
+    restoreConsole();
+    closeSync(fd);
+  }
+
+  const args = parseLines(readFileSync(file, 'utf8')).map(
+    (r) => JSON.parse((r.attrs as Record<string, string>).args) as unknown[],
+  );
+  assert.deepEqual(args, [
+    ['x', { a: 1 }, { a: 1 }],
+    ['shared', { left: { a: 1 }, right: { a: 1 } }],
+    ['cycle', { id: 'loop', self: '[Circular]' }, [['me', '[Circular]']]],
+  ]);
+});
+
+test('issue r24: attrs.args keeps undefined, functions, symbols, RegExp, typed arrays and NaN readable', (t) => {
+  const dir = tempDir(t, 'funcd-funclog-issue-r24-');
+  const file = join(dir, 'channel.ndjson');
+  const fd = openSync(file, 'w');
+
+  const restoreConsole = snapshotConsole();
+  try {
+    installConsoleCapture({ FUNCD_LOG_FD: String(fd) } as NodeJS.ProcessEnv);
+    console.log('x', undefined, () => 1, Symbol('s'));
+    console.log('re', /ab+c/g, new Uint8Array([1, 2]), NaN, Infinity);
+    console.log('obj', { u: undefined, f: function named() {}, s: Symbol('t') });
+    console.error(new Error('no-cause'));
+  } finally {
+    restoreConsole();
+    closeSync(fd);
+  }
+
+  const args = parseLines(readFileSync(file, 'utf8')).map(
+    (r) => JSON.parse((r.attrs as Record<string, string>).args) as unknown[],
+  );
+  assert.equal(args.length, 4);
+  assert.deepEqual(args[0], ['x', 'undefined', '[Function (anonymous)]', 'Symbol(s)']);
+  assert.deepEqual(args[1], ['re', '/ab+c/g', [1, 2], 'NaN', 'Infinity']);
+  assert.deepEqual(args[2], ['obj', { u: 'undefined', f: '[Function: named]', s: 'Symbol(t)' }]);
+  assert.equal('cause' in (args[3][0] as object), false, 'an Error without a cause gets no cause key');
 });
 
 // scenario: no channel env → no capture (console stays as-is, → Path A / stdout).

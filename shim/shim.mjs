@@ -10577,9 +10577,9 @@ var Hono2 = class extends Hono {
 // src/shim.ts
 import { realpathSync, writeFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
-import { inspect } from "node:util";
 
 // src/runtime.ts
+import { inspect } from "node:util";
 function resolveHandler(mod, name) {
   const candidate = mod?.[name] ?? mod?.default?.[name] ?? mod?.default;
   if (typeof candidate !== "function") {
@@ -10594,6 +10594,12 @@ function resolveValidators(mod) {
 function toWire(result) {
   const text = JSON.stringify(result);
   return text === void 0 ? null : JSON.parse(text);
+}
+function containStrayFaults(prefix) {
+  const log = (kind) => (err) => process.stderr.write(`${prefix}: ${kind}: ${inspect(err)}
+`);
+  process.on("unhandledRejection", log("unhandled rejection"));
+  process.on("uncaughtException", log("uncaught exception"));
 }
 
 // src/contract.ts
@@ -10655,6 +10661,12 @@ function makeInvoke() {
       },
       (res) => {
         const chunks = [];
+        res.on(
+          "error",
+          (err) => reject(
+            new Error(`context.invoke("${alias}") failed: connection closed before the reply ended`, { cause: err })
+          )
+        );
         res.on("data", (c) => chunks.push(c));
         res.on("end", () => {
           const text = Buffer.concat(chunks).toString("utf8");
@@ -10691,6 +10703,12 @@ function request(method, path, body) {
     if (body) headers["content-length"] = body.byteLength;
     const req = http2.request({ socketPath, path, method, headers }, (res) => {
       const chunks = [];
+      res.on(
+        "error",
+        (err) => reject(
+          new Error(`context.kv ${method} ${path} failed: connection closed before the reply ended`, { cause: err })
+        )
+      );
       res.on("data", (c) => chunks.push(c));
       res.on("end", () => resolve({ status: res.statusCode ?? 0, body: Buffer.concat(chunks) }));
     });
@@ -10754,6 +10772,12 @@ function request2(method, path, body) {
     if (body) headers["content-length"] = body.byteLength;
     const req = http3.request({ socketPath, path, method, headers }, (res) => {
       const chunks = [];
+      res.on(
+        "error",
+        (err) => reject(
+          new Error(`context.blob ${method} ${path} failed: connection closed before the reply ended`, { cause: err })
+        )
+      );
       res.on("data", (c) => chunks.push(c));
       res.on("end", () => resolve({ status: res.statusCode ?? 0, body: Buffer.concat(chunks) }));
     });
@@ -10801,6 +10825,7 @@ function makeBlob() {
 // src/funclog.ts
 import { writeSync } from "node:fs";
 import { connect } from "node:net";
+import { inspect as inspect2 } from "node:util";
 import { threadId } from "node:worker_threads";
 
 // src/invcontext.ts
@@ -10819,19 +10844,30 @@ var SEVERITY = {
   error: "ERROR"
 };
 function safeStringify(value) {
-  const seen = /* @__PURE__ */ new WeakSet();
+  const holders = [];
+  const origins = [];
   try {
-    return JSON.stringify(value, (_k, v) => {
+    return JSON.stringify(value, function(_k, v) {
       if (typeof v === "bigint") return v.toString();
-      if (typeof v === "object" && v !== null) {
-        if (seen.has(v)) return "[Circular]";
-        seen.add(v);
-        if (v instanceof Error) {
-          return { ...v, name: v.name, message: v.message, stack: v.stack, cause: v.cause };
-        }
-        if (v instanceof Map || v instanceof Set) return [...v];
+      if (v === void 0 || typeof v === "function" || typeof v === "symbol") return inspect2(v);
+      if (typeof v === "number" && !Number.isFinite(v)) return inspect2(v);
+      if (typeof v !== "object" || v === null) return v;
+      while (holders.length > 0 && holders[holders.length - 1] !== this) {
+        holders.pop();
+        origins.pop();
       }
-      return v;
+      if (origins.includes(v)) return "[Circular]";
+      let out = v;
+      if (v instanceof Error) {
+        out = { ...v, name: v.name, message: v.message, stack: v.stack };
+        if ("cause" in v) out.cause = v.cause;
+      } else if (v instanceof Map || v instanceof Set) out = [...v];
+      else if (v instanceof RegExp) return inspect2(v);
+      else if (ArrayBuffer.isView(v) && !(v instanceof DataView))
+        out = Array.from(v);
+      holders.push(out);
+      origins.push(v);
+      return out;
     });
   } catch {
     try {
@@ -11049,12 +11085,6 @@ function createApp(handler, validators = {}, trace = {}) {
   });
   return app;
 }
-function containStrayFaults() {
-  const log = (kind) => (err) => process.stderr.write(`funcd-shim: ${kind}: ${inspect(err)}
-`);
-  process.on("unhandledRejection", log("unhandled rejection"));
-  process.on("uncaughtException", log("uncaught exception"));
-}
 async function main() {
   const channel = openChannel(process.env);
   installConsoleCapture(process.env, channel);
@@ -11089,7 +11119,7 @@ async function main() {
   const fnName = process.env.FUNCD_FUNCTION ?? "invoke";
   const appTrace = { sink: channel, fnName };
   serve({ fetch: createApp(handler, validators, appTrace).fetch, hostname, port: fixedPort }, (info) => {
-    containStrayFaults();
+    containStrayFaults("funcd-shim");
     if (portFile) writeFileSync(portFile, String(info.port));
     process.stderr.write(`funcd-shim: listening on ${hostname}:${info.port}
 `);

@@ -1,11 +1,11 @@
-import { test } from 'node:test';
+import { type TestContext, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
-import { mkdtempSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createApp, resolveHandler, resolveValidators, type Validator } from '../src/shim.ts';
+import { tempDir } from './tempdir.ts';
 
 const jsonReq = (body: string) => ({ method: 'POST', headers: { 'content-type': 'application/json' }, body }) as const;
 
@@ -207,8 +207,8 @@ export async function handle(_ctx, event) {
 
 // startShim runs the real shim entrypoint over a temp artifact, as the process driver does, and
 // resolves once it listens.
-async function startShim(code: string) {
-  const artifact = join(mkdtempSync(join(tmpdir(), 'funcd-shim-test-')), 'handler.mjs');
+async function startShim(t: TestContext, code: string) {
+  const artifact = join(tempDir(t, 'funcd-shim-test-'), 'handler.mjs');
   writeFileSync(artifact, code);
   const child = spawn(
     process.execPath,
@@ -235,8 +235,8 @@ async function startShim(code: string) {
 }
 
 for (const kind of ['rejection', 'throw']) {
-  test(`issue 132: a stray ${kind} in one call does not cut off a concurrent call`, { timeout: 15_000 }, async () => {
-    const shim = await startShim(strayFaultHandler);
+  test(`issue 132: a stray ${kind} in one call does not cut off a concurrent call`, { timeout: 15_000 }, async (t) => {
+    const shim = await startShim(t, strayFaultHandler);
     let exitCode: number | null | undefined;
     void shim.exited.then((code) => {
       exitCode = code;

@@ -12,6 +12,7 @@
 // Pure Node, built-ins only (node:fs, node:net, node:worker_threads) — no npm deps, so it bundles into shim.mjs/pool.mjs.
 import { writeSync } from 'node:fs';
 import { connect, type Socket } from 'node:net';
+import { inspect } from 'node:util';
 import { threadId } from 'node:worker_threads';
 
 import { currentInv } from './invcontext.ts';
@@ -45,22 +46,38 @@ export type Sink = (line: string) => void;
 
 /** safeStringify serializes an arbitrary value to JSON, tolerating circular refs and BigInt; any
  *  value that still can't be represented falls back to String(x). Used for the lossless attrs.args
- *  and for stringifying non-string attr values. Errors, Maps and Sets keep their data, which plain
- *  JSON.stringify would reduce to `{}` (their contents are non-enumerable or internal slots). */
+ *  and for stringifying non-string attr values. Errors, Maps, Sets, RegExps and typed arrays keep
+ *  their data, which plain JSON.stringify would reduce to `{}` or an index-keyed object; undefined,
+ *  functions, symbols, NaN and ±Infinity, which it writes as null or drops, keep their inspect form.
+ *  Only an object that contains itself becomes "[Circular]": a cycle is an object already on the
+ *  path from the root, so a repeated reference elsewhere is serialized again. */
 function safeStringify(value: unknown): string {
-  const seen = new WeakSet<object>();
+  // The path from the root: each holder JSON.stringify walks (the replacer's `this`) beside the
+  // original object it stands for, which differ when an Error, Map or Set is replaced.
+  const holders: object[] = [];
+  const origins: object[] = [];
   try {
-    return JSON.stringify(value, (_k, v) => {
+    return JSON.stringify(value, function (this: object, _k: string, v: unknown) {
       if (typeof v === 'bigint') return v.toString();
-      if (typeof v === 'object' && v !== null) {
-        if (seen.has(v)) return '[Circular]';
-        seen.add(v);
-        if (v instanceof Error) {
-          return { ...v, name: v.name, message: v.message, stack: v.stack, cause: v.cause };
-        }
-        if (v instanceof Map || v instanceof Set) return [...v];
+      if (v === undefined || typeof v === 'function' || typeof v === 'symbol') return inspect(v);
+      if (typeof v === 'number' && !Number.isFinite(v)) return inspect(v);
+      if (typeof v !== 'object' || v === null) return v;
+      while (holders.length > 0 && holders[holders.length - 1] !== this) {
+        holders.pop();
+        origins.pop();
       }
-      return v as unknown;
+      if (origins.includes(v)) return '[Circular]';
+      let out: object = v;
+      if (v instanceof Error) {
+        out = { ...v, name: v.name, message: v.message, stack: v.stack };
+        if ('cause' in v) (out as Record<string, unknown>).cause = v.cause;
+      } else if (v instanceof Map || v instanceof Set) out = [...v];
+      else if (v instanceof RegExp) return inspect(v);
+      else if (ArrayBuffer.isView(v) && !(v instanceof DataView))
+        out = Array.from(v as unknown as ArrayLike<number | bigint>);
+      holders.push(out);
+      origins.push(v);
+      return out;
     });
   } catch {
     try {

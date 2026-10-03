@@ -21,6 +21,12 @@ function request(method: string, path: string, body?: Buffer): Promise<Resp> {
     if (body) headers['content-length'] = body.byteLength;
     const req = http.request({ socketPath, path, method, headers }, (res) => {
       const chunks: Buffer[] = [];
+      // A connection that drops mid-body errors the response, not the request, and never ends it.
+      res.on('error', (err) =>
+        reject(
+          new Error(`context.blob ${method} ${path} failed: connection closed before the reply ended`, { cause: err }),
+        ),
+      );
       res.on('data', (c: Buffer) => chunks.push(c));
       res.on('end', () => resolve({ status: res.statusCode ?? 0, body: Buffer.concat(chunks) }));
     });
