@@ -160,6 +160,37 @@ test('issue 82: attrs.args keeps Error message and stack, Map entries and Set va
   assert.deepEqual(args[2], ['collections', [['k', 'v']], [1, 2]]);
 });
 
+test('issue r23: attrs.args keeps a repeated object, only a real cycle becomes [Circular]', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'funcd-funclog-issue-r23-'));
+  const file = join(dir, 'channel.ndjson');
+  const fd = openSync(file, 'w');
+  const o = { a: 1 };
+  const loop: Record<string, unknown> = { id: 'loop' };
+  loop.self = loop;
+  const selfMap = new Map<string, unknown>();
+  selfMap.set('me', selfMap);
+
+  const restoreConsole = snapshotConsole();
+  try {
+    installConsoleCapture({ FUNCD_LOG_FD: String(fd) } as NodeJS.ProcessEnv);
+    console.log('x', o, o);
+    console.log('shared', { left: o, right: o });
+    console.log('cycle', loop, selfMap);
+  } finally {
+    restoreConsole();
+    closeSync(fd);
+  }
+
+  const args = parseLines(readFileSync(file, 'utf8')).map(
+    (r) => JSON.parse((r.attrs as Record<string, string>).args) as unknown[],
+  );
+  assert.deepEqual(args, [
+    ['x', { a: 1 }, { a: 1 }],
+    ['shared', { left: { a: 1 }, right: { a: 1 } }],
+    ['cycle', { id: 'loop', self: '[Circular]' }, [['me', '[Circular]']]],
+  ]);
+});
+
 // scenario: no channel env → no capture (console stays as-is, → Path A / stdout).
 test('no channel env → installConsoleCapture is a no-op (returns false, console untouched)', () => {
   const before = console.log;

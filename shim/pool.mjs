@@ -10839,19 +10839,23 @@ var SEVERITY = {
   error: "ERROR"
 };
 function safeStringify(value) {
-  const seen = /* @__PURE__ */ new WeakSet();
+  const holders = [];
+  const origins = [];
   try {
-    return JSON.stringify(value, (_k, v) => {
+    return JSON.stringify(value, function(_k, v) {
       if (typeof v === "bigint") return v.toString();
-      if (typeof v === "object" && v !== null) {
-        if (seen.has(v)) return "[Circular]";
-        seen.add(v);
-        if (v instanceof Error) {
-          return { ...v, name: v.name, message: v.message, stack: v.stack, cause: v.cause };
-        }
-        if (v instanceof Map || v instanceof Set) return [...v];
+      if (typeof v !== "object" || v === null) return v;
+      while (holders.length > 0 && holders[holders.length - 1] !== this) {
+        holders.pop();
+        origins.pop();
       }
-      return v;
+      if (origins.includes(v)) return "[Circular]";
+      let out = v;
+      if (v instanceof Error) out = { ...v, name: v.name, message: v.message, stack: v.stack, cause: v.cause };
+      else if (v instanceof Map || v instanceof Set) out = [...v];
+      holders.push(out);
+      origins.push(v);
+      return out;
     });
   } catch {
     try {
