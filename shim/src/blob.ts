@@ -30,7 +30,9 @@ function request(method: string, path: string, body?: Buffer): Promise<Resp> {
       res.on('data', (c: Buffer) => chunks.push(c));
       res.on('end', () => resolve({ status: res.statusCode ?? 0, body: Buffer.concat(chunks) }));
     });
-    req.on('error', reject);
+    req.on('error', (err) =>
+      reject(new Error(`context.blob ${method} ${path} failed: ${err.message}`, { cause: err })),
+    );
     if (body) req.end(body);
     else req.end();
   });
@@ -59,6 +61,15 @@ const keyPath = (binding: string, key: string) => `/blob/${enc(binding)}/${key.s
 const fail = (verb: string, r: Resp) =>
   new Error(`context.blob.${verb} failed: ${r.status} ${r.body.toString('utf8')}`);
 const ok = (r: Resp) => r.status >= 200 && r.status < 300;
+const json = (verb: string, r: Resp, text: string) => {
+  try {
+    return JSON.parse(text);
+  } catch (err) {
+    throw new Error(`context.blob.${verb} failed: ${r.status} reply is not JSON: ${(err as Error).message}`, {
+      cause: err,
+    });
+  }
+};
 
 /** Build the context.blob client. */
 export function makeBlob(): BlobClient {
@@ -81,7 +92,7 @@ export function makeBlob(): BlobClient {
       const q = prefix ? `?prefix=${enc(prefix)}` : '';
       const r = await request('GET', `/blob/${enc(binding)}${q}`);
       if (!ok(r)) throw fail('list', r);
-      return JSON.parse(r.body.toString('utf8') || '[]') as string[];
+      return json('list', r, r.body.toString('utf8') || '[]') as string[];
     },
     async signedUrl(binding, key, opts) {
       let path = `${keyPath(binding, key)}?sign=1&method=${enc(opts?.method ?? 'GET')}`;

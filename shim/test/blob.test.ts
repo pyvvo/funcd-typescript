@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { type TestContext, test } from 'node:test';
 
 import { makeBlob, type BlobClient } from '../src/blob.ts';
-import { type Reply, send } from './reply.ts';
+import { named, type Reply, send } from './reply.ts';
 import { tempDir } from './tempdir.ts';
 
 interface Recorded {
@@ -113,6 +113,33 @@ test(
       await assert.rejects(
         blob.get('files', 'report.txt'),
         /context\.blob GET \/blob\/files\/report\.txt failed: connection closed before the reply ended/,
+      );
+    },
+  ),
+);
+
+test(
+  'issue r29: a local API socket with no listener rejects blob.get with a named error',
+  withServer(
+    () => ({ status: 200, body: 'hello' }),
+    async (blob) => {
+      process.env.FUNCD_INVOKE_SOCKET += '.absent';
+      await assert.rejects(
+        blob.get('files', 'report.txt'),
+        named(/^context\.blob GET \/blob\/files\/report\.txt failed: connect ENOENT/, Error),
+      );
+    },
+  ),
+);
+
+test(
+  'issue r29: a 2xx reply that is not JSON rejects blob.list with a named error',
+  withServer(
+    () => ({ status: 200, body: 'not json' }),
+    async (blob) => {
+      await assert.rejects(
+        blob.list('files'),
+        named(/^context\.blob\.list failed: 200 reply is not JSON/, SyntaxError),
       );
     },
   ),
