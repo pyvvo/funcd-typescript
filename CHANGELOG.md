@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.3](https://github.com/pyvvo/funcd-typescript/compare/v0.4.2...v0.4.3) (2026-10-03)
+
+
+### Bug Fixes
+
+* **shim:** pool restart, call-named errors, log attrs, test temp dirs ([#34](https://github.com/pyvvo/funcd-typescript/issues/34)) ([2ea08d3](https://github.com/pyvvo/funcd-typescript/commit/2ea08d3089a1c09cf2c4f7431cfff471e559e8ee))
+
 ## [0.4.2](https://github.com/pyvvo/funcd-typescript/compare/v0.4.1...v0.4.2) (2026-10-03)
 
 
