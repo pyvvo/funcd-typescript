@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.4](https://github.com/pyvvo/funcd-typescript/compare/v0.4.3...v0.4.4) (2026-10-03)
+
+
+### Bug Fixes
+
+* **shim:** back off pool worker restarts that fail at boot ([#37](https://github.com/pyvvo/funcd-typescript/issues/37)) ([e499df5](https://github.com/pyvvo/funcd-typescript/commit/e499df534a604154fddc64f874450d90061eb061))
+
 ## [0.4.3](https://github.com/pyvvo/funcd-typescript/compare/v0.4.2...v0.4.3) (2026-10-03)
 
 
