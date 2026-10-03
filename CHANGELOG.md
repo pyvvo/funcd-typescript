@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.2](https://github.com/pyvvo/funcd-typescript/compare/v0.4.1...v0.4.2) (2026-10-03)
+
+
+### Bug Fixes
+
+* **shim:** harden reply drops, pool faults and log args capture ([#26](https://github.com/pyvvo/funcd-typescript/issues/26)) ([b02d619](https://github.com/pyvvo/funcd-typescript/commit/b02d61906d35424cdbe33be5f68b2bb85ae10cc7))
+
 ## [0.4.1](https://github.com/pyvvo/funcd-typescript/compare/v0.4.0...v0.4.1) (2026-10-02)
 
 
