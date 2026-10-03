@@ -253,6 +253,33 @@ test('issue r24: attrs.args keeps undefined, functions, symbols, RegExp, typed a
   assert.equal('cause' in (args[3][0] as object), false, 'an Error without a cause gets no cause key');
 });
 
+test('issue r32: attrs.args keeps -0 and the bytes of a DataView or an ArrayBuffer', (t) => {
+  const dir = tempDir(t, 'funcd-funclog-issue-r32-');
+  const file = join(dir, 'channel.ndjson');
+  const fd = openSync(file, 'w');
+  const buf = new Uint8Array([1, 2, 3, 4]).buffer;
+  const detached = new ArrayBuffer(2);
+  structuredClone(detached, { transfer: [detached] });
+
+  const restoreConsole = snapshotConsole();
+  try {
+    installConsoleCapture({ FUNCD_LOG_FD: String(fd) } as NodeJS.ProcessEnv);
+    console.log('negzero', -0, new DataView(new ArrayBuffer(2)), new ArrayBuffer(2));
+    console.log('bytes', new DataView(buf, 1, 2), buf, new SharedArrayBuffer(1), { z: -0 }, detached);
+  } finally {
+    restoreConsole();
+    closeSync(fd);
+  }
+
+  const args = parseLines(readFileSync(file, 'utf8')).map(
+    (r) => JSON.parse((r.attrs as Record<string, string>).args) as unknown[],
+  );
+  assert.deepEqual(args, [
+    ['negzero', '-0', [0, 0], [0, 0]],
+    ['bytes', [2, 3], [1, 2, 3, 4], [0], { z: '-0' }, []],
+  ]);
+});
+
 // scenario: no channel env → no capture (console stays as-is, → Path A / stdout).
 test('no channel env → installConsoleCapture is a no-op (returns false, console untouched)', () => {
   const before = console.log;

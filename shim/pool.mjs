@@ -10867,7 +10867,7 @@ function safeStringify(value) {
     return JSON.stringify(value, function(_k, v) {
       if (typeof v === "bigint") return v.toString();
       if (v === void 0 || typeof v === "function" || typeof v === "symbol") return inspect2(v);
-      if (typeof v === "number" && !Number.isFinite(v)) return inspect2(v);
+      if (typeof v === "number" && (!Number.isFinite(v) || Object.is(v, -0))) return inspect2(v);
       if (typeof v !== "object" || v === null) return v;
       while (holders.length > 0 && holders[holders.length - 1] !== this) {
         holders.pop();
@@ -10880,8 +10880,8 @@ function safeStringify(value) {
         if ("cause" in v) out.cause = v.cause;
       } else if (v instanceof Map || v instanceof Set) out = [...v];
       else if (v instanceof RegExp) return inspect2(v);
-      else if (ArrayBuffer.isView(v) && !(v instanceof DataView))
-        out = Array.from(v);
+      else if (v instanceof DataView || v instanceof ArrayBuffer || v instanceof SharedArrayBuffer) out = bytesOf(v);
+      else if (ArrayBuffer.isView(v)) out = Array.from(v);
       holders.push(out);
       origins.push(v);
       return out;
@@ -10893,6 +10893,11 @@ function safeStringify(value) {
       return "[Unserializable]";
     }
   }
+}
+function bytesOf(v) {
+  const buf = v instanceof DataView ? v.buffer : v;
+  if (buf.byteLength === 0) return [];
+  return Array.from(v instanceof DataView ? new Uint8Array(buf, v.byteOffset, v.byteLength) : new Uint8Array(buf));
 }
 function isPlainObject(v) {
   if (typeof v !== "object" || v === null) return false;
