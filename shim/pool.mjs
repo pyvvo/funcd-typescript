@@ -10681,7 +10681,7 @@ function makeInvoke() {
         });
       }
     );
-    req.on("error", reject);
+    req.on("error", (err) => reject(new Error(`context.invoke("${alias}") failed: ${err.message}`, { cause: err })));
     req.end(body);
   });
 }
@@ -10708,7 +10708,7 @@ function request(method, path, body) {
       res.on("data", (c) => chunks.push(c));
       res.on("end", () => resolve({ status: res.statusCode ?? 0, body: Buffer.concat(chunks) }));
     });
-    req.on("error", reject);
+    req.on("error", (err) => reject(new Error(`context.kv ${method} ${path} failed: ${err.message}`, { cause: err })));
     if (body) req.end(body);
     else req.end();
   });
@@ -10717,6 +10717,15 @@ var enc = encodeURIComponent;
 var keyPath = (binding, key) => `/kv/${enc(binding)}/${key.split("/").map(enc).join("/")}`;
 var fail = (verb, r) => new Error(`context.kv.${verb} failed: ${r.status} ${r.body.toString("utf8")}`);
 var ok = (r) => r.status >= 200 && r.status < 300;
+var json2 = (verb, r, text) => {
+  try {
+    return JSON.parse(text);
+  } catch (err) {
+    throw new Error(`context.kv.${verb} failed: ${r.status} reply is not JSON: ${err.message}`, {
+      cause: err
+    });
+  }
+};
 function makeKV() {
   return {
     async get(binding, key) {
@@ -10735,7 +10744,7 @@ function makeKV() {
       const r = await request("GET", keyPath(binding, key));
       if (r.status === 404) return null;
       if (!ok(r)) throw fail("get", r);
-      return JSON.parse(r.body.toString("utf8"));
+      return json2("getJSON", r, r.body.toString("utf8"));
     },
     async put(binding, key, value) {
       const buf = typeof value === "string" ? Buffer.from(value, "utf8") : Buffer.from(value);
@@ -10750,7 +10759,7 @@ function makeKV() {
       const q = prefix ? `?prefix=${enc(prefix)}` : "";
       const r = await request("GET", `/kv/${enc(binding)}${q}`);
       if (!ok(r)) throw fail("list", r);
-      return JSON.parse(r.body.toString("utf8") || "[]");
+      return json2("list", r, r.body.toString("utf8") || "[]");
     }
   };
 }
@@ -10777,7 +10786,10 @@ function request2(method, path, body) {
       res.on("data", (c) => chunks.push(c));
       res.on("end", () => resolve({ status: res.statusCode ?? 0, body: Buffer.concat(chunks) }));
     });
-    req.on("error", reject);
+    req.on(
+      "error",
+      (err) => reject(new Error(`context.blob ${method} ${path} failed: ${err.message}`, { cause: err }))
+    );
     if (body) req.end(body);
     else req.end();
   });
@@ -10786,6 +10798,15 @@ var enc2 = encodeURIComponent;
 var keyPath2 = (binding, key) => `/blob/${enc2(binding)}/${key.split("/").map(enc2).join("/")}`;
 var fail2 = (verb, r) => new Error(`context.blob.${verb} failed: ${r.status} ${r.body.toString("utf8")}`);
 var ok2 = (r) => r.status >= 200 && r.status < 300;
+var json3 = (verb, r, text) => {
+  try {
+    return JSON.parse(text);
+  } catch (err) {
+    throw new Error(`context.blob.${verb} failed: ${r.status} reply is not JSON: ${err.message}`, {
+      cause: err
+    });
+  }
+};
 function makeBlob() {
   return {
     async get(binding, key) {
@@ -10806,7 +10827,7 @@ function makeBlob() {
       const q = prefix ? `?prefix=${enc2(prefix)}` : "";
       const r = await request2("GET", `/blob/${enc2(binding)}${q}`);
       if (!ok2(r)) throw fail2("list", r);
-      return JSON.parse(r.body.toString("utf8") || "[]");
+      return json3("list", r, r.body.toString("utf8") || "[]");
     },
     async signedUrl(binding, key, opts) {
       let path = `${keyPath2(binding, key)}?sign=1&method=${enc2(opts?.method ?? "GET")}`;
@@ -10846,7 +10867,7 @@ function safeStringify(value) {
     return JSON.stringify(value, function(_k, v) {
       if (typeof v === "bigint") return v.toString();
       if (v === void 0 || typeof v === "function" || typeof v === "symbol") return inspect2(v);
-      if (typeof v === "number" && !Number.isFinite(v)) return inspect2(v);
+      if (typeof v === "number" && (!Number.isFinite(v) || Object.is(v, -0))) return inspect2(v);
       if (typeof v !== "object" || v === null) return v;
       while (holders.length > 0 && holders[holders.length - 1] !== this) {
         holders.pop();
@@ -10859,8 +10880,8 @@ function safeStringify(value) {
         if ("cause" in v) out.cause = v.cause;
       } else if (v instanceof Map || v instanceof Set) out = [...v];
       else if (v instanceof RegExp) return inspect2(v);
-      else if (ArrayBuffer.isView(v) && !(v instanceof DataView))
-        out = Array.from(v);
+      else if (v instanceof DataView || v instanceof ArrayBuffer || v instanceof SharedArrayBuffer) out = bytesOf(v);
+      else if (ArrayBuffer.isView(v)) out = Array.from(v);
       holders.push(out);
       origins.push(v);
       return out;
@@ -10872,6 +10893,11 @@ function safeStringify(value) {
       return "[Unserializable]";
     }
   }
+}
+function bytesOf(v) {
+  const buf = v instanceof DataView ? v.buffer : v;
+  if (buf.byteLength === 0) return [];
+  return Array.from(v instanceof DataView ? new Uint8Array(buf, v.byteOffset, v.byteLength) : new Uint8Array(buf));
 }
 function isPlainObject(v) {
   if (typeof v !== "object" || v === null) return false;
@@ -11156,10 +11182,16 @@ var PooledHandler = class {
         p.resolve(msg);
       }
     });
-    this.worker.on("error", () => this.fault());
+    let faulted = false;
+    const fault = () => {
+      if (faulted) return;
+      faulted = true;
+      this.fault();
+    };
+    this.worker.on("error", fault);
     this.worker.on("exit", () => {
       releaseChannelLock(this.channelLock, threadId2);
-      this.fault();
+      fault();
     });
   }
   // fault handles a worker error/exit (incl. a resourceLimits OOM): fail in-flight requests with

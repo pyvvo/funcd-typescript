@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { type TestContext, test } from 'node:test';
 
 import { makeInvoke } from '../src/invoke.ts';
-import { type Reply, send } from './reply.ts';
+import { named, type Reply, send } from './reply.ts';
 import { tempDir } from './tempdir.ts';
 
 type Invoke = ReturnType<typeof makeInvoke>;
@@ -46,5 +46,13 @@ test(
       invoke('callee', {}),
       /context\.invoke\("callee"\) failed: connection closed before the reply ended/,
     );
+  }),
+);
+
+test(
+  'issue r29: a local API socket with no listener rejects the invoke promise with a named error',
+  withServer({ status: 200, body: '{}' }, async (invoke) => {
+    process.env.FUNCD_INVOKE_SOCKET += '.absent';
+    await assert.rejects(invoke('callee', {}), named(/^context\.invoke\("callee"\) failed: connect ENOENT/, Error));
   }),
 );

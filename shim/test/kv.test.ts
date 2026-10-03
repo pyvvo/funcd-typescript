@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { type TestContext, test } from 'node:test';
 
 import { makeKV, type KVClient } from '../src/kv.ts';
-import { type Reply, send } from './reply.ts';
+import { named, type Reply, send } from './reply.ts';
 import { tempDir } from './tempdir.ts';
 
 // withServer spins a UDS HTTP server serving `routes` (path → {status, body}; 404 otherwise), points
@@ -77,4 +77,32 @@ test(
       /context\.kv GET \/kv\/counters\/n failed: connection closed before the reply ended/,
     );
   }),
+);
+
+test(
+  'issue r29: a local API socket with no listener rejects kv.get with a named error',
+  withServer({}, async (kv) => {
+    process.env.FUNCD_INVOKE_SOCKET += '.absent';
+    await assert.rejects(
+      kv.get('counters', 'n'),
+      named(/^context\.kv GET \/kv\/counters\/n failed: connect ENOENT/, Error),
+    );
+  }),
+);
+
+test(
+  'issue r29: a 2xx reply that is not JSON rejects kv.getJSON and kv.list with a named error',
+  withServer(
+    {
+      '/kv/counters/n': { status: 200, body: 'not json' },
+      '/kv/counters': { status: 200, body: 'not json' },
+    },
+    async (kv) => {
+      await assert.rejects(
+        kv.getJSON('counters', 'n'),
+        named(/^context\.kv\.getJSON failed: 200 reply is not JSON/, SyntaxError),
+      );
+      await assert.rejects(kv.list('counters'), named(/^context\.kv\.list failed: 200 reply is not JSON/, SyntaxError));
+    },
+  ),
 );

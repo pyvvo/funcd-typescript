@@ -1,9 +1,10 @@
 import { type TestContext, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { closeSync, constants, createReadStream, openSync, writeFileSync } from 'node:fs';
+import { closeSync, constants, createReadStream, openSync, readFileSync, writeFileSync } from 'node:fs';
 import { once } from 'node:events';
 import { dirname, join } from 'node:path';
+import { setTimeout as sleep } from 'node:timers/promises';
 
 import type { Hono } from 'hono';
 
@@ -276,3 +277,42 @@ for (const kind of ['rejection', 'throw']) {
     }
   });
 }
+
+// A worker that runs out of heap raises both 'error' and 'exit'. Each worker the handler starts
+// appends to `boots` once and to `beats` while it lives, so the test sees every restart and any
+// worker left running after close(). Each worker also exits by itself after 5 s, so a leaked one
+// fails the test instead of keeping the test process alive.
+test('issue r28: an out-of-heap worker is restarted once and close() stops it', { timeout: 15_000 }, async (t) => {
+  const dir = tempDir(t, 'funcd-pool-r28-');
+  const boots = join(dir, 'boots');
+  const beats = join(dir, 'beats');
+  writeFileSync(beats, '');
+  const [spec] = writeHandlers(t, {
+    oom: `import { appendFileSync } from 'node:fs';
+appendFileSync(${JSON.stringify(boots)}, 'b');
+setInterval(() => appendFileSync(${JSON.stringify(beats)}, '.'), 20);
+setTimeout(() => process.exit(0), 5_000).unref();
+export function handle(_, e) {
+  if (e.data.mode === 'ping') return { ok: true };
+  const a = [];
+  for (;;) a.push(new Array(1e6).fill(7));
+}`,
+  });
+  const pool = createPool([spec], { maxOldMB: 16, maxYoungMB: 4 });
+  try {
+    await pool.ready;
+    assert.equal((await post(pool.app, 'oom', { mode: 'oom' })).status, 503);
+    const deadline = Date.now() + 5_000;
+    while ((await post(pool.app, 'oom', { mode: 'ping' })).status !== 200) {
+      assert.ok(Date.now() < deadline, 'the worker was not restarted');
+      await sleep(20);
+    }
+    await sleep(500);
+    assert.equal(readFileSync(boots, 'utf8'), 'bb', 'one boot and one restart');
+  } finally {
+    await pool.close();
+  }
+  const after = readFileSync(beats, 'utf8').length;
+  await sleep(200);
+  assert.equal(readFileSync(beats, 'utf8').length, after, 'a worker still runs after close()');
+});

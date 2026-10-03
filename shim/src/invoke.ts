@@ -50,7 +50,7 @@ export function makeInvoke(): <I = unknown, O = unknown>(alias: string, input: I
           });
         },
       );
-      req.on('error', reject);
+      req.on('error', (err) => reject(new Error(`context.invoke("${alias}") failed: ${err.message}`, { cause: err })));
       req.end(body);
     });
 }

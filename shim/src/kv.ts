@@ -28,7 +28,7 @@ function request(method: string, path: string, body?: Buffer): Promise<Resp> {
       res.on('data', (c: Buffer) => chunks.push(c));
       res.on('end', () => resolve({ status: res.statusCode ?? 0, body: Buffer.concat(chunks) }));
     });
-    req.on('error', reject);
+    req.on('error', (err) => reject(new Error(`context.kv ${method} ${path} failed: ${err.message}`, { cause: err })));
     if (body) req.end(body);
     else req.end();
   });
@@ -53,6 +53,15 @@ const enc = encodeURIComponent;
 const keyPath = (binding: string, key: string) => `/kv/${enc(binding)}/${key.split('/').map(enc).join('/')}`;
 const fail = (verb: string, r: Resp) => new Error(`context.kv.${verb} failed: ${r.status} ${r.body.toString('utf8')}`);
 const ok = (r: Resp) => r.status >= 200 && r.status < 300;
+const json = (verb: string, r: Resp, text: string) => {
+  try {
+    return JSON.parse(text);
+  } catch (err) {
+    throw new Error(`context.kv.${verb} failed: ${r.status} reply is not JSON: ${(err as Error).message}`, {
+      cause: err,
+    });
+  }
+};
 
 /** Build the context.kv client. */
 export function makeKV(): KVClient {
@@ -73,7 +82,7 @@ export function makeKV(): KVClient {
       const r = await request('GET', keyPath(binding, key));
       if (r.status === 404) return null;
       if (!ok(r)) throw fail('get', r);
-      return JSON.parse(r.body.toString('utf8'));
+      return json('getJSON', r, r.body.toString('utf8'));
     },
     async put(binding, key, value) {
       const buf = typeof value === 'string' ? Buffer.from(value, 'utf8') : Buffer.from(value);
@@ -88,7 +97,7 @@ export function makeKV(): KVClient {
       const q = prefix ? `?prefix=${enc(prefix)}` : '';
       const r = await request('GET', `/kv/${enc(binding)}${q}`);
       if (!ok(r)) throw fail('list', r);
-      return JSON.parse(r.body.toString('utf8') || '[]') as string[];
+      return json('list', r, r.body.toString('utf8') || '[]') as string[];
     },
   };
 }

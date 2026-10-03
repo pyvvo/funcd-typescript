@@ -47,8 +47,9 @@ export type Sink = (line: string) => void;
 /** safeStringify serializes an arbitrary value to JSON, tolerating circular refs and BigInt; any
  *  value that still can't be represented falls back to String(x). Used for the lossless attrs.args
  *  and for stringifying non-string attr values. Errors, Maps, Sets, RegExps and typed arrays keep
- *  their data, which plain JSON.stringify would reduce to `{}` or an index-keyed object; undefined,
- *  functions, symbols, NaN and ±Infinity, which it writes as null or drops, keep their inspect form.
+ *  their data, and DataViews and ArrayBuffers their bytes, which plain JSON.stringify would reduce to
+ *  `{}` or an index-keyed object; undefined, functions, symbols, NaN, ±Infinity and -0, which it
+ *  writes as null or 0 or drops, keep their inspect form.
  *  Only an object that contains itself becomes "[Circular]": a cycle is an object already on the
  *  path from the root, so a repeated reference elsewhere is serialized again. */
 function safeStringify(value: unknown): string {
@@ -60,7 +61,7 @@ function safeStringify(value: unknown): string {
     return JSON.stringify(value, function (this: object, _k: string, v: unknown) {
       if (typeof v === 'bigint') return v.toString();
       if (v === undefined || typeof v === 'function' || typeof v === 'symbol') return inspect(v);
-      if (typeof v === 'number' && !Number.isFinite(v)) return inspect(v);
+      if (typeof v === 'number' && (!Number.isFinite(v) || Object.is(v, -0))) return inspect(v);
       if (typeof v !== 'object' || v === null) return v;
       while (holders.length > 0 && holders[holders.length - 1] !== this) {
         holders.pop();
@@ -73,8 +74,8 @@ function safeStringify(value: unknown): string {
         if ('cause' in v) (out as Record<string, unknown>).cause = v.cause;
       } else if (v instanceof Map || v instanceof Set) out = [...v];
       else if (v instanceof RegExp) return inspect(v);
-      else if (ArrayBuffer.isView(v) && !(v instanceof DataView))
-        out = Array.from(v as unknown as ArrayLike<number | bigint>);
+      else if (v instanceof DataView || v instanceof ArrayBuffer || v instanceof SharedArrayBuffer) out = bytesOf(v);
+      else if (ArrayBuffer.isView(v)) out = Array.from(v as unknown as ArrayLike<number | bigint>);
       holders.push(out);
       origins.push(v);
       return out;
@@ -86,6 +87,14 @@ function safeStringify(value: unknown): string {
       return '[Unserializable]';
     }
   }
+}
+
+/** bytesOf reads the bytes of a DataView or an ArrayBuffer. A detached buffer has none, and a view
+ *  over it cannot be built. */
+function bytesOf(v: DataView | ArrayBufferLike): number[] {
+  const buf = v instanceof DataView ? v.buffer : v;
+  if (buf.byteLength === 0) return [];
+  return Array.from(v instanceof DataView ? new Uint8Array(buf, v.byteOffset, v.byteLength) : new Uint8Array(buf));
 }
 
 /** isPlainObject — a plain `{}`-style object whose own string-keyed entries we merge to attrs top

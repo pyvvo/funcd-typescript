@@ -1,19 +1,19 @@
 // Scenario tests for the funcd Vite plugin (funcd ADR-0144). Each builds a fixture project in a temp dir.
 import assert from 'node:assert/strict';
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { test } from 'node:test';
+import { type TestContext, test } from 'node:test';
 import { pathToFileURL } from 'node:url';
 
 import { createBuilder } from 'vite';
 
+import { tempDir } from '../../shim/test/tempdir.ts';
 import { environmentName, type FuncdPluginOptions, funcd } from '../src/index.ts';
 
 const manifest = 'runtime: nodejs22\nhandler: handle\n';
 
-function fixture(files: Record<string, string>): string {
-  const root = mkdtempSync(join(tmpdir(), 'funcd-vite-'));
+function fixture(t: TestContext, files: Record<string, string>): string {
+  const root = tempDir(t, 'funcd-vite-');
   for (const [path, body] of Object.entries(files)) {
     mkdirSync(join(root, path, '..'), { recursive: true });
     writeFileSync(join(root, path), body);
@@ -36,8 +36,8 @@ const shared = {
 };
 
 // scenario: vite-builds-one-file-per-function
-test('scenario: vite-builds-one-file-per-function', async () => {
-  const root = fixture({ ...shared, 'funcdctl.yaml': manifest });
+test('scenario: vite-builds-one-file-per-function', async (t) => {
+  const root = fixture(t, { ...shared, 'funcdctl.yaml': manifest });
   await build(root, { functions: { 'env-echo': 'src/env-echo.ts', front: 'src/front.ts' } });
 
   const out = join(root, 'dist');
@@ -56,8 +56,8 @@ test('scenario: vite-builds-one-file-per-function', async () => {
 });
 
 // scenario: vite-output-pushes-from-manifest
-test('scenario: vite-output-pushes-from-manifest (stem and generic manifests, separate outDir)', async () => {
-  const root = fixture({ ...shared, 'front.funcdctl.yaml': `${manifest}# front\n`, 'funcdctl.yaml': manifest });
+test('scenario: vite-output-pushes-from-manifest (stem and generic manifests, separate outDir)', async (t) => {
+  const root = fixture(t, { ...shared, 'front.funcdctl.yaml': `${manifest}# front\n`, 'funcdctl.yaml': manifest });
   await build(root, { functions: { 'env-echo': 'src/env-echo.ts', front: 'src/front.ts' } });
 
   const out = join(root, 'dist');
@@ -69,8 +69,8 @@ test('scenario: vite-output-pushes-from-manifest (stem and generic manifests, se
   assert.equal(readFileSync(join(out, 'env-echo.funcdctl.yaml'), 'utf8'), manifest, 'else the generic manifest');
 });
 
-test('scenario: vite-output-pushes-from-manifest (outDir is the root: no copy)', async () => {
-  const root = fixture({ ...shared, 'funcdctl.yaml': manifest });
+test('scenario: vite-output-pushes-from-manifest (outDir is the root: no copy)', async (t) => {
+  const root = fixture(t, { ...shared, 'funcdctl.yaml': manifest });
   await build(root, { functions: { front: 'src/front.ts' }, outDir: '.' });
 
   assert.ok(existsSync(join(root, 'front.mjs')));
@@ -79,8 +79,8 @@ test('scenario: vite-output-pushes-from-manifest (outDir is the root: no copy)',
 });
 
 // scenario: vite-missing-manifest-fails
-test('scenario: vite-missing-manifest-fails', async () => {
-  const root = fixture(shared);
+test('scenario: vite-missing-manifest-fails', async (t) => {
+  const root = fixture(t, shared);
   await assert.rejects(build(root, { functions: { front: 'src/front.ts' } }), (err: Error) => {
     assert.match(err.message, /front\.funcdctl\.yaml/);
     // the generic path, which the stem path cannot satisfy
@@ -89,8 +89,8 @@ test('scenario: vite-missing-manifest-fails', async () => {
   });
 });
 
-test('an environment-name collision fails', async () => {
-  const root = fixture({ ...shared, 'funcdctl.yaml': manifest });
+test('an environment-name collision fails', async (t) => {
+  const root = fixture(t, { ...shared, 'funcdctl.yaml': manifest });
   await assert.rejects(
     build(root, { functions: { 'a-b': 'src/front.ts', a_b: 'src/front.ts' } }),
     /same Vite environment "funcd_a_b"/,
