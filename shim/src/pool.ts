@@ -53,9 +53,21 @@ interface Res {
 
 const maxOldMB = Number(process.env.FUNCD_POOL_MAX_OLD_MB ?? 64);
 const maxYoungMB = Number(process.env.FUNCD_POOL_MAX_YOUNG_MB ?? 16);
-const requestTimeoutMs = 30_000;
+const requestTimeoutMs = 30_000; // without a valid x-funcd-timeout-ms header (unchanged)
+// The platform's own deadline answers first; the pool's timer only frees an entry it gave up on.
+const timeoutMarginMs = 1_000;
+// setTimeout's largest delay (2^31 - 1 ms) less the margin.
+const maxHeaderTimeoutMs = 2_147_482_647;
 const restartBaseMs = 50;
 const restartMaxMs = 10_000;
+
+/** header + timeoutMarginMs when a decimal integer in 1..2_147_482_647, else requestTimeoutMs (funcd ADR-0151). */
+export function callTimeoutMs(header: string | undefined): number {
+  if (header === undefined || !/^[0-9]+$/.test(header)) return requestTimeoutMs;
+  const ms = Number(header);
+  if (ms < 1 || ms > maxHeaderTimeoutMs) return requestTimeoutMs;
+  return ms + timeoutMarginMs;
+}
 
 // =====================================================================================
 // Worker side: load one artifact, validate + run its handler on each request message.
@@ -248,14 +260,20 @@ class PooledHandler {
     }, delay);
   }
 
-  async invoke(event: CloudEvent, traceparent?: string, spanId?: string, links?: string[]): Promise<Res> {
+  async invoke(
+    event: CloudEvent,
+    timeoutMs: number,
+    traceparent?: string,
+    spanId?: string,
+    links?: string[],
+  ): Promise<Res> {
     if (!this.healthy) return { id: -1, status: 503, error: `function ${this.spec.name} unavailable` };
     const id = this.nextID++;
     return new Promise<Res>((resolve) => {
       const timer = setTimeout(() => {
         this.pending.delete(id);
         resolve({ id, status: 503, error: `function ${this.spec.name} timed out` });
-      }, requestTimeoutMs);
+      }, timeoutMs);
       this.pending.set(id, { resolve, timer });
       this.worker.postMessage({ id, event, traceparent, spanId, links } satisfies Req);
     });
@@ -311,6 +329,7 @@ export function createPool(manifest: WorkerSpec[], limits?: { maxOldMB?: number;
     // ADR-0101/0105: forward the trace + span-id + fan-in links headers to the worker.
     const res = await h.invoke(
       event,
+      callTimeoutMs(c.req.header('x-funcd-timeout-ms')),
       c.req.header('traceparent'),
       c.req.header('x-funcd-span-id'),
       parseLinks(c.req.header('x-funcd-span-links')),
