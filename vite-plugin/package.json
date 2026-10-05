@@ -1,6 +1,6 @@
 {
   "name": "@funcd-dev/vite-plugin",
-  "version": "0.8.0",
+  "version": "0.8.1",
   "type": "module",
   "description": "Vite plugin that bundles each funcd function into one self-contained ES module",
   "license": "Apache-2.0",
