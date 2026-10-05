@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.5.0](https://github.com/pyvvo/funcd-typescript/compare/v0.4.4...v0.5.0) (2026-10-05)
+
+
+### Features
+
+* **shim:** pooled Node calls follow funcd's X-Funcd-Timeout-Ms ([#41](https://github.com/pyvvo/funcd-typescript/issues/41)) ([a77602b](https://github.com/pyvvo/funcd-typescript/commit/a77602bcc035eac8970dd0615ecc08822ebf73a8))
+
+
+### Bug Fixes
+
+* **shim:** bound the int64 format to the JSON safe-integer range ([#40](https://github.com/pyvvo/funcd-typescript/issues/40)) ([b092436](https://github.com/pyvvo/funcd-typescript/commit/b0924369e2a7a8f4b7c99ef25886f04dbfffc89c))
+
 ## [0.4.4](https://github.com/pyvvo/funcd-typescript/compare/v0.4.3...v0.4.4) (2026-10-03)
 
 
