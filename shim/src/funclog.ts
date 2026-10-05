@@ -28,6 +28,7 @@ interface LogRecord {
   trace_id: string;
   span_id: string;
   'funcd.source': 'console';
+  'funcd.member'?: string; // the pool member that logged it; absent in the solo shim
 }
 
 type ConsoleMethod = 'debug' | 'log' | 'info' | 'warn' | 'error';
@@ -109,7 +110,7 @@ function isPlainObject(v: unknown): v is Record<string, unknown> {
  *  record per the contract: body = first string arg else ""; attrs.args = a lossless JSON-safe
  *  representation of ALL args; each plain-object arg's own string-valued keys merged to the top
  *  level; ALL attr values are strings. */
-function buildRecord(method: ConsoleMethod, args: unknown[]): LogRecord {
+function buildRecord(method: ConsoleMethod, args: unknown[], member?: string): LogRecord {
   const body = typeof args[0] === 'string' ? args[0] : '';
 
   const attrs: Record<string, string> = { args: safeStringify(args) };
@@ -125,7 +126,7 @@ function buildRecord(method: ConsoleMethod, args: unknown[]): LogRecord {
   // handler), so logs correlate with their span. Outside an invocation (pre-handler lines) the
   // context is absent → empty ids, exactly as before (back-compat with the ADR-0081 wire).
   const inv = currentInv();
-  return {
+  const rec: LogRecord = {
     ts: Date.now() * 1e6,
     sev: SEVERITY[method],
     body,
@@ -135,6 +136,8 @@ function buildRecord(method: ConsoleMethod, args: unknown[]): LogRecord {
     span_id: inv?.spanId ?? '',
     'funcd.source': 'console',
   };
+  if (member) rec['funcd.member'] = member;
+  return rec;
 }
 
 /** A lock shared by the threads that write one fd channel. The pool's workers all write the one
@@ -205,10 +208,12 @@ export function openChannel(env: NodeJS.ProcessEnv, lock?: ChannelLock): Sink | 
  *  call to the side channel — CHANNEL-ONLY (no fd 1/2 echo, so Path A never double-captures). When
  *  no channel is available it does nothing (console behaves normally → Path A). Returns true if
  *  capture was installed. The `env` arg is for testing; `sink` lets an entrypoint pass a channel it
- *  already opened (ADR-0101: log + trace capture share ONE channel), else it opens from env. */
+ *  already opened (ADR-0101: log + trace capture share ONE channel), else it opens from env. A pool
+ *  worker passes its `member` name, stamped on every record as `funcd.member`. */
 export function installConsoleCapture(
   env: NodeJS.ProcessEnv = process.env,
   sink: Sink | null = openChannel(env),
+  member?: string,
 ): boolean {
   if (!sink) return false;
 
@@ -216,7 +221,7 @@ export function installConsoleCapture(
   for (const method of methods) {
     console[method] = (...args: unknown[]): void => {
       try {
-        sink(JSON.stringify(buildRecord(method, args)) + '\n');
+        sink(JSON.stringify(buildRecord(method, args, member)) + '\n');
       } catch {
         // capture must be best-effort: never let a logging failure break the function.
       }

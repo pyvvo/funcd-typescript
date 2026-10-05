@@ -5,20 +5,23 @@
 // v1 is bytes-in-memory (streaming is a v2 follow-up).
 import http from 'node:http';
 
+import { MEMBER_HEADER } from './invoke.ts';
+
 interface Resp {
   status: number;
   body: Buffer;
 }
 
-function request(method: string, path: string, body?: Buffer): Promise<Resp> {
+function send(method: string, path: string, body: Buffer | undefined, member: string | undefined): Promise<Resp> {
   return new Promise<Resp>((resolve, reject) => {
     const socketPath = process.env.FUNCD_INVOKE_SOCKET;
     if (!socketPath) {
       reject(new Error('context.blob: worker-node local API socket unavailable (FUNCD_INVOKE_SOCKET unset)'));
       return;
     }
-    const headers: Record<string, number> = {};
+    const headers: Record<string, number | string> = {};
     if (body) headers['content-length'] = body.byteLength;
+    if (member) headers[MEMBER_HEADER] = member;
     const req = http.request({ socketPath, path, method, headers }, (res) => {
       const chunks: Buffer[] = [];
       // A connection that drops mid-body errors the response, not the request, and never ends it.
@@ -71,8 +74,10 @@ const json = (verb: string, r: Resp, text: string) => {
   }
 };
 
-/** Build the context.blob client. */
-export function makeBlob(): BlobClient {
+/** Build the context.blob client. In a pool, `member` names the calling function on every request
+ *  (funcd checks it against the pool's members); the solo shim passes none. */
+export function makeBlob(member?: string): BlobClient {
+  const request = (method: string, path: string, body?: Buffer) => send(method, path, body, member);
   return {
     async get(binding, key) {
       const r = await request('GET', keyPath(binding, key));

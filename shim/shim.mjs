@@ -7532,15 +7532,15 @@ var rejectBodyUnusable = () => {
   return Promise.reject(newBodyUnusableError());
 };
 var textDecoder = new TextDecoder();
-var consumeBodyDirectOnce = (request3) => {
-  if (request3[bodyConsumedDirectlyKey]) return rejectBodyUnusable();
-  request3[bodyConsumedDirectlyKey] = true;
+var consumeBodyDirectOnce = (request) => {
+  if (request[bodyConsumedDirectlyKey]) return rejectBodyUnusable();
+  request[bodyConsumedDirectlyKey] = true;
 };
 var toArrayBuffer = (buf) => {
   return buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength);
 };
-var contentType = (request3) => {
-  return (request3[headersKey] ||= newHeadersFromIncoming(request3[incomingKey])).get("content-type") || "";
+var contentType = (request) => {
+  return (request[headersKey] ||= newHeadersFromIncoming(request[incomingKey])).get("content-type") || "";
 };
 var methodTokenRegExp = /^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$/;
 var normalizeIncomingMethod = (method) => {
@@ -7574,48 +7574,48 @@ var validateDirectReadMethod = (method) => {
   const normalized = method.toUpperCase();
   if (normalized === "CONNECT" || normalized === "TRACK" || normalized === "TRACE" && method !== "TRACE") return /* @__PURE__ */ new TypeError(`'${method}' HTTP method is unsupported.`);
 };
-var readBodyWithFastPath = (request3, method, fromBuffer) => {
-  if (request3[bodyConsumedDirectlyKey]) return rejectBodyUnusable();
-  const methodName = request3.method;
-  if (methodName === "GET" || methodName === "HEAD") return request3[getRequestCache]()[method]();
+var readBodyWithFastPath = (request, method, fromBuffer) => {
+  if (request[bodyConsumedDirectlyKey]) return rejectBodyUnusable();
+  const methodName = request.method;
+  if (methodName === "GET" || methodName === "HEAD") return request[getRequestCache]()[method]();
   const methodValidationError = validateDirectReadMethod(methodName);
   if (methodValidationError) return Promise.reject(methodValidationError);
-  if (request3[requestCache]) {
-    if (methodName !== "TRACE") return request3[requestCache][method]();
+  if (request[requestCache]) {
+    if (methodName !== "TRACE") return request[requestCache][method]();
   }
-  const alreadyUsedError = consumeBodyDirectOnce(request3);
+  const alreadyUsedError = consumeBodyDirectOnce(request);
   if (alreadyUsedError) return alreadyUsedError;
-  const raw2 = readRawBodyIfAvailable(request3);
+  const raw2 = readRawBodyIfAvailable(request);
   if (raw2) {
-    const result = Promise.resolve(fromBuffer(raw2, request3));
-    request3[bodyBufferKey] = void 0;
+    const result = Promise.resolve(fromBuffer(raw2, request));
+    request[bodyBufferKey] = void 0;
     return result;
   }
-  return readBodyDirect(request3).then((buf) => {
-    const result = fromBuffer(buf, request3);
-    request3[bodyBufferKey] = void 0;
+  return readBodyDirect(request).then((buf) => {
+    const result = fromBuffer(buf, request);
+    request[bodyBufferKey] = void 0;
     return result;
   });
 };
-var readRawBodyIfAvailable = (request3) => {
-  const incoming = request3[incomingKey];
+var readRawBodyIfAvailable = (request) => {
+  const incoming = request[incomingKey];
   if ("rawBody" in incoming && incoming.rawBody instanceof Buffer) return incoming.rawBody;
 };
-var normalizeAbortError = (request3, incoming) => {
+var normalizeAbortError = (request, incoming) => {
   if (incoming.errored) return incoming.errored;
-  const reason = request3[abortReasonKey];
+  const reason = request[abortReasonKey];
   if (reason !== void 0) return reason instanceof Error ? reason : new Error(String(reason));
   return /* @__PURE__ */ new Error("Client connection prematurely closed.");
 };
-var readBodyDirect = (request3) => {
-  if (request3[bodyBufferKey]) return Promise.resolve(request3[bodyBufferKey]);
-  if (request3[bodyReadPromiseKey]) return request3[bodyReadPromiseKey];
-  const incoming = request3[incomingKey];
+var readBodyDirect = (request) => {
+  if (request[bodyBufferKey]) return Promise.resolve(request[bodyBufferKey]);
+  if (request[bodyReadPromiseKey]) return request[bodyReadPromiseKey];
+  const incoming = request[incomingKey];
   if (incoming.readableDidRead) return rejectBodyUnusable();
   const buffered = readBodyBufferedBeforeDisconnect(incoming);
   if (buffered !== void 0) {
     if (buffered instanceof Error) return Promise.reject(buffered);
-    request3[bodyBufferKey] = buffered;
+    request[bodyBufferKey] = buffered;
     return Promise.resolve(buffered);
   }
   const promise = new Promise((resolve, reject) => {
@@ -7633,9 +7633,9 @@ var readBodyDirect = (request3) => {
       finish(() => {
         const recovered = readBodyBufferedBeforeDisconnect(incoming, chunks);
         if (recovered instanceof Error) reject(recovered);
-        else if (recovered === void 0) reject(error ?? normalizeAbortError(request3, incoming));
+        else if (recovered === void 0) reject(error ?? normalizeAbortError(request, incoming));
         else {
-          request3[bodyBufferKey] = recovered;
+          request[bodyBufferKey] = recovered;
           resolve(recovered);
         }
       });
@@ -7647,7 +7647,7 @@ var readBodyDirect = (request3) => {
     const onEnd = () => {
       finish(() => {
         const buffer = chunks.length === 1 ? chunks[0] : Buffer.concat(chunks);
-        request3[bodyBufferKey] = buffer;
+        request[bodyBufferKey] = buffer;
         resolve(buffer);
       });
     };
@@ -7664,7 +7664,7 @@ var readBodyDirect = (request3) => {
       }
       if (recoverCompleteBodyAfterDisconnect()) return;
       finish(() => {
-        reject(normalizeAbortError(request3, incoming));
+        reject(normalizeAbortError(request, incoming));
       });
     };
     const cleanup = () => {
@@ -7672,7 +7672,7 @@ var readBodyDirect = (request3) => {
       incoming.off("end", onEnd);
       incoming.off("error", onError);
       incoming.off("close", onClose);
-      request3[bodyReadPromiseKey] = void 0;
+      request[bodyReadPromiseKey] = void 0;
     };
     incoming.on("data", onData);
     incoming.on("end", onEnd);
@@ -7685,7 +7685,7 @@ var readBodyDirect = (request3) => {
       else if (incoming.destroyed) onClose();
     });
   });
-  request3[bodyReadPromiseKey] = promise;
+  request[bodyReadPromiseKey] = promise;
   return promise;
 };
 var requestPrototype = {
@@ -7735,9 +7735,9 @@ var requestPrototype = {
   },
   get body() {
     if (!this[bodyConsumedDirectlyKey]) return this[getRequestCache]().body;
-    const request3 = this[getRequestCache]();
-    if (!this[bodyLockReaderKey] && request3.body) this[bodyLockReaderKey] = request3.body.getReader();
-    return request3.body;
+    const request = this[getRequestCache]();
+    if (!this[bodyLockReaderKey] && request.body) this[bodyLockReaderKey] = request.body.getReader();
+    return request.body;
   },
   get bodyUsed() {
     if (this[bodyConsumedDirectlyKey]) return true;
@@ -7779,8 +7779,8 @@ Object.defineProperty(requestPrototype, "arrayBuffer", { value: function() {
   return readBodyWithFastPath(this, "arrayBuffer", (buf) => toArrayBuffer(buf));
 } });
 Object.defineProperty(requestPrototype, "blob", { value: function() {
-  return readBodyWithFastPath(this, "blob", (buf, request3) => {
-    const type = contentType(request3);
+  return readBodyWithFastPath(this, "blob", (buf, request) => {
+    const type = contentType(request);
     const init = type ? { headers: { "content-type": type } } : void 0;
     return new Response(buf, init).blob();
   });
@@ -8330,12 +8330,12 @@ ${responseLines.join("\r\n")}\r
 \r
 `);
 };
-var createUpgradeRequest = (request3) => {
-  const protocol = request3.socket.encrypted ? "https" : "http";
-  const url = new URL(request3.url ?? "/", `${protocol}://${request3.headers.host ?? "localhost"}`);
+var createUpgradeRequest = (request) => {
+  const protocol = request.socket.encrypted ? "https" : "http";
+  const url = new URL(request.url ?? "/", `${protocol}://${request.headers.host ?? "localhost"}`);
   const headers = new Headers();
-  for (const key in request3.headers) {
-    const value = request3.headers[key];
+  for (const key in request.headers) {
+    const value = request.headers[key];
     if (!value) continue;
     headers.append(key, Array.isArray(value) ? value[0] : value);
   }
@@ -8344,33 +8344,33 @@ var createUpgradeRequest = (request3) => {
 var setupWebSocket = (options) => {
   const { server, fetchCallback, wss } = options;
   const waiterMap = /* @__PURE__ */ new Map();
-  wss.on("connection", (ws, request3) => {
-    const waiter = waiterMap.get(request3);
+  wss.on("connection", (ws, request) => {
+    const waiter = waiterMap.get(request);
     if (waiter) {
       waiter.resolve(ws);
-      waiterMap.delete(request3);
+      waiterMap.delete(request);
     }
   });
-  const rejectWaiter = (request3) => {
-    const waiter = waiterMap.get(request3);
+  const rejectWaiter = (request) => {
+    const waiter = waiterMap.get(request);
     if (waiter) {
-      waiterMap.delete(request3);
+      waiterMap.delete(request);
       waiter.reject(/* @__PURE__ */ new Error("WebSocket handshake aborted"));
     }
   };
-  const waitForWebSocket = (request3, connectionSymbol) => {
+  const waitForWebSocket = (request, connectionSymbol) => {
     return new Promise((resolve, reject) => {
-      waiterMap.set(request3, {
+      waiterMap.set(request, {
         resolve,
         reject,
         connectionSymbol
       });
     });
   };
-  server.on("upgrade", async (request3, socket, head) => {
-    if (request3.headers.upgrade?.toLowerCase() !== "websocket") return;
+  server.on("upgrade", async (request, socket, head) => {
+    if (request.headers.upgrade?.toLowerCase() !== "websocket") return;
     const env = {
-      incoming: request3,
+      incoming: request,
       outgoing: void 0,
       wss,
       [WAIT_FOR_WEBSOCKET_SYMBOL]: waitForWebSocket
@@ -8378,7 +8378,7 @@ var setupWebSocket = (options) => {
     let status = 400;
     let responseHeaders;
     try {
-      const response = await fetchCallback(createUpgradeRequest(request3), env);
+      const response = await fetchCallback(createUpgradeRequest(request), env);
       if (response instanceof Response) {
         status = response.status;
         responseHeaders = response.headers;
@@ -8387,22 +8387,22 @@ var setupWebSocket = (options) => {
       if (server.listenerCount("upgrade") === 1) rejectUpgradeRequest(socket, 500);
       return;
     }
-    const waiter = waiterMap.get(request3);
+    const waiter = waiterMap.get(request);
     if (!waiter || waiter.connectionSymbol !== env[CONNECTION_SYMBOL_KEY]) {
-      rejectWaiter(request3);
+      rejectWaiter(request);
       if (server.listenerCount("upgrade") === 1) rejectUpgradeRequest(socket, status, responseHeaders);
       return;
     }
     const addResponseHeaders = (headers) => {
       appendResponseHeaders(headers, responseHeaders);
     };
-    const reclaimWaiterOnClose = () => rejectWaiter(request3);
+    const reclaimWaiterOnClose = () => rejectWaiter(request);
     socket.once("close", reclaimWaiterOnClose);
     wss.on("headers", addResponseHeaders);
     try {
-      wss.handleUpgrade(request3, socket, head, (ws) => {
+      wss.handleUpgrade(request, socket, head, (ws) => {
         socket.off("close", reclaimWaiterOnClose);
-        wss.emit("connection", ws, request3);
+        wss.emit("connection", ws, request);
       });
     } finally {
       wss.off("headers", addResponseHeaders);
@@ -8572,29 +8572,29 @@ var bufferToFormData = (arrayBuffer, contentType2) => {
 // ../node_modules/hono/dist/utils/body.js
 var MAX_NESTING_DEPTH = 32;
 var MAX_NESTED_OBJECTS = 1e4;
-var isRawRequest = (request3) => "headers" in request3;
-var parseBody = async (request3, options = /* @__PURE__ */ Object.create(null)) => {
+var isRawRequest = (request) => "headers" in request;
+var parseBody = async (request, options = /* @__PURE__ */ Object.create(null)) => {
   const { all = false, dot = false } = options;
-  const headers = isRawRequest(request3) ? request3.headers : request3.raw.headers;
+  const headers = isRawRequest(request) ? request.headers : request.raw.headers;
   const contentType2 = headers.get("Content-Type");
   const mediaType = contentType2?.split(";")[0].trim().toLowerCase();
   if (mediaType === "multipart/form-data" || mediaType === "application/x-www-form-urlencoded") {
-    return parseFormData(request3, { all, dot });
+    return parseFormData(request, { all, dot });
   }
   return {};
 };
-async function parseFormData(request3, options) {
-  if (!isRawRequest(request3) && request3.bodyCache.formData) {
+async function parseFormData(request, options) {
+  if (!isRawRequest(request) && request.bodyCache.formData) {
     return convertFormDataToBodyData(
-      await request3.bodyCache.formData,
+      await request.bodyCache.formData,
       options
     );
   }
-  const headers = isRawRequest(request3) ? request3.headers : request3.raw.headers;
-  const arrayBuffer = await request3.arrayBuffer();
+  const headers = isRawRequest(request) ? request.headers : request.raw.headers;
+  const arrayBuffer = await request.arrayBuffer();
   const formDataPromise = bufferToFormData(arrayBuffer, headers.get("Content-Type") || "");
-  if (!isRawRequest(request3)) {
-    request3.bodyCache.formData = formDataPromise;
+  if (!isRawRequest(request)) {
+    request.bodyCache.formData = formDataPromise;
   }
   const formData = await formDataPromise;
   if (formData) {
@@ -8734,8 +8734,8 @@ var tryDecode = (str, decoder) => {
   }
 };
 var tryDecodeURI = (str) => tryDecode(str, decodeURI);
-var getPath = (request3) => {
-  const url = request3.url;
+var getPath = (request) => {
+  const url = request.url;
   const start = url.indexOf("/", url.indexOf(":") + 4);
   let i = start;
   for (; i < url.length; i++) {
@@ -8752,8 +8752,8 @@ var getPath = (request3) => {
   }
   return url.slice(start, i);
 };
-var getPathNoStrict = (request3) => {
-  const result = getPath(request3);
+var getPathNoStrict = (request) => {
+  const result = getPath(request);
   return result.length > 1 && result.at(-1) === "/" ? result.slice(0, -1) : result;
 };
 var mergePath = (base, sub, ...rest) => {
@@ -8908,8 +8908,8 @@ var HonoRequest = class {
    */
   path;
   bodyCache = {};
-  constructor(request3, path = "/", matchResult = [[]]) {
-    this.raw = request3;
+  constructor(request, path = "/", matchResult = [[]]) {
+    this.raw = request;
     this.path = path;
     this.#matchResult = matchResult;
   }
@@ -9856,7 +9856,7 @@ var Hono = class _Hono {
       } else {
         optionHandler = options.optionHandler;
         if (options.replaceRequest === false) {
-          replaceRequest = (request3) => request3;
+          replaceRequest = (request) => request;
         } else {
           replaceRequest = options.replaceRequest;
         }
@@ -9876,10 +9876,10 @@ var Hono = class _Hono {
     replaceRequest ||= (() => {
       const mergedPath = mergePath(this._basePath, path);
       const pathPrefixLength = mergedPath === "/" ? 0 : mergedPath.length;
-      return (request3) => {
-        const url = new URL(request3.url);
-        url.pathname = this.getPath(request3).slice(pathPrefixLength) || "/";
-        return new Request(url, request3);
+      return (request) => {
+        const url = new URL(request.url);
+        url.pathname = this.getPath(request).slice(pathPrefixLength) || "/";
+        return new Request(url, request);
       };
     })();
     const handler = async (c, next) => {
@@ -9909,13 +9909,13 @@ var Hono = class _Hono {
     }
     throw err;
   }
-  #dispatch(request3, executionCtx, env, method) {
+  #dispatch(request, executionCtx, env, method) {
     if (method === "HEAD") {
-      return (async () => new Response(null, await this.#dispatch(request3, executionCtx, env, "GET")))();
+      return (async () => new Response(null, await this.#dispatch(request, executionCtx, env, "GET")))();
     }
-    const path = this.getPath(request3, { env });
+    const path = this.getPath(request, { env });
     const matchResult = this.router.match(method, path);
-    const c = new Context(request3, {
+    const c = new Context(request, {
       path,
       matchResult,
       env,
@@ -9961,8 +9961,8 @@ var Hono = class _Hono {
    * @returns {Response | Promise<Response>} response of request
    *
    */
-  fetch = (request3, ...rest) => {
-    return this.#dispatch(request3, rest[1], rest[0], request3.method);
+  fetch = (request, ...rest) => {
+    return this.#dispatch(request, rest[1], rest[0], request.method);
   };
   /**
    * `.request()` is a useful method for testing.
@@ -10645,7 +10645,8 @@ function loadValidators(env) {
 
 // src/invoke.ts
 import http from "node:http";
-function makeInvoke() {
+var MEMBER_HEADER = "X-Funcd-Member";
+function makeInvoke(opts = {}) {
   return (alias, input) => new Promise((resolve, reject) => {
     const socketPath = process.env.FUNCD_INVOKE_SOCKET;
     if (!socketPath) {
@@ -10653,12 +10654,17 @@ function makeInvoke() {
       return;
     }
     const body = JSON.stringify(input ?? null);
+    const headers = {
+      "content-type": "application/json",
+      "content-length": Buffer.byteLength(body)
+    };
+    if (opts.member) headers[MEMBER_HEADER] = opts.member;
     const req = http.request(
       {
         socketPath,
         path: `/invoke/${encodeURIComponent(alias)}`,
         method: "POST",
-        headers: { "content-type": "application/json", "content-length": Buffer.byteLength(body) }
+        headers
       },
       (res) => {
         const chunks = [];
@@ -10693,7 +10699,7 @@ function makeInvoke() {
 
 // src/kv.ts
 import http2 from "node:http";
-function request(method, path, body) {
+function send(method, path, body, member) {
   return new Promise((resolve, reject) => {
     const socketPath = process.env.FUNCD_INVOKE_SOCKET;
     if (!socketPath) {
@@ -10702,6 +10708,7 @@ function request(method, path, body) {
     }
     const headers = {};
     if (body) headers["content-length"] = body.byteLength;
+    if (member) headers[MEMBER_HEADER] = member;
     const req = http2.request({ socketPath, path, method, headers }, (res) => {
       const chunks = [];
       res.on(
@@ -10731,7 +10738,8 @@ var json2 = (verb, r, text) => {
     });
   }
 };
-function makeKV() {
+function makeKV(member) {
+  const request = (method, path, body) => send(method, path, body, member);
   return {
     async get(binding, key) {
       const r = await request("GET", keyPath(binding, key));
@@ -10771,7 +10779,7 @@ function makeKV() {
 
 // src/blob.ts
 import http3 from "node:http";
-function request2(method, path, body) {
+function send2(method, path, body, member) {
   return new Promise((resolve, reject) => {
     const socketPath = process.env.FUNCD_INVOKE_SOCKET;
     if (!socketPath) {
@@ -10780,6 +10788,7 @@ function request2(method, path, body) {
     }
     const headers = {};
     if (body) headers["content-length"] = body.byteLength;
+    if (member) headers[MEMBER_HEADER] = member;
     const req = http3.request({ socketPath, path, method, headers }, (res) => {
       const chunks = [];
       res.on(
@@ -10812,32 +10821,33 @@ var json3 = (verb, r, text) => {
     });
   }
 };
-function makeBlob() {
+function makeBlob(member) {
+  const request = (method, path, body) => send2(method, path, body, member);
   return {
     async get(binding, key) {
-      const r = await request2("GET", keyPath2(binding, key));
+      const r = await request("GET", keyPath2(binding, key));
       if (r.status === 404) return null;
       if (!ok2(r)) throw fail2("get", r);
       return new Uint8Array(r.body);
     },
     async put(binding, key, value) {
-      const r = await request2("PUT", keyPath2(binding, key), Buffer.from(value));
+      const r = await request("PUT", keyPath2(binding, key), Buffer.from(value));
       if (!ok2(r)) throw fail2("put", r);
     },
     async del(binding, key) {
-      const r = await request2("DELETE", keyPath2(binding, key));
+      const r = await request("DELETE", keyPath2(binding, key));
       if (!ok2(r)) throw fail2("del", r);
     },
     async list(binding, prefix) {
       const q = prefix ? `?prefix=${enc2(prefix)}` : "";
-      const r = await request2("GET", `/blob/${enc2(binding)}${q}`);
+      const r = await request("GET", `/blob/${enc2(binding)}${q}`);
       if (!ok2(r)) throw fail2("list", r);
       return json3("list", r, r.body.toString("utf8") || "[]");
     },
     async signedUrl(binding, key, opts) {
       let path = `${keyPath2(binding, key)}?sign=1&method=${enc2(opts?.method ?? "GET")}`;
       if (opts?.expiry) path += `&expiry=${enc2(opts.expiry)}`;
-      const r = await request2("GET", path);
+      const r = await request("GET", path);
       if (!ok2(r)) throw fail2("signedUrl", r);
       return r.body.toString("utf8");
     }
@@ -10909,7 +10919,7 @@ function isPlainObject(v) {
   const proto = Object.getPrototypeOf(v);
   return proto === Object.prototype || proto === null;
 }
-function buildRecord(method, args) {
+function buildRecord(method, args, member) {
   const body = typeof args[0] === "string" ? args[0] : "";
   const attrs = { args: safeStringify(args) };
   for (const arg of args) {
@@ -10920,7 +10930,7 @@ function buildRecord(method, args) {
     }
   }
   const inv = currentInv();
-  return {
+  const rec = {
     ts: Date.now() * 1e6,
     sev: SEVERITY[method],
     body,
@@ -10930,6 +10940,8 @@ function buildRecord(method, args) {
     span_id: inv?.spanId ?? "",
     "funcd.source": "console"
   };
+  if (member) rec["funcd.member"] = member;
+  return rec;
 }
 function acquire(lock) {
   for (; ; ) {
@@ -10972,13 +10984,13 @@ function openChannel(env, lock) {
   }
   return null;
 }
-function installConsoleCapture(env = process.env, sink = openChannel(env)) {
+function installConsoleCapture(env = process.env, sink = openChannel(env), member) {
   if (!sink) return false;
   const methods = ["debug", "log", "info", "warn", "error"];
   for (const method of methods) {
     console[method] = (...args) => {
       try {
-        sink(JSON.stringify(buildRecord(method, args)) + "\n");
+        sink(JSON.stringify(buildRecord(method, args, member)) + "\n");
       } catch {
       }
     };
@@ -11010,7 +11022,7 @@ function newInvContext(tp, providedSpanId) {
     parentId: adopted ? adopted.parentId : ""
   };
 }
-function emitSpan(sink, ctx, name, start, end, status, statusMsg, links) {
+function emitSpan(sink, ctx, name, start, end, status, statusMsg, links, member) {
   const rec = {
     "funcd.signal": "traces",
     trace_id: ctx.traceId,
@@ -11026,12 +11038,13 @@ function emitSpan(sink, ctx, name, start, end, status, statusMsg, links) {
     inv: ctx.inv,
     links
   };
+  if (member) rec["funcd.member"] = member;
   try {
     sink(JSON.stringify(rec) + "\n");
   } catch {
   }
 }
-function startSpan(sink, name, tp, spanId, links = []) {
+function startSpan(sink, name, tp, spanId, links = [], member) {
   const inv = newInvContext(tp, spanId);
   const startNs = Date.now() * 1e6;
   const t0 = process.hrtime.bigint();
@@ -11047,7 +11060,7 @@ function startSpan(sink, name, tp, spanId, links = []) {
       ended = true;
       if (!sink) return;
       const endNs = startNs + Number(process.hrtime.bigint() - t0);
-      emitSpan(sink, inv, name, startNs, endNs, status, statusMsg, validLinks);
+      emitSpan(sink, inv, name, startNs, endNs, status, statusMsg, validLinks, member);
     }
   };
 }

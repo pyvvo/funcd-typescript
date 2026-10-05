@@ -29,6 +29,7 @@ interface SpanRecord {
   attrs: Record<string, string>;
   inv: string;
   links: string[]; // ADR-0105: fan-in edges — same-trace span-ids this span links to
+  'funcd.member'?: string; // the pool member the span belongs to; absent in the solo shim
 }
 
 /** parseTraceparent parses a W3C `traceparent` (`00-<trace32>-<span16>-<flags>`), returning the
@@ -68,6 +69,7 @@ function emitSpan(
   status: 'OK' | 'ERROR',
   statusMsg: string,
   links: string[],
+  member: string | undefined,
 ): void {
   const rec: SpanRecord = {
     'funcd.signal': 'traces',
@@ -84,6 +86,7 @@ function emitSpan(
     inv: ctx.inv,
     links,
   };
+  if (member) rec['funcd.member'] = member;
   try {
     sink(JSON.stringify(rec) + '\n');
   } catch {
@@ -102,13 +105,15 @@ export interface Span {
 /** startSpan opens a per-invocation SERVER span. `sink` null ⇒ the span is a no-op emitter (the
  *  context is still established so logs get ids). `name` is the function name (or "invoke"); `tp` is
  *  the incoming `traceparent`; `spanId` is the engine-provided span-id to USE (ADR-0105,
- *  X-Funcd-Span-Id — else mint); `links` are fan-in edges (X-Funcd-Span-Links) attached to the span. */
+ *  X-Funcd-Span-Id — else mint); `links` are fan-in edges (X-Funcd-Span-Links) attached to the span;
+ *  `member` is the pool member, stamped as `funcd.member` (none in the solo shim). */
 export function startSpan(
   sink: Sink | null,
   name: string,
   tp: string | undefined,
   spanId?: string,
   links: string[] = [],
+  member?: string,
 ): Span {
   const inv = newInvContext(tp, spanId);
   const startNs = Date.now() * 1e6;
@@ -125,7 +130,7 @@ export function startSpan(
       ended = true;
       if (!sink) return;
       const endNs = startNs + Number(process.hrtime.bigint() - t0);
-      emitSpan(sink, inv, name, startNs, endNs, status, statusMsg, validLinks);
+      emitSpan(sink, inv, name, startNs, endNs, status, statusMsg, validLinks, member);
     },
   };
 }
