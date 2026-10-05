@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.7.0](https://github.com/pyvvo/funcd-typescript/compare/v0.6.0...v0.7.0) (2026-10-05)
+
+
+### Features
+
+* **shim:** load pool members on their own and name the member on every channel ([#45](https://github.com/pyvvo/funcd-typescript/issues/45)) ([4f16ad3](https://github.com/pyvvo/funcd-typescript/commit/4f16ad3508a37f7681c632f52af427e906280462))
+
 ## [0.6.0](https://github.com/pyvvo/funcd-typescript/compare/v0.5.0...v0.6.0) (2026-10-05)
 
 
