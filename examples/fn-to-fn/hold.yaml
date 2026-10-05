@@ -1,0 +1,14 @@
+# hold — the callee of the fan-out demo (funcd ADR-0147): it keeps each call in flight for data.ms.
+apiVersion: funcd.io/v1alpha1
+kind: Function
+metadata:
+  name: hold
+  namespace: default
+  resourceGroup: rg1
+spec:
+  runtime: nodejs22
+  handler: handle
+  image: oci-layout:///mnt/funcd-deps/registry:hold         # funcdctl push hold.mjs (built from src/hold.ts)
+  replicas: 1
+  scaling:
+    minReplicas: 1

@@ -14,6 +14,8 @@ auth:
   namespaces: [default]
 runtime:
   mode: containerd
+invoke:
+  maxNestedInFlight: 2            # the fan-out demo (ADR-0147): fanout's third concurrent call to hold is refused
 log:
   format: text
   level: info

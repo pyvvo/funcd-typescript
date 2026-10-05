@@ -5,8 +5,8 @@ import http from 'node:http';
 
 /** Build the context.invoke implementation. The returned function POSTs `input` to
  *  /invoke/<alias> over the worker-node UDS and resolves the target's JSON output, or rejects on a
- *  non-2xx (no link → 403, unknown target → 404, bad input → 422, target down/timeout → 503) or on a
- *  2xx body that is not JSON. */
+ *  non-2xx (no link → 403, unknown target → 404, bad input → 422, the target's nested in-flight cap
+ *  reached → 429, target down/timeout → 503) or on a 2xx body that is not JSON. */
 export function makeInvoke(): <I = unknown, O = unknown>(alias: string, input: I) => Promise<O> {
   return <I, O>(alias: string, input: I): Promise<O> =>
     new Promise<O>((resolve, reject) => {

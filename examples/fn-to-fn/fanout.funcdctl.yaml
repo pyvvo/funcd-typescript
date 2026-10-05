@@ -1,0 +1,35 @@
+# fanout.funcdctl.yaml (ADR-0122/ADR-0124) — the colocated client push/dev config for the Node fanout function,
+# the caller of the fan-out demo (funcd ADR-0147). It links `peer → hold` and calls it `n` times at once; the
+# calls over the daemon's per-target nested in-flight cap are refused with 429 and counted in `refused`.
+# Deploy concerns live on the Function CRD (fanout.yaml, beside this file).
+runtime: nodejs22
+handler: handle
+bindings:
+  links:
+    - alias: peer
+      target: hold
+contract:
+  input:
+    type: object
+    additionalProperties: false
+    properties:
+      n:
+        type: integer
+      ms:
+        type: integer
+    required:
+      - n
+  output:
+    type: object
+    additionalProperties: false
+    properties:
+      ok:
+        type: integer
+      refused:
+        type: integer
+      detail:
+        type: string
+    required:
+      - ok
+      - refused
+      - detail

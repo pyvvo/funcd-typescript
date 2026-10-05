@@ -1,0 +1,17 @@
+# fanout — the caller of the fan-out demo (funcd ADR-0147): it calls hold data.n times at once over its link.
+apiVersion: funcd.io/v1alpha1
+kind: Function
+metadata:
+  name: fanout
+  namespace: default
+  resourceGroup: rg1
+spec:
+  runtime: nodejs22
+  handler: handle
+  image: oci-layout:///mnt/funcd-deps/registry:fanout       # funcdctl push fanout.mjs (built from src/fanout.ts)
+  replicas: 1
+  scaling:
+    minReplicas: 1
+  links:
+    - alias: peer
+      target: hold
