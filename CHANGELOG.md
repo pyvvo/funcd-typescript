@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.8.1](https://github.com/pyvvo/funcd-typescript/compare/v0.8.0...v0.8.1) (2026-10-05)
+
+
+### Bug Fixes
+
+* **examples:** accept big in the log-burst input contract ([#50](https://github.com/pyvvo/funcd-typescript/issues/50)) ([86d5434](https://github.com/pyvvo/funcd-typescript/commit/86d54342cbbbf1bb18b9d9a40539b292a3da2f99))
+
 ## [0.8.0](https://github.com/pyvvo/funcd-typescript/compare/v0.7.0...v0.8.0) (2026-10-05)
 
 
