@@ -8,7 +8,7 @@ import { setTimeout as sleep } from 'node:timers/promises';
 
 import type { Hono } from 'hono';
 
-import { createPool } from '../src/pool.ts';
+import { callTimeoutMs, createPool } from '../src/pool.ts';
 import { tempDir } from './tempdir.ts';
 
 // writeHandlers writes each handler to a temp .mjs and returns the pool manifest.
@@ -352,6 +352,37 @@ export function handle(_, e) {
       assert.ok(Date.now() < deadline, 'the worker did not come back once its handler loaded again');
       await sleep(50);
     }
+  } finally {
+    await pool.close();
+  }
+});
+
+// scenario: pooled-node-follows-limit — the pool's timer follows funcd's X-Funcd-Timeout-Ms plus a 1 s margin
+// (funcd ADR-0151); without a valid header it keeps the 30 s default.
+test('scenario pooled-node-follows-limit: the call timeout follows x-funcd-timeout-ms', () => {
+  assert.equal(callTimeoutMs('500'), 1_500);
+  assert.equal(callTimeoutMs('2147482647'), 2_147_483_647);
+  for (const header of [undefined, '', '0', '-5', '1.5', ' 500', 'abc', '2147482648', '99999999999999999999']) {
+    assert.equal(callTimeoutMs(header), 30_000, `header ${JSON.stringify(header)}`);
+  }
+});
+
+test('scenario pooled-node-follows-limit: a never-settling handler answers 503 after header + 1 s', {
+  timeout: 15_000,
+}, async (t) => {
+  const pool = createPool(writeHandlers(t, { hang: 'export function handle() { return new Promise(() => {}); }' }));
+  await pool.ready;
+  try {
+    const start = Date.now();
+    const res = await pool.app.request('/function/hang', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-funcd-timeout-ms': '500' },
+      body: JSON.stringify({ id: '1', source: 's', type: 't', data: {} }),
+    });
+    const elapsed = Date.now() - start;
+    assert.equal(res.status, 503);
+    assert.deepEqual(await res.json(), { error: 'function hang timed out' });
+    assert.ok(elapsed >= 1_450 && elapsed < 5_000, `answered after ${elapsed} ms`);
   } finally {
     await pool.close();
   }

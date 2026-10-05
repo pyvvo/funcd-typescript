@@ -11058,8 +11058,16 @@ function parseLinks(header) {
 var maxOldMB = Number(process.env.FUNCD_POOL_MAX_OLD_MB ?? 64);
 var maxYoungMB = Number(process.env.FUNCD_POOL_MAX_YOUNG_MB ?? 16);
 var requestTimeoutMs = 3e4;
+var timeoutMarginMs = 1e3;
+var maxHeaderTimeoutMs = 2147482647;
 var restartBaseMs = 50;
 var restartMaxMs = 1e4;
+function callTimeoutMs(header) {
+  if (header === void 0 || !/^[0-9]+$/.test(header)) return requestTimeoutMs;
+  const ms = Number(header);
+  if (ms < 1 || ms > maxHeaderTimeoutMs) return requestTimeoutMs;
+  return ms + timeoutMarginMs;
+}
 async function workerMain() {
   const spec = workerData;
   const port = parentPort;
@@ -11221,14 +11229,14 @@ var PooledHandler = class {
       if (!this.closed) this.spawn();
     }, delay);
   }
-  async invoke(event, traceparent, spanId, links) {
+  async invoke(event, timeoutMs, traceparent, spanId, links) {
     if (!this.healthy) return { id: -1, status: 503, error: `function ${this.spec.name} unavailable` };
     const id = this.nextID++;
     return new Promise((resolve) => {
       const timer = setTimeout(() => {
         this.pending.delete(id);
         resolve({ id, status: 503, error: `function ${this.spec.name} timed out` });
-      }, requestTimeoutMs);
+      }, timeoutMs);
       this.pending.set(id, { resolve, timer });
       this.worker.postMessage({ id, event, traceparent, spanId, links });
     });
@@ -11270,6 +11278,7 @@ function createPool(manifest, limits) {
     }
     const res = await h.invoke(
       event,
+      callTimeoutMs(c.req.header("x-funcd-timeout-ms")),
       c.req.header("traceparent"),
       c.req.header("x-funcd-span-id"),
       parseLinks(c.req.header("x-funcd-span-links"))
@@ -11319,5 +11328,6 @@ if (isMainThread) {
   void workerMain();
 }
 export {
+  callTimeoutMs,
   createPool
 };
