@@ -1,0 +1,22 @@
+# hold.funcdctl.yaml (ADR-0122/ADR-0124) — the colocated client push/dev config for the Node hold function,
+# the callee of the fan-out demo (funcd ADR-0147). `funcdctl push hold.mjs <ref>` resolves this file by the
+# `hold` stem. Deploy concerns live on the Function CRD (hold.yaml, beside this file).
+runtime: nodejs22
+handler: handle
+contract:
+  input:
+    type: object
+    additionalProperties: false
+    properties:
+      ms:
+        type: integer
+    required:
+      - ms
+  output:
+    type: object
+    additionalProperties: false
+    properties:
+      held:
+        type: integer
+    required:
+      - held
