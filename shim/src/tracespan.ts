@@ -7,7 +7,7 @@
 // Built-ins only (node:crypto) so it bundles into shim.mjs/pool.mjs.
 import { randomBytes } from 'node:crypto';
 
-import { invStore, type InvContext } from './invcontext.ts';
+import { currentInv, invStore, type InvContext } from './invcontext.ts';
 import { type Budget, DEFAULT_MAX_RECORD_BYTES, fitText, type Sink } from './funclog.ts';
 
 const ZERO_TRACE = '0'.repeat(32);
@@ -21,7 +21,7 @@ interface SpanRecord {
   span_id: string;
   parent_id: string;
   name: string;
-  kind: 'SERVER';
+  kind: 'SERVER' | 'CLIENT';
   start: number; // epoch nanos (Date.now()*1e6 base, monotonic duration)
   end: number;
   status: 'OK' | 'ERROR';
@@ -60,31 +60,36 @@ export function newInvContext(tp: string | undefined, providedSpanId?: string): 
   };
 }
 
+/** emitSpan writes one span record. `ids` names the span (trace, span, parent, inv): the invocation's
+ *  own context for a SERVER span, the caller's trace and invocation with a fresh span-id under the
+ *  caller's span for a CLIENT span (ADR-0165). */
 function emitSpan(
   sink: Sink,
-  ctx: InvContext,
+  ids: InvContext,
   name: string,
+  kind: 'SERVER' | 'CLIENT',
   start: number,
   end: number,
   status: 'OK' | 'ERROR',
   statusMsg: string,
+  attrs: Record<string, string>,
   links: string[],
   member: string | undefined,
   bound: number,
 ): void {
   const rec: SpanRecord = {
     'funcd.signal': 'traces',
-    trace_id: ctx.traceId,
-    span_id: ctx.spanId,
-    parent_id: ctx.parentId,
+    trace_id: ids.traceId,
+    span_id: ids.spanId,
+    parent_id: ids.parentId,
     name,
-    kind: 'SERVER',
+    kind,
     start,
     end,
     status,
     status_msg: statusMsg,
-    attrs: {},
-    inv: ctx.inv,
+    attrs,
+    inv: ids.inv,
     links,
   };
   if (member) rec['funcd.member'] = member;
@@ -148,7 +153,49 @@ export function startSpan(
       ended = true;
       if (!sink) return;
       const endNs = startNs + Number(process.hrtime.bigint() - t0);
-      emitSpan(sink, inv, name, startNs, endNs, status, statusMsg, validLinks, member, bound);
+      emitSpan(sink, inv, name, 'SERVER', startNs, endNs, status, statusMsg, {}, validLinks, member, bound);
+    },
+  };
+}
+
+/** The CLIENT span of one context.invoke call (ADR-0165). */
+export interface ClientSpan {
+  /** 00-<caller trace>-<this span>-01, stamped on POST /invoke/{alias}. */
+  readonly traceparent: string;
+  /** Emits the span once; httpStatus is the local API reply status, when one arrived. */
+  end(status: 'OK' | 'ERROR', statusMsg?: string, httpStatus?: number): void;
+}
+
+/** startClientSpan opens the CLIENT span "call <alias>" under the active invocation (currentInv());
+ *  null outside one. `sink` null ⇒ the traceparent is still minted, no span line is written. `member`
+ *  is the calling pool member, stamped as `funcd.member` (none in the solo shim); `bound` caps the span
+ *  record line as for the SERVER span, so a long status_msg is cut, not the span dropped (ADR-0168). */
+export function startClientSpan(
+  sink: Sink | null,
+  alias: string,
+  member?: string,
+  bound: number = DEFAULT_MAX_RECORD_BYTES,
+): ClientSpan | null {
+  const caller = currentInv();
+  if (!caller) return null;
+  const ids: InvContext = {
+    inv: caller.inv,
+    traceId: caller.traceId,
+    spanId: randomBytes(8).toString('hex'),
+    parentId: caller.spanId,
+  };
+  const startNs = Date.now() * 1e6;
+  const t0 = process.hrtime.bigint();
+  let ended = false;
+  return {
+    traceparent: `00-${ids.traceId}-${ids.spanId}-01`,
+    end(status: 'OK' | 'ERROR', statusMsg = '', httpStatus?: number): void {
+      if (ended) return;
+      ended = true;
+      if (!sink) return;
+      const endNs = startNs + Number(process.hrtime.bigint() - t0);
+      const attrs: Record<string, string> = httpStatus === undefined ? {} : { 'http.status_code': String(httpStatus) };
+      emitSpan(sink, ids, `call ${alias}`, 'CLIENT', startNs, endNs, status, statusMsg, attrs, [], member, bound);
     },
   };
 }

@@ -40,13 +40,13 @@ export function createApp(
   trace: { sink?: Sink | null; fnName?: string; bound?: number } = {},
 ): Hono {
   const app = new Hono();
+  const traceSink = trace.sink ?? null; // ADR-0101: per-invocation span emitter (null ⇒ context only)
   const ctx: FunctionContext = {
     log: (...args) => console.log(...args),
-    invoke: makeInvoke(),
+    invoke: makeInvoke({ sink: traceSink, bound: trace.bound }),
     kv: makeKV(),
     blob: makeBlob(),
   };
-  const traceSink = trace.sink ?? null; // ADR-0101: per-invocation span emitter (null ⇒ context only)
   const fnName = trace.fnName ?? 'invoke';
 
   app.get('/health/liveness', (c) => c.text('ok'));
