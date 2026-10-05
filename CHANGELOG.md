@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.8.0](https://github.com/pyvvo/funcd-typescript/compare/v0.7.0...v0.8.0) (2026-10-05)
+
+
+### Features
+
+* **shim:** bound each log record and write the listening line to stdout ([#47](https://github.com/pyvvo/funcd-typescript/issues/47)) ([750942a](https://github.com/pyvvo/funcd-typescript/commit/750942a82ee6754256086c79fead038511b8d349))
+* **shim:** send traceparent and emit a CLIENT span from context.invoke ([#49](https://github.com/pyvvo/funcd-typescript/issues/49)) ([13125c5](https://github.com/pyvvo/funcd-typescript/commit/13125c5da680f996135927745d10f958cd8a32af))
+
 ## [0.7.0](https://github.com/pyvvo/funcd-typescript/compare/v0.6.0...v0.7.0) (2026-10-05)
 
 
