@@ -17,6 +17,8 @@ contract:
         type: number
       batch:
         type: string
+      big:
+        type: number
   output:
     type: object
     additionalProperties: false
