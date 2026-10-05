@@ -10611,6 +10611,7 @@ var ContractError = class extends Error {
 };
 var ajv = new import_ajv.default({ strict: false, allErrors: true });
 (0, import_ajv_formats.default)(ajv);
+ajv.addFormat("int64", { type: "number", validate: (n) => Number.isSafeInteger(n) });
 function compileSide(schema) {
   const validate = ajv.compile(schema);
   return (data) => validate(data) ? [] : validate.errors ?? [];
