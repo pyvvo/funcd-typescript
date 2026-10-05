@@ -501,3 +501,48 @@ test('keptBytes counts the kept body and attr values; user keys truncated and ke
   assert.equal(cut.attrs.truncated, 'true');
   assert.equal(Number(cut.attrs.keptBytes), keptBytesOf(cut));
 });
+
+// fdLines installs capture on a FUNCD_LOG_FD file, as the issue reproduced it, runs `log`, and returns the raw lines.
+function fdLines(t: TestContext, log: () => void): string[] {
+  const file = join(tempDir(t, 'funcd-funclog-issue-r31-'), 'channel.ndjson');
+  const fd = openSync(file, 'w');
+  const restoreConsole = snapshotConsole();
+  try {
+    installConsoleCapture({ FUNCD_LOG_FD: String(fd) } as NodeJS.ProcessEnv);
+    log();
+  } finally {
+    restoreConsole();
+    closeSync(fd);
+  }
+  return readFileSync(file, 'utf8').split('\n').slice(0, -1);
+}
+
+const HOST_MAX_LINE = 1 << 20;
+
+test('issue r31: a record over the host 1 MiB line limit is cut at the bound and keeps body and sev', (t) => {
+  const lines = fdLines(t, () => console.warn('payload', { blob: 'z'.repeat(2 * HOST_MAX_LINE) }));
+  assert.equal(lines.length, 1);
+  const size = Buffer.byteLength(lines[0]);
+  assert.ok(size <= DEFAULT_MAX_RECORD_BYTES && size < HOST_MAX_LINE, `line is ${size} bytes`);
+  const rec = JSON.parse(lines[0]) as WireRecord;
+  assert.equal(rec.sev, 'WARN');
+  assert.equal(rec.body, 'payload');
+  assert.equal(rec.attrs.truncated, 'true');
+  assert.equal(Number(rec.attrs.keptBytes), keptBytesOf(rec));
+});
+
+test('issue r31: a 23-node graph of shared children gives a bounded record after a bounded walk', (t) => {
+  const reads = { gets: 0 };
+  let d: Record<string, unknown> = counted({ leaf: 1 }, reads);
+  for (let i = 0; i < 22; i++) d = counted({ a: d, b: d }, reads);
+  const lines = fdLines(t, () => console.log('dag', d));
+  assert.equal(lines.length, 1);
+  const size = Buffer.byteLength(lines[0]);
+  assert.ok(size <= DEFAULT_MAX_RECORD_BYTES, `line is ${size} bytes`);
+  const rec = JSON.parse(lines[0]) as WireRecord;
+  assert.equal(rec.sev, 'INFO');
+  assert.equal(rec.body, 'dag');
+  assert.equal(rec.attrs.truncated, 'true');
+  // An unbounded walk reads every one of the 2^23 paths; the cut stops it after a few thousand reads.
+  assert.ok(reads.gets < 20_000, `read ${reads.gets} properties`);
+});
