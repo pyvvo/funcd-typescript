@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.0](https://github.com/pyvvo/funcd-typescript/compare/v0.5.0...v0.6.0) (2026-10-05)
+
+
+### Features
+
+* **examples:** add the fn-to-fn fan-out demo of the nested in-flight cap ([#43](https://github.com/pyvvo/funcd-typescript/issues/43)) ([e1fdae6](https://github.com/pyvvo/funcd-typescript/commit/e1fdae65bfd805c49d977f9b7338ef622fd5c5d6))
+
 ## [0.5.0](https://github.com/pyvvo/funcd-typescript/compare/v0.4.4...v0.5.0) (2026-10-05)
 
 
