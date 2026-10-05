@@ -13,6 +13,8 @@ export interface FuncInput {
   items?: number;
   /** A batch label echoed into the structured logs. */
   batch?: string;
+  /** When set, one more log call carries a value of this many bytes, to show a record cut at the bound. */
+  big?: number;
 }
 export interface FuncOutput {
   emitted: number;
@@ -22,6 +24,14 @@ export function handle(_ctx: FunctionContext, event: CloudEvent<FuncInput>): Fun
   const items = Math.max(100, event.data?.items ?? 100); // never below the e2e floor of 100
   const batch = event.data?.batch ?? 'default';
   let emitted = 0;
+
+  // raw output (ADR-0168): stdout reaches the logs at INFO, stderr at ERROR.
+  process.stdout.write(`burst stdout ${batch}\n`);
+  process.stderr.write(`burst stderr ${batch}\n`);
+  if (event.data?.big) {
+    console.log('big value', { big: 'x'.repeat(event.data.big) });
+    emitted++;
+  }
 
   for (let i = 0; i < items; i++) {
     // structured INFO: the object arg is captured losslessly into attrs.args and its string keys

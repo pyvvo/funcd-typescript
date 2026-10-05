@@ -213,14 +213,19 @@ async function startShim(t: TestContext, code: string) {
   const child = spawn(
     process.execPath,
     ['--experimental-strip-types', '--no-warnings', fileURLToPath(new URL('../src/shim.ts', import.meta.url))],
-    { env: { FUNCD_ARTIFACT: artifact }, stdio: ['ignore', 'ignore', 'pipe'] },
+    { env: { FUNCD_ARTIFACT: artifact }, stdio: ['ignore', 'pipe', 'pipe'] },
   );
   let stderr = '';
   const exited = new Promise<number | null>((resolve) => child.on('exit', (code) => resolve(code)));
   const port = await new Promise<number>((resolve, reject) => {
+    let stdout = '';
     child.stderr.on('data', (chunk: Buffer) => {
       stderr += chunk.toString();
-      const m = /listening on [^:]+:(\d+)/.exec(stderr);
+    });
+    // ADR-0168: the listening line is on stdout, so a normal start is not ERROR.
+    child.stdout.on('data', (chunk: Buffer) => {
+      stdout += chunk.toString();
+      const m = /listening on [^:]+:(\d+)/.exec(stdout);
       if (m) resolve(Number(m[1]));
     });
     void exited.then((code) => reject(new Error(`shim exited ${code} before listening: ${stderr}`)));

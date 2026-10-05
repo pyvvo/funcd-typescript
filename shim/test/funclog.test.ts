@@ -5,7 +5,7 @@ import { createServer, type Server, type Socket } from 'node:net';
 import { openSync, readFileSync, closeSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { installConsoleCapture } from '../src/funclog.ts';
+import { DEFAULT_MAX_RECORD_BYTES, installConsoleCapture, recordBound } from '../src/funclog.ts';
 import { tempDir } from './tempdir.ts';
 
 // snapshotConsole restores the five patched methods after installConsoleCapture() mutates the global,
@@ -301,4 +301,203 @@ test('a pool member name is stamped as funcd.member; the solo capture omits it',
   assert.equal(pooled['funcd.member'], 'a');
   assert.equal(pooled.body, 'pooled');
   assert.equal('funcd.member' in solo, false);
+});
+
+// ADR-0168: one log call yields one record of at most FUNCD_FUNCLOG_MAX_RECORD_BYTES bytes.
+
+interface WireRecord {
+  sev: string;
+  body: string;
+  attrs: Record<string, string>;
+}
+
+// capture installs console capture over a stub sink and returns the lines it wrote, without "\n".
+function capture(t: TestContext, env: NodeJS.ProcessEnv = {}): () => string[] {
+  t.after(snapshotConsole());
+  const lines: string[] = [];
+  installConsoleCapture(env, (line) => {
+    lines.push(line.slice(0, -1));
+  });
+  return () => lines;
+}
+
+// keptBytesOf recomputes the marker's keptBytes: body plus every attr value but the markers, in UTF-8.
+function keptBytesOf(rec: WireRecord): number {
+  let n = Buffer.byteLength(rec.body);
+  for (const [k, v] of Object.entries(rec.attrs)) if (k !== 'truncated' && k !== 'keptBytes') n += Buffer.byteLength(v);
+  return n;
+}
+
+// counted wraps an object in a Proxy that counts its property reads.
+function counted<T extends object>(target: T, counter: { gets: number }): T {
+  return new Proxy(target, {
+    get(o, k, r) {
+      counter.gets++;
+      return Reflect.get(o, k, r) as unknown;
+    },
+  });
+}
+
+// shared builds 2^levels leaves through objects that share their children: about 3.5 MB of JSON at 16.
+function shared(levels: number, counter: { gets: number }): Record<string, unknown> {
+  let o: Record<string, unknown> = counted({ leaf: 'x'.repeat(40) }, counter);
+  for (let i = 0; i < levels; i++) o = counted({ a: o, b: o }, counter);
+  return o;
+}
+
+test('scenario record-cut-at-bound: a 3.5 MB value gives one record cut at the bound, sev and body intact', (t) => {
+  const lines = capture(t);
+  const counter = { gets: 0 };
+  console.error('big', shared(16, counter));
+  assert.equal(lines().length, 1);
+  const line = lines()[0];
+  assert.ok(Buffer.byteLength(line) <= DEFAULT_MAX_RECORD_BYTES, `line is ${Buffer.byteLength(line)} bytes`);
+  const rec = JSON.parse(line) as WireRecord;
+  assert.equal(rec.sev, 'ERROR');
+  assert.equal(rec.body, 'big');
+  assert.equal(rec.attrs.truncated, 'true');
+  assert.equal(Number(rec.attrs.keptBytes), keptBytesOf(rec));
+  assert.ok(Number(rec.attrs.keptBytes) <= DEFAULT_MAX_RECORD_BYTES);
+  // A full walk reads each of the 2^17 shared objects twice; the cut stops it after a few thousand.
+  assert.ok(counter.gets < 20_000, `read ${counter.gets} properties`);
+});
+
+test('scenario record-bound-reaches-shim: FUNCD_FUNCLOG_MAX_RECORD_BYTES=8192 cuts a 100 KB value at 8192', (t) => {
+  const lines = capture(t, { FUNCD_FUNCLOG_MAX_RECORD_BYTES: '8192' });
+  console.log('payload', { blob: 'y'.repeat(100_000) });
+  const line = lines()[0];
+  assert.ok(Buffer.byteLength(line) <= 8192, `line is ${Buffer.byteLength(line)} bytes`);
+  assert.ok(Buffer.byteLength(line) > 8000, 'the cut keeps what fits');
+  const rec = JSON.parse(line) as WireRecord;
+  assert.equal(rec.attrs.truncated, 'true');
+  assert.match(rec.attrs.blob, /^y+$/);
+  assert.equal(rec.attrs.args, undefined, 'attrs.args is filled last and omitted once the record is cut');
+});
+
+test('recordBound: unset, zero, negative or not a number gives the default', () => {
+  assert.equal(recordBound({}), 65536);
+  for (const raw of ['', '0', '-5', 'abc', '1.5'])
+    assert.equal(recordBound({ FUNCD_FUNCLOG_MAX_RECORD_BYTES: raw }), 65536);
+  assert.equal(recordBound({ FUNCD_FUNCLOG_MAX_RECORD_BYTES: '8192' }), 8192);
+});
+
+test('a counting Proxy argument, a counting merged object and a Set subclass stop at the cut', (t) => {
+  const lines = capture(t, { FUNCD_FUNCLOG_MAX_RECORD_BYTES: '4096' });
+  const argReads = { gets: 0 };
+  console.log(
+    'arg',
+    counted(
+      Array.from({ length: 100_000 }, (_, i) => `v${i}`),
+      argReads,
+    ),
+  );
+  assert.ok(argReads.gets < 2_000, `read ${argReads.gets} elements`);
+
+  const mergedReads = { gets: 0 };
+  console.log(
+    'merged',
+    counted(Object.fromEntries(Array.from({ length: 100_000 }, (_, i) => [`k${i}`, i])), mergedReads),
+  );
+  assert.ok(mergedReads.gets < 2_000, `read ${mergedReads.gets} values`);
+
+  class CountingSet extends Set<number> {
+    yielded = 0;
+  }
+  const set = new CountingSet(Array.from({ length: 100_000 }, (_, i) => i));
+  const values = Set.prototype[Symbol.iterator];
+  Object.defineProperty(set, Symbol.iterator, {
+    value: function* (this: CountingSet) {
+      for (const x of values.call(this)) {
+        this.yielded++;
+        yield x;
+      }
+    },
+  });
+  console.log('set', set);
+  assert.ok(set.yielded < 2_000, `iterated ${set.yielded} values`);
+
+  for (const line of lines()) {
+    assert.ok(Buffer.byteLength(line) <= 4096);
+    assert.equal((JSON.parse(line) as WireRecord).attrs.truncated, 'true');
+  }
+});
+
+test('typed arrays, DataViews and ArrayBuffers are read element by element, never copied whole', (t) => {
+  const lines = capture(t, { FUNCD_FUNCLOG_MAX_RECORD_BYTES: '4096' });
+  const from = Array.from;
+  let calls = 0;
+  Array.from = function (this: unknown, ...a: unknown[]) {
+    calls++;
+    return (from as (...x: unknown[]) => unknown[]).apply(Array, a);
+  } as typeof Array.from;
+  t.after(() => {
+    Array.from = from;
+  });
+  console.log(new Uint8Array(10 << 20));
+  console.log(new DataView(new ArrayBuffer(10 << 20)));
+  console.log(new ArrayBuffer(10 << 20));
+  Array.from = from;
+  assert.equal(calls, 0);
+  for (const line of lines()) {
+    assert.ok(Buffer.byteLength(line) <= 4096);
+    assert.match((JSON.parse(line) as WireRecord).attrs.args ?? '', /^\[\[0,0,0,/);
+  }
+});
+
+test('multi-byte, astral, quote-heavy and control-character text stays within the bound', (t) => {
+  const lines = capture(t, { FUNCD_FUNCLOG_MAX_RECORD_BYTES: '2048' });
+  const units = ['\u20ac', '\u{1F600}', '"\\', '\u0001\n', 'a\ud800'];
+  for (const unit of units) console.log(unit.repeat(3000), { k: unit.repeat(3000) }, [unit.repeat(3000)]);
+  for (const unit of units) console.log('short', { k: unit.repeat(200) }, [unit.repeat(300)]);
+  assert.equal(lines().length, units.length * 2);
+  for (const line of lines()) {
+    assert.ok(Buffer.byteLength(line) <= 2048, `line is ${Buffer.byteLength(line)} bytes`);
+    const rec = JSON.parse(line) as WireRecord;
+    assert.equal(rec.attrs.truncated, 'true');
+    assert.equal(Number(rec.attrs.keptBytes), keptBytesOf(rec));
+  }
+});
+
+test("a small Buffer and a Date keep today's text", (t) => {
+  const lines = capture(t);
+  const buf = Buffer.from([1, 2, 3]);
+  const when = new Date(0);
+  console.log('x', buf, when, { when, raw: buf });
+  const rec = JSON.parse(lines()[0]) as WireRecord;
+  assert.equal(rec.attrs.args, JSON.stringify(['x', buf, when, { when, raw: buf }]));
+  assert.equal(rec.attrs.when, JSON.stringify(when));
+  assert.equal(rec.attrs.raw, '{"type":"Buffer","data":[1,2,3]}');
+  assert.equal(rec.attrs.truncated, undefined);
+});
+
+test('a 50 MiB Buffer is cut without calling Buffer#toJSON', (t) => {
+  const lines = capture(t);
+  const toJSON = Buffer.prototype.toJSON;
+  let calls = 0;
+  Buffer.prototype.toJSON = function (this: Buffer) {
+    calls++;
+    return toJSON.call(this);
+  };
+  t.after(() => {
+    Buffer.prototype.toJSON = toJSON;
+  });
+  console.log('big buffer', Buffer.alloc(50 << 20));
+  Buffer.prototype.toJSON = toJSON;
+  assert.equal(calls, 0);
+  const rec = JSON.parse(lines()[0]) as WireRecord;
+  assert.ok(Buffer.byteLength(lines()[0]) <= DEFAULT_MAX_RECORD_BYTES);
+  assert.match(rec.attrs.args, /^\["big buffer",\{"type":"Buffer","data":\[0,0,/);
+  assert.equal(rec.attrs.truncated, 'true');
+});
+
+test('keptBytes counts the kept body and attr values; user keys truncated and keptBytes are skipped', (t) => {
+  const lines = capture(t, { FUNCD_FUNCLOG_MAX_RECORD_BYTES: '4096' });
+  console.log({ truncated: 'no', keptBytes: '1', ok: 'yes' });
+  console.log('h\u00e9llo', { a: '\u00e9'.repeat(10_000), truncated: 'no' });
+  const [small, cut] = lines().map((l) => JSON.parse(l) as WireRecord);
+  assert.deepEqual(Object.keys(small.attrs).sort(), ['args', 'ok']);
+  assert.equal((JSON.parse(small.attrs.args) as Record<string, string>[])[0].truncated, 'no');
+  assert.equal(cut.body, 'h\u00e9llo');
+  assert.equal(cut.attrs.truncated, 'true');
+  assert.equal(Number(cut.attrs.keptBytes), keptBytesOf(cut));
 });

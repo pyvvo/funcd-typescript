@@ -8,7 +8,7 @@
 import { randomBytes } from 'node:crypto';
 
 import { invStore, type InvContext } from './invcontext.ts';
-import type { Sink } from './funclog.ts';
+import { type Budget, DEFAULT_MAX_RECORD_BYTES, fitText, type Sink } from './funclog.ts';
 
 const ZERO_TRACE = '0'.repeat(32);
 const ZERO_SPAN = '0'.repeat(16);
@@ -70,6 +70,7 @@ function emitSpan(
   statusMsg: string,
   links: string[],
   member: string | undefined,
+  bound: number,
 ): void {
   const rec: SpanRecord = {
     'funcd.signal': 'traces',
@@ -88,10 +89,25 @@ function emitSpan(
   };
   if (member) rec['funcd.member'] = member;
   try {
-    sink(JSON.stringify(rec) + '\n');
+    sink(boundSpan(rec, bound) + '\n');
   } catch {
     // span capture is best-effort: never let it break the function.
   }
+}
+
+/** boundSpan encodes a span record in at most `bound` bytes (ADR-0168): an over-long status_msg is cut
+ *  and the record carries attrs.truncated and attrs.keptBytes (the kept status_msg bytes). */
+function boundSpan(rec: SpanRecord, bound: number): string {
+  const line = JSON.stringify(rec);
+  if (Buffer.byteLength(line) <= bound) return line;
+  const statusMsg = rec.status_msg;
+  rec.status_msg = '';
+  rec.attrs = { ...rec.attrs, truncated: 'true', keptBytes: '' };
+  // keptBytes is at most 7 digits: the bound is at most 1 MiB.
+  const b: Budget = { left: Math.max(0, bound - Buffer.byteLength(JSON.stringify(rec)) - 7), kept: 0, cut: false };
+  rec.status_msg = fitText(b, statusMsg);
+  rec.attrs.keptBytes = String(b.kept);
+  return JSON.stringify(rec);
 }
 
 /** A live invocation span: run the handler inside its context (so logs correlate), then end() it
@@ -106,7 +122,8 @@ export interface Span {
  *  context is still established so logs get ids). `name` is the function name (or "invoke"); `tp` is
  *  the incoming `traceparent`; `spanId` is the engine-provided span-id to USE (ADR-0105,
  *  X-Funcd-Span-Id — else mint); `links` are fan-in edges (X-Funcd-Span-Links) attached to the span;
- *  `member` is the pool member, stamped as `funcd.member` (none in the solo shim). */
+ *  `member` is the pool member, stamped as `funcd.member` (none in the solo shim); `bound` caps the span
+ *  record line (FUNCD_FUNCLOG_MAX_RECORD_BYTES). */
 export function startSpan(
   sink: Sink | null,
   name: string,
@@ -114,6 +131,7 @@ export function startSpan(
   spanId?: string,
   links: string[] = [],
   member?: string,
+  bound: number = DEFAULT_MAX_RECORD_BYTES,
 ): Span {
   const inv = newInvContext(tp, spanId);
   const startNs = Date.now() * 1e6;
@@ -130,7 +148,7 @@ export function startSpan(
       ended = true;
       if (!sink) return;
       const endNs = startNs + Number(process.hrtime.bigint() - t0);
-      emitSpan(sink, inv, name, startNs, endNs, status, statusMsg, validLinks, member);
+      emitSpan(sink, inv, name, startNs, endNs, status, statusMsg, validLinks, member, bound);
     },
   };
 }

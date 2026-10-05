@@ -20,13 +20,20 @@ import { readFileSync, realpathSync, writeFileSync } from 'node:fs';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { isMainThread, parentPort, Worker, workerData } from 'node:worker_threads';
 
-import { containStrayFaults, resolveHandler, resolveValidators, toWire } from './runtime.ts';
+import { containStrayFaults, dropBrokenPipes, resolveHandler, resolveValidators, toWire } from './runtime.ts';
 import { ContractError, loadFromPath } from './contract.ts';
 import type { CloudEvent, FunctionContext, Handler, Validator } from './types.ts';
 import { makeInvoke } from './invoke.ts';
 import { makeKV } from './kv.ts';
 import { makeBlob } from './blob.ts';
-import { type ChannelLock, installConsoleCapture, newChannelLock, openChannel, releaseChannelLock } from './funclog.ts';
+import {
+  type ChannelLock,
+  installConsoleCapture,
+  newChannelLock,
+  openChannel,
+  recordBound,
+  releaseChannelLock,
+} from './funclog.ts';
 import { startSpan, parseLinks } from './tracespan.ts';
 
 // --- the wire between host and worker ---
@@ -150,7 +157,15 @@ async function workerMain(): Promise<void> {
       }
       // ADR-0101: a real invocation → its SERVER span (adopts req.traceparent or mints a root),
       // emitted on the worker's channel; the handler runs inside the span's context so logs correlate.
-      const span = startSpan(channel, spec.name, req.traceparent, req.spanId, req.links ?? [], spec.name);
+      const span = startSpan(
+        channel,
+        spec.name,
+        req.traceparent,
+        req.spanId,
+        req.links ?? [],
+        spec.name,
+        recordBound(process.env),
+      );
       try {
         const result = toWire(await span.run(() => handler(ctx, event)));
         if (validators.output) {
@@ -435,6 +450,7 @@ export function createPool(
 
 /** main loads the manifest, spawns the pool, and serves at once; members load in the background. */
 async function main(): Promise<void> {
+  dropBrokenPipes();
   const manifestPath = process.env.FUNCD_POOL_MANIFEST;
   if (!manifestPath) {
     process.stderr.write('funcd-pool: FUNCD_POOL_MANIFEST is required\n');
@@ -447,7 +463,7 @@ async function main(): Promise<void> {
   const hostname = fixedPort > 0 ? '0.0.0.0' : '127.0.0.1';
   serve({ fetch: pool.app.fetch, hostname, port: fixedPort }, (info) => {
     if (portFile) writeFileSync(portFile, String(info.port));
-    process.stderr.write(`funcd-pool: ${manifest.length} handler(s) listening on ${hostname}:${info.port}\n`);
+    process.stdout.write(`funcd-pool: ${manifest.length} handler(s) listening on ${hostname}:${info.port}\n`);
   });
 }
 

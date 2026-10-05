@@ -199,3 +199,20 @@ test('a pooled span carries funcd.member; a solo span omits it', () => {
   assert.equal(pooled['funcd.member'], 'a');
   assert.equal('funcd.member' in solo, false);
 });
+
+test('a span record over the bound has its status_msg cut and marked (ADR-0168)', () => {
+  const lines: string[] = [];
+  const sink = (line: string): void => {
+    lines.push(line.slice(0, -1));
+  };
+  startSpan(sink, 'fn', undefined, undefined, [], undefined, 2048).end('ERROR', '\u00e9'.repeat(10_000));
+  startSpan(sink, 'fn', undefined, undefined, [], undefined, 2048).end('ERROR', 'short');
+  const [cut, short] = lines.map((l) => JSON.parse(l) as { status_msg: string; attrs: Record<string, string> });
+  assert.ok(Buffer.byteLength(lines[0]) <= 2048, `line is ${Buffer.byteLength(lines[0])} bytes`);
+  assert.ok(Buffer.byteLength(lines[0]) > 2000, 'the cut keeps what fits');
+  assert.equal(cut.attrs.truncated, 'true');
+  assert.equal(Number(cut.attrs.keptBytes), Buffer.byteLength(cut.status_msg));
+  assert.match(cut.status_msg, /^\u00e9+$/);
+  assert.equal(short.status_msg, 'short');
+  assert.deepEqual(short.attrs, {});
+});

@@ -5,6 +5,12 @@ function handle(_ctx, event) {
 	const items = Math.max(100, event.data?.items ?? 100);
 	const batch = event.data?.batch ?? "default";
 	let emitted = 0;
+	process.stdout.write(`burst stdout ${batch}\n`);
+	process.stderr.write(`burst stderr ${batch}\n`);
+	if (event.data?.big) {
+		console.log("big value", { big: "x".repeat(event.data.big) });
+		emitted++;
+	}
 	for (let i = 0; i < items; i++) {
 		console.log("processing item", {
 			i,

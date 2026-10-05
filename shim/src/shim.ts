@@ -17,13 +17,13 @@ import { Hono } from 'hono';
 import { realpathSync, writeFileSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 
-import { containStrayFaults, resolveHandler, resolveValidators, toWire } from './runtime.ts';
+import { containStrayFaults, dropBrokenPipes, resolveHandler, resolveValidators, toWire } from './runtime.ts';
 import { ContractError, loadValidators } from './contract.ts';
 import type { CloudEvent, FunctionContext, Handler, Validator } from './types.ts';
 import { makeInvoke } from './invoke.ts';
 import { makeKV } from './kv.ts';
 import { makeBlob } from './blob.ts';
-import { installConsoleCapture, openChannel, type Sink } from './funclog.ts';
+import { installConsoleCapture, openChannel, recordBound, type Sink } from './funclog.ts';
 import { startSpan, parseLinks } from './tracespan.ts';
 
 export type { CloudEvent, FunctionContext, Handler, Json, Validator } from './types.ts';
@@ -37,7 +37,7 @@ export { resolveHandler, resolveValidators } from './runtime.ts';
 export function createApp(
   handler: Handler,
   validators: { input?: Validator; output?: Validator } = {},
-  trace: { sink?: Sink | null; fnName?: string } = {},
+  trace: { sink?: Sink | null; fnName?: string; bound?: number } = {},
 ): Hono {
   const app = new Hono();
   const ctx: FunctionContext = {
@@ -82,6 +82,8 @@ export function createApp(
       c.req.header('traceparent'),
       c.req.header('x-funcd-span-id'),
       parseLinks(c.req.header('x-funcd-span-links')),
+      undefined,
+      trace.bound,
     );
     try {
       const result = toWire(await span.run(() => handler(ctx, event)));
@@ -109,7 +111,8 @@ async function main(): Promise<void> {
   // ADR-0081 Path B + ADR-0101 traces: open the telemetry channel ONCE and share it between console
   // capture and the per-invocation span (a single channel per process — a second UDS connect would
   // double-capture). No channel env ⇒ null ⇒ both are no-ops (console stays Path A). The shim's OWN
-  // operational lines go to process.stderr directly — never through the patched console.
+  // operational lines go to process.stdout/stderr directly — never through the patched console.
+  dropBrokenPipes();
   const channel = openChannel(process.env);
   installConsoleCapture(process.env, channel);
 
@@ -149,11 +152,11 @@ async function main(): Promise<void> {
 
   const hostname = fixedPort > 0 ? '0.0.0.0' : '127.0.0.1';
   const fnName = process.env.FUNCD_FUNCTION ?? 'invoke';
-  const appTrace = { sink: channel, fnName };
+  const appTrace = { sink: channel, fnName, bound: recordBound(process.env) };
   serve({ fetch: createApp(handler, validators, appTrace).fetch, hostname, port: fixedPort }, (info) => {
     containStrayFaults('funcd-shim');
     if (portFile) writeFileSync(portFile, String(info.port));
-    process.stderr.write(`funcd-shim: listening on ${hostname}:${info.port}\n`);
+    process.stdout.write(`funcd-shim: listening on ${hostname}:${info.port}\n`);
   });
 }
 
