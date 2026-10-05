@@ -32,6 +32,16 @@ export function toWire(result: unknown): unknown {
   return text === undefined ? null : JSON.parse(text);
 }
 
+/** dropBrokenPipes ignores EPIPE on stdout and stderr (ADR-0168): after a funcd restart nothing reads
+ *  them, and an unhandled stream error would reach containStrayFaults, whose own stderr write fails again. */
+export function dropBrokenPipes(): void {
+  for (const stream of [process.stdout, process.stderr]) {
+    stream.on('error', (err: NodeJS.ErrnoException) => {
+      if (err.code !== 'EPIPE') throw err;
+    });
+  }
+}
+
 /** containStrayFaults logs, instead of exiting on, a rejection a handler left unhandled or a throw from
  *  one of its callbacks after it returned: concurrent calls share one event loop (the solo shim's,
  *  ADR-0030; a pool worker's, ADR-0044), so Node's default exit would cut off every one of them. Install

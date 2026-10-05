@@ -98,12 +98,12 @@ var require_code = __commonJS({
     exports._ = _;
     var plus = new _Code("+");
     function str(strs, ...args) {
-      const expr = [safeStringify2(strs[0])];
+      const expr = [safeStringify(strs[0])];
       let i = 0;
       while (i < args.length) {
         expr.push(plus);
         addCodeArg(expr, args[i]);
-        expr.push(plus, safeStringify2(strs[++i]));
+        expr.push(plus, safeStringify(strs[++i]));
       }
       optimize(expr);
       return new _Code(expr);
@@ -155,16 +155,16 @@ var require_code = __commonJS({
     }
     exports.strConcat = strConcat;
     function interpolate(x) {
-      return typeof x == "number" || typeof x == "boolean" || x === null ? x : safeStringify2(Array.isArray(x) ? x.join(",") : x);
+      return typeof x == "number" || typeof x == "boolean" || x === null ? x : safeStringify(Array.isArray(x) ? x.join(",") : x);
     }
     function stringify(x) {
-      return new _Code(safeStringify2(x));
+      return new _Code(safeStringify(x));
     }
     exports.stringify = stringify;
-    function safeStringify2(x) {
+    function safeStringify(x) {
       return JSON.stringify(x).replace(/\u2028/g, "\\u2028").replace(/\u2029/g, "\\u2029");
     }
-    exports.safeStringify = safeStringify2;
+    exports.safeStringify = safeStringify;
     function getProperty(key) {
       return typeof key == "string" && exports.IDENTIFIER.test(key) ? new _Code(`.${key}`) : _`[${key}]`;
     }
@@ -10595,6 +10595,13 @@ function toWire(result) {
   const text = JSON.stringify(result);
   return text === void 0 ? null : JSON.parse(text);
 }
+function dropBrokenPipes() {
+  for (const stream of [process.stdout, process.stderr]) {
+    stream.on("error", (err) => {
+      if (err.code !== "EPIPE") throw err;
+    });
+  }
+}
 function containStrayFaults(prefix) {
   const log = (kind) => (err) => process.stderr.write(`${prefix}: ${kind}: ${inspect(err)}
 `);
@@ -10875,73 +10882,249 @@ var SEVERITY = {
   warn: "WARN",
   error: "ERROR"
 };
-function safeStringify(value) {
-  const holders = [];
-  const origins = [];
-  try {
-    return JSON.stringify(value, function(_k, v) {
-      if (typeof v === "bigint") return v.toString();
-      if (v === void 0 || typeof v === "function" || typeof v === "symbol") return inspect2(v);
-      if (typeof v === "number" && (!Number.isFinite(v) || Object.is(v, -0))) return inspect2(v);
-      if (typeof v !== "object" || v === null) return v;
-      while (holders.length > 0 && holders[holders.length - 1] !== this) {
-        holders.pop();
-        origins.pop();
-      }
-      if (origins.includes(v)) return "[Circular]";
-      let out = v;
-      if (v instanceof Error) {
-        out = { ...v, name: v.name, message: v.message, stack: v.stack };
-        if ("cause" in v) out.cause = v.cause;
-      } else if (v instanceof Map || v instanceof Set) out = [...v];
-      else if (v instanceof RegExp) return inspect2(v);
-      else if (v instanceof DataView || v instanceof ArrayBuffer || v instanceof SharedArrayBuffer) out = bytesOf(v);
-      else if (ArrayBuffer.isView(v)) out = Array.from(v);
-      holders.push(out);
-      origins.push(v);
-      return out;
-    });
-  } catch {
-    try {
-      return String(value);
-    } catch {
-      return "[Unserializable]";
+var DEFAULT_MAX_RECORD_BYTES = 65536;
+function recordBound(env) {
+  const raw2 = env.FUNCD_FUNCLOG_MAX_RECORD_BYTES;
+  if (raw2 === void 0 || !/^[0-9]+$/.test(raw2)) return DEFAULT_MAX_RECORD_BYTES;
+  const n = Number(raw2);
+  return Number.isSafeInteger(n) && n > 0 ? n : DEFAULT_MAX_RECORD_BYTES;
+}
+var MARKER_RESERVE = 41;
+var RESERVED_KEYS = /* @__PURE__ */ new Set(["args", "truncated", "keptBytes"]);
+function fitText(b, s) {
+  if (b.cut) return "";
+  const limit = Math.min(s.length, b.left + 1);
+  let i = 0;
+  let left = b.left;
+  let kept = 0;
+  while (i < limit) {
+    const c = s.charCodeAt(i);
+    let esc;
+    let raw2;
+    let units = 1;
+    if (c === 34 || c === 92) {
+      esc = 2;
+      raw2 = 1;
+    } else if (c < 32) {
+      esc = c === 8 || c === 9 || c === 10 || c === 12 || c === 13 ? 2 : 6;
+      raw2 = 1;
+    } else if (c < 128) {
+      esc = raw2 = 1;
+    } else if (c < 2048) {
+      esc = raw2 = 2;
+    } else if (c >= 55296 && c <= 56319 && i + 1 < s.length && (s.charCodeAt(i + 1) & 64512) === 56320) {
+      esc = raw2 = 4;
+      units = 2;
+    } else if (c >= 55296 && c <= 57343) {
+      esc = 6;
+      raw2 = 3;
+    } else {
+      esc = raw2 = 3;
     }
+    if (esc > left) break;
+    left -= esc;
+    kept += raw2;
+    i += units;
+  }
+  b.left = left;
+  b.kept += kept;
+  if (i < s.length) {
+    b.cut = true;
+    return s.slice(0, i);
+  }
+  return s;
+}
+function charge(b, n) {
+  if (b.cut) return false;
+  if (n > b.left) {
+    b.cut = true;
+    return false;
+  }
+  b.left -= n;
+  return true;
+}
+function jsonString(b, s) {
+  let end = Math.min(s.length, b.left + 1);
+  if (end < s.length && (s.charCodeAt(end - 1) & 64512) === 55296) end++;
+  return JSON.stringify(end < s.length ? s.slice(0, end) : s);
+}
+function boundedStringify(value, budget) {
+  const out = [];
+  const { left, kept, cut } = budget;
+  try {
+    walk(value, "", [], budget, out);
+  } catch {
+    budget.left = left;
+    budget.kept = kept;
+    budget.cut = cut;
+    let text;
+    try {
+      text = String(value);
+    } catch {
+      text = "[Unserializable]";
+    }
+    return fitText(budget, text);
+  }
+  return out.join("");
+}
+function walk(value, key, path, b, out) {
+  if (b.cut) return;
+  let v = value;
+  if (typeof v === "object" && v !== null && !Buffer.isBuffer(v)) {
+    const toJSON = v.toJSON;
+    if (typeof toJSON === "function") v = toJSON.call(v, key);
+  }
+  switch (typeof v) {
+    case "string":
+      out.push(fitText(b, jsonString(b, v)));
+      return;
+    case "number":
+      out.push(fitText(b, Number.isFinite(v) && !Object.is(v, -0) ? String(v) : JSON.stringify(inspect2(v))));
+      return;
+    case "bigint":
+      out.push(fitText(b, JSON.stringify(v.toString())));
+      return;
+    case "boolean":
+      out.push(fitText(b, String(v)));
+      return;
+    case "undefined":
+    case "function":
+    case "symbol":
+      out.push(fitText(b, JSON.stringify(inspect2(v))));
+      return;
+  }
+  if (v === null) {
+    out.push(fitText(b, "null"));
+    return;
+  }
+  const o = v;
+  if (path.includes(o)) {
+    out.push(fitText(b, '"[Circular]"'));
+    return;
+  }
+  if (o instanceof RegExp) {
+    out.push(fitText(b, JSON.stringify(inspect2(o))));
+    return;
+  }
+  if (o instanceof Number || o instanceof Boolean || o instanceof String) {
+    const p = o.valueOf();
+    if (typeof p === "string") walk(p, key, path, b, out);
+    else out.push(fitText(b, typeof p === "number" && !Number.isFinite(p) ? "null" : String(p)));
+    return;
+  }
+  path.push(o);
+  try {
+    if (Buffer.isBuffer(o)) {
+      out.push(fitText(b, '{"type":"Buffer","data":'));
+      elements(o.length, (i) => out.push(fitText(b, String(o[i]))), b, out);
+      out.push(fitText(b, "}"));
+    } else if (o instanceof DataView || o instanceof ArrayBuffer || o instanceof SharedArrayBuffer) {
+      const buf = o instanceof DataView ? o.buffer : o;
+      const bytes = buf.byteLength === 0 ? new Uint8Array(0) : o instanceof DataView ? new Uint8Array(buf, o.byteOffset, o.byteLength) : new Uint8Array(buf);
+      elements(bytes.length, (i) => out.push(fitText(b, String(bytes[i]))), b, out);
+    } else if (ArrayBuffer.isView(o)) {
+      const view = o;
+      elements(view.length, (i) => walk(view[i], String(i), path, b, out), b, out);
+    } else if (Array.isArray(o)) {
+      elements(o.length, (i) => walk(o[i], String(i), path, b, out), b, out);
+    } else if (o instanceof Map) {
+      iterate(
+        o,
+        ([k, val]) => {
+          out.push(fitText(b, "["));
+          walk(k, "0", path, b, out);
+          out.push(fitText(b, ","));
+          walk(val, "1", path, b, out);
+          out.push(fitText(b, "]"));
+        },
+        b,
+        out
+      );
+    } else if (o instanceof Set) {
+      let i = 0;
+      iterate(o, (x) => walk(x, String(i++), path, b, out), b, out);
+    } else {
+      const keys = Object.keys(o);
+      if (o instanceof Error) {
+        for (const k of ["name", "message", "stack"]) if (!keys.includes(k)) keys.push(k);
+        if ("cause" in o && !keys.includes("cause")) keys.push("cause");
+      }
+      out.push(fitText(b, "{"));
+      for (let i = 0; i < keys.length && !b.cut; i++) {
+        out.push(fitText(b, `${i > 0 ? "," : ""}${JSON.stringify(keys[i])}:`));
+        walk(o[keys[i]], keys[i], path, b, out);
+      }
+      out.push(fitText(b, "}"));
+    }
+  } finally {
+    path.pop();
   }
 }
-function bytesOf(v) {
-  const buf = v instanceof DataView ? v.buffer : v;
-  if (buf.byteLength === 0) return [];
-  return Array.from(v instanceof DataView ? new Uint8Array(buf, v.byteOffset, v.byteLength) : new Uint8Array(buf));
+function elements(n, each, b, out) {
+  out.push(fitText(b, "["));
+  for (let i = 0; i < n && !b.cut; i++) {
+    if (i > 0) out.push(fitText(b, ","));
+    each(i);
+  }
+  out.push(fitText(b, "]"));
+}
+function iterate(it, each, b, out) {
+  out.push(fitText(b, "["));
+  let first = true;
+  for (const x of it) {
+    if (b.cut) break;
+    if (!first) out.push(fitText(b, ","));
+    first = false;
+    each(x);
+  }
+  out.push(fitText(b, "]"));
 }
 function isPlainObject(v) {
   if (typeof v !== "object" || v === null) return false;
   const proto = Object.getPrototypeOf(v);
   return proto === Object.prototype || proto === null;
 }
-function buildRecord(method, args, member) {
-  const body = typeof args[0] === "string" ? args[0] : "";
-  const attrs = { args: safeStringify(args) };
-  for (const arg of args) {
-    if (!isPlainObject(arg)) continue;
-    for (const [k, v] of Object.entries(arg)) {
-      if (k === "args") continue;
-      attrs[k] = typeof v === "string" ? v : safeStringify(v);
-    }
-  }
+function buildLine(method, args, bound, member) {
   const inv = currentInv();
   const rec = {
     ts: Date.now() * 1e6,
     sev: SEVERITY[method],
-    body,
-    attrs,
+    body: "",
+    attrs: {},
     inv: inv?.inv ?? "",
     trace_id: inv?.traceId ?? "",
     span_id: inv?.spanId ?? "",
     "funcd.source": "console"
   };
   if (member) rec["funcd.member"] = member;
-  return rec;
+  const b = {
+    left: Math.max(0, bound - Buffer.byteLength(JSON.stringify(rec)) - MARKER_RESERVE),
+    kept: 0,
+    cut: false
+  };
+  if (typeof args[0] === "string") rec.body = fitText(b, args[0]);
+  const attrs = { args: "" };
+  let entries = 0;
+  const entry2 = (k) => charge(b, Buffer.byteLength(JSON.stringify(k)) + 3 + (entries++ > 0 ? 1 : 0));
+  const merged = /* @__PURE__ */ new Map();
+  for (const arg of args) {
+    if (!isPlainObject(arg)) continue;
+    for (const k of Object.keys(arg)) if (!RESERVED_KEYS.has(k)) merged.set(k, arg);
+  }
+  for (const [k, owner] of merged) {
+    if (!entry2(k)) break;
+    const v = owner[k];
+    attrs[k] = typeof v === "string" ? fitText(b, v) : boundedStringify(v, b);
+    if (b.cut) break;
+  }
+  if (entry2("args")) attrs.args = boundedStringify(args, b);
+  else delete attrs.args;
+  if (b.cut) {
+    attrs.truncated = "true";
+    attrs.keptBytes = String(b.kept);
+  }
+  rec.attrs = attrs;
+  return JSON.stringify(rec);
 }
 function acquire(lock) {
   for (; ; ) {
@@ -10986,11 +11169,12 @@ function openChannel(env, lock) {
 }
 function installConsoleCapture(env = process.env, sink = openChannel(env), member) {
   if (!sink) return false;
+  const bound = recordBound(env);
   const methods = ["debug", "log", "info", "warn", "error"];
   for (const method of methods) {
     console[method] = (...args) => {
       try {
-        sink(JSON.stringify(buildRecord(method, args, member)) + "\n");
+        sink(buildLine(method, args, bound, member) + "\n");
       } catch {
       }
     };
@@ -11022,7 +11206,7 @@ function newInvContext(tp, providedSpanId) {
     parentId: adopted ? adopted.parentId : ""
   };
 }
-function emitSpan(sink, ctx, name, start, end, status, statusMsg, links, member) {
+function emitSpan(sink, ctx, name, start, end, status, statusMsg, links, member, bound) {
   const rec = {
     "funcd.signal": "traces",
     trace_id: ctx.traceId,
@@ -11040,11 +11224,22 @@ function emitSpan(sink, ctx, name, start, end, status, statusMsg, links, member)
   };
   if (member) rec["funcd.member"] = member;
   try {
-    sink(JSON.stringify(rec) + "\n");
+    sink(boundSpan(rec, bound) + "\n");
   } catch {
   }
 }
-function startSpan(sink, name, tp, spanId, links = [], member) {
+function boundSpan(rec, bound) {
+  const line = JSON.stringify(rec);
+  if (Buffer.byteLength(line) <= bound) return line;
+  const statusMsg = rec.status_msg;
+  rec.status_msg = "";
+  rec.attrs = { ...rec.attrs, truncated: "true", keptBytes: "" };
+  const b = { left: Math.max(0, bound - Buffer.byteLength(JSON.stringify(rec)) - 7), kept: 0, cut: false };
+  rec.status_msg = fitText(b, statusMsg);
+  rec.attrs.keptBytes = String(b.kept);
+  return JSON.stringify(rec);
+}
+function startSpan(sink, name, tp, spanId, links = [], member, bound = DEFAULT_MAX_RECORD_BYTES) {
   const inv = newInvContext(tp, spanId);
   const startNs = Date.now() * 1e6;
   const t0 = process.hrtime.bigint();
@@ -11060,7 +11255,7 @@ function startSpan(sink, name, tp, spanId, links = [], member) {
       ended = true;
       if (!sink) return;
       const endNs = startNs + Number(process.hrtime.bigint() - t0);
-      emitSpan(sink, inv, name, startNs, endNs, status, statusMsg, validLinks, member);
+      emitSpan(sink, inv, name, startNs, endNs, status, statusMsg, validLinks, member, bound);
     }
   };
 }
@@ -11104,7 +11299,9 @@ function createApp(handler, validators = {}, trace = {}) {
       fnName,
       c.req.header("traceparent"),
       c.req.header("x-funcd-span-id"),
-      parseLinks(c.req.header("x-funcd-span-links"))
+      parseLinks(c.req.header("x-funcd-span-links")),
+      void 0,
+      trace.bound
     );
     try {
       const result = toWire(await span.run(() => handler(ctx, event)));
@@ -11126,6 +11323,7 @@ function createApp(handler, validators = {}, trace = {}) {
   return app;
 }
 async function main() {
+  dropBrokenPipes();
   const channel = openChannel(process.env);
   installConsoleCapture(process.env, channel);
   const artifact = process.env.FUNCD_ARTIFACT;
@@ -11157,11 +11355,11 @@ async function main() {
   }
   const hostname = fixedPort > 0 ? "0.0.0.0" : "127.0.0.1";
   const fnName = process.env.FUNCD_FUNCTION ?? "invoke";
-  const appTrace = { sink: channel, fnName };
+  const appTrace = { sink: channel, fnName, bound: recordBound(process.env) };
   serve({ fetch: createApp(handler, validators, appTrace).fetch, hostname, port: fixedPort }, (info) => {
     containStrayFaults("funcd-shim");
     if (portFile) writeFileSync(portFile, String(info.port));
-    process.stderr.write(`funcd-shim: listening on ${hostname}:${info.port}
+    process.stdout.write(`funcd-shim: listening on ${hostname}:${info.port}
 `);
   });
 }
