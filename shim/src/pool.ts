@@ -133,7 +133,7 @@ async function workerMain(): Promise<void> {
   }
   const ctx: FunctionContext = {
     log: (...args) => console.log(`[${spec.name}]`, ...args),
-    invoke: makeInvoke({ member: spec.name }),
+    invoke: makeInvoke({ member: spec.name, sink: channel, bound: recordBound(process.env) }),
     kv: makeKV(spec.name),
     blob: makeBlob(spec.name),
   };

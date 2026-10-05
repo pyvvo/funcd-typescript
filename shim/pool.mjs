@@ -10648,220 +10648,9 @@ function loadFromPath(path) {
 
 // src/invoke.ts
 import http from "node:http";
-var MEMBER_HEADER = "X-Funcd-Member";
-function makeInvoke(opts = {}) {
-  return (alias, input) => new Promise((resolve, reject) => {
-    const socketPath = process.env.FUNCD_INVOKE_SOCKET;
-    if (!socketPath) {
-      reject(new Error("context.invoke: worker-node local API socket unavailable (FUNCD_INVOKE_SOCKET unset)"));
-      return;
-    }
-    const body = JSON.stringify(input ?? null);
-    const headers = {
-      "content-type": "application/json",
-      "content-length": Buffer.byteLength(body)
-    };
-    if (opts.member) headers[MEMBER_HEADER] = opts.member;
-    const req = http.request(
-      {
-        socketPath,
-        path: `/invoke/${encodeURIComponent(alias)}`,
-        method: "POST",
-        headers
-      },
-      (res) => {
-        const chunks = [];
-        res.on(
-          "error",
-          (err) => reject(
-            new Error(`context.invoke("${alias}") failed: connection closed before the reply ended`, { cause: err })
-          )
-        );
-        res.on("data", (c) => chunks.push(c));
-        res.on("end", () => {
-          const text = Buffer.concat(chunks).toString("utf8");
-          const status = res.statusCode ?? 0;
-          if (status >= 200 && status < 300) {
-            try {
-              resolve(text ? JSON.parse(text) : null);
-            } catch (err) {
-              reject(
-                new Error(`context.invoke("${alias}") failed: ${status} reply is not JSON: ${text}`, { cause: err })
-              );
-            }
-          } else {
-            reject(new Error(`context.invoke("${alias}") failed: ${status} ${text}`));
-          }
-        });
-      }
-    );
-    req.on("error", (err) => reject(new Error(`context.invoke("${alias}") failed: ${err.message}`, { cause: err })));
-    req.end(body);
-  });
-}
 
-// src/kv.ts
-import http2 from "node:http";
-function send(method, path, body, member) {
-  return new Promise((resolve, reject) => {
-    const socketPath = process.env.FUNCD_INVOKE_SOCKET;
-    if (!socketPath) {
-      reject(new Error("context.kv: worker-node local API socket unavailable (FUNCD_INVOKE_SOCKET unset)"));
-      return;
-    }
-    const headers = {};
-    if (body) headers["content-length"] = body.byteLength;
-    if (member) headers[MEMBER_HEADER] = member;
-    const req = http2.request({ socketPath, path, method, headers }, (res) => {
-      const chunks = [];
-      res.on(
-        "error",
-        (err) => reject(
-          new Error(`context.kv ${method} ${path} failed: connection closed before the reply ended`, { cause: err })
-        )
-      );
-      res.on("data", (c) => chunks.push(c));
-      res.on("end", () => resolve({ status: res.statusCode ?? 0, body: Buffer.concat(chunks) }));
-    });
-    req.on("error", (err) => reject(new Error(`context.kv ${method} ${path} failed: ${err.message}`, { cause: err })));
-    if (body) req.end(body);
-    else req.end();
-  });
-}
-var enc = encodeURIComponent;
-var keyPath = (binding, key) => `/kv/${enc(binding)}/${key.split("/").map(enc).join("/")}`;
-var fail = (verb, r) => new Error(`context.kv.${verb} failed: ${r.status} ${r.body.toString("utf8")}`);
-var ok = (r) => r.status >= 200 && r.status < 300;
-var json2 = (verb, r, text) => {
-  try {
-    return JSON.parse(text);
-  } catch (err) {
-    throw new Error(`context.kv.${verb} failed: ${r.status} reply is not JSON: ${err.message}`, {
-      cause: err
-    });
-  }
-};
-function makeKV(member) {
-  const request = (method, path, body) => send(method, path, body, member);
-  return {
-    async get(binding, key) {
-      const r = await request("GET", keyPath(binding, key));
-      if (r.status === 404) return null;
-      if (!ok(r)) throw fail("get", r);
-      return new Uint8Array(r.body);
-    },
-    async getText(binding, key) {
-      const r = await request("GET", keyPath(binding, key));
-      if (r.status === 404) return null;
-      if (!ok(r)) throw fail("get", r);
-      return r.body.toString("utf8");
-    },
-    async getJSON(binding, key) {
-      const r = await request("GET", keyPath(binding, key));
-      if (r.status === 404) return null;
-      if (!ok(r)) throw fail("get", r);
-      return json2("getJSON", r, r.body.toString("utf8"));
-    },
-    async put(binding, key, value) {
-      const buf = typeof value === "string" ? Buffer.from(value, "utf8") : Buffer.from(value);
-      const r = await request("PUT", keyPath(binding, key), buf);
-      if (!ok(r)) throw fail("put", r);
-    },
-    async del(binding, key) {
-      const r = await request("DELETE", keyPath(binding, key));
-      if (!ok(r)) throw fail("del", r);
-    },
-    async list(binding, prefix) {
-      const q = prefix ? `?prefix=${enc(prefix)}` : "";
-      const r = await request("GET", `/kv/${enc(binding)}${q}`);
-      if (!ok(r)) throw fail("list", r);
-      return json2("list", r, r.body.toString("utf8") || "[]");
-    }
-  };
-}
-
-// src/blob.ts
-import http3 from "node:http";
-function send2(method, path, body, member) {
-  return new Promise((resolve, reject) => {
-    const socketPath = process.env.FUNCD_INVOKE_SOCKET;
-    if (!socketPath) {
-      reject(new Error("context.blob: worker-node local API socket unavailable (FUNCD_INVOKE_SOCKET unset)"));
-      return;
-    }
-    const headers = {};
-    if (body) headers["content-length"] = body.byteLength;
-    if (member) headers[MEMBER_HEADER] = member;
-    const req = http3.request({ socketPath, path, method, headers }, (res) => {
-      const chunks = [];
-      res.on(
-        "error",
-        (err) => reject(
-          new Error(`context.blob ${method} ${path} failed: connection closed before the reply ended`, { cause: err })
-        )
-      );
-      res.on("data", (c) => chunks.push(c));
-      res.on("end", () => resolve({ status: res.statusCode ?? 0, body: Buffer.concat(chunks) }));
-    });
-    req.on(
-      "error",
-      (err) => reject(new Error(`context.blob ${method} ${path} failed: ${err.message}`, { cause: err }))
-    );
-    if (body) req.end(body);
-    else req.end();
-  });
-}
-var enc2 = encodeURIComponent;
-var keyPath2 = (binding, key) => `/blob/${enc2(binding)}/${key.split("/").map(enc2).join("/")}`;
-var fail2 = (verb, r) => new Error(`context.blob.${verb} failed: ${r.status} ${r.body.toString("utf8")}`);
-var ok2 = (r) => r.status >= 200 && r.status < 300;
-var json3 = (verb, r, text) => {
-  try {
-    return JSON.parse(text);
-  } catch (err) {
-    throw new Error(`context.blob.${verb} failed: ${r.status} reply is not JSON: ${err.message}`, {
-      cause: err
-    });
-  }
-};
-function makeBlob(member) {
-  const request = (method, path, body) => send2(method, path, body, member);
-  return {
-    async get(binding, key) {
-      const r = await request("GET", keyPath2(binding, key));
-      if (r.status === 404) return null;
-      if (!ok2(r)) throw fail2("get", r);
-      return new Uint8Array(r.body);
-    },
-    async put(binding, key, value) {
-      const r = await request("PUT", keyPath2(binding, key), Buffer.from(value));
-      if (!ok2(r)) throw fail2("put", r);
-    },
-    async del(binding, key) {
-      const r = await request("DELETE", keyPath2(binding, key));
-      if (!ok2(r)) throw fail2("del", r);
-    },
-    async list(binding, prefix) {
-      const q = prefix ? `?prefix=${enc2(prefix)}` : "";
-      const r = await request("GET", `/blob/${enc2(binding)}${q}`);
-      if (!ok2(r)) throw fail2("list", r);
-      return json3("list", r, r.body.toString("utf8") || "[]");
-    },
-    async signedUrl(binding, key, opts) {
-      let path = `${keyPath2(binding, key)}?sign=1&method=${enc2(opts?.method ?? "GET")}`;
-      if (opts?.expiry) path += `&expiry=${enc2(opts.expiry)}`;
-      const r = await request("GET", path);
-      if (!ok2(r)) throw fail2("signedUrl", r);
-      return r.body.toString("utf8");
-    }
-  };
-}
-
-// src/funclog.ts
-import { writeSync } from "node:fs";
-import { connect } from "node:net";
-import { inspect as inspect2 } from "node:util";
-import { threadId } from "node:worker_threads";
+// src/tracespan.ts
+import { randomBytes } from "node:crypto";
 
 // src/invcontext.ts
 import { AsyncLocalStorage } from "node:async_hooks";
@@ -10871,6 +10660,10 @@ function currentInv() {
 }
 
 // src/funclog.ts
+import { writeSync } from "node:fs";
+import { connect } from "node:net";
+import { inspect as inspect2 } from "node:util";
+import { threadId } from "node:worker_threads";
 var SEVERITY = {
   debug: "DEBUG",
   log: "INFO",
@@ -11182,7 +10975,6 @@ function installConsoleCapture(env = process.env, sink = openChannel(env), membe
 }
 
 // src/tracespan.ts
-import { randomBytes } from "node:crypto";
 var ZERO_TRACE = "0".repeat(32);
 var ZERO_SPAN = "0".repeat(16);
 function parseTraceparent(tp) {
@@ -11205,20 +10997,20 @@ function newInvContext(tp, providedSpanId) {
     parentId: adopted ? adopted.parentId : ""
   };
 }
-function emitSpan(sink, ctx, name, start, end, status, statusMsg, links, member, bound) {
+function emitSpan(sink, ids, name, kind, start, end, status, statusMsg, attrs, links, member, bound) {
   const rec = {
     "funcd.signal": "traces",
-    trace_id: ctx.traceId,
-    span_id: ctx.spanId,
-    parent_id: ctx.parentId,
+    trace_id: ids.traceId,
+    span_id: ids.spanId,
+    parent_id: ids.parentId,
     name,
-    kind: "SERVER",
+    kind,
     start,
     end,
     status,
     status_msg: statusMsg,
-    attrs: {},
-    inv: ctx.inv,
+    attrs,
+    inv: ids.inv,
     links
   };
   if (member) rec["funcd.member"] = member;
@@ -11254,13 +11046,259 @@ function startSpan(sink, name, tp, spanId, links = [], member, bound = DEFAULT_M
       ended = true;
       if (!sink) return;
       const endNs = startNs + Number(process.hrtime.bigint() - t0);
-      emitSpan(sink, inv, name, startNs, endNs, status, statusMsg, validLinks, member, bound);
+      emitSpan(sink, inv, name, "SERVER", startNs, endNs, status, statusMsg, {}, validLinks, member, bound);
+    }
+  };
+}
+function startClientSpan(sink, alias, member, bound = DEFAULT_MAX_RECORD_BYTES) {
+  const caller = currentInv();
+  if (!caller) return null;
+  const ids = {
+    inv: caller.inv,
+    traceId: caller.traceId,
+    spanId: randomBytes(8).toString("hex"),
+    parentId: caller.spanId
+  };
+  const startNs = Date.now() * 1e6;
+  const t0 = process.hrtime.bigint();
+  let ended = false;
+  return {
+    traceparent: `00-${ids.traceId}-${ids.spanId}-01`,
+    end(status, statusMsg = "", httpStatus) {
+      if (ended) return;
+      ended = true;
+      if (!sink) return;
+      const endNs = startNs + Number(process.hrtime.bigint() - t0);
+      const attrs = httpStatus === void 0 ? {} : { "http.status_code": String(httpStatus) };
+      emitSpan(sink, ids, `call ${alias}`, "CLIENT", startNs, endNs, status, statusMsg, attrs, [], member, bound);
     }
   };
 }
 function parseLinks(header) {
   if (!header) return [];
   return header.split(",").map((s) => s.trim()).filter((s) => s.length > 0);
+}
+
+// src/invoke.ts
+var MEMBER_HEADER = "X-Funcd-Member";
+function makeInvoke(opts = {}) {
+  return (alias, input) => new Promise((resolve, reject) => {
+    const span = startClientSpan(opts.sink ?? null, alias, opts.member, opts.bound);
+    const fail3 = (err, httpStatus) => {
+      span?.end("ERROR", err.message, httpStatus);
+      reject(err);
+    };
+    const socketPath = process.env.FUNCD_INVOKE_SOCKET;
+    if (!socketPath) {
+      fail3(new Error("context.invoke: worker-node local API socket unavailable (FUNCD_INVOKE_SOCKET unset)"));
+      return;
+    }
+    const body = JSON.stringify(input ?? null);
+    const headers = {
+      "content-type": "application/json",
+      "content-length": Buffer.byteLength(body)
+    };
+    if (opts.member) headers[MEMBER_HEADER] = opts.member;
+    if (span) headers.traceparent = span.traceparent;
+    const req = http.request(
+      {
+        socketPath,
+        path: `/invoke/${encodeURIComponent(alias)}`,
+        method: "POST",
+        headers
+      },
+      (res) => {
+        const chunks = [];
+        const status = res.statusCode ?? 0;
+        res.on(
+          "error",
+          (err) => fail3(
+            new Error(`context.invoke("${alias}") failed: connection closed before the reply ended`, { cause: err }),
+            status
+          )
+        );
+        res.on("data", (c) => chunks.push(c));
+        res.on("end", () => {
+          const text = Buffer.concat(chunks).toString("utf8");
+          if (status >= 200 && status < 300) {
+            let out;
+            try {
+              out = text ? JSON.parse(text) : null;
+            } catch (err) {
+              fail3(
+                new Error(`context.invoke("${alias}") failed: ${status} reply is not JSON: ${text}`, { cause: err }),
+                status
+              );
+              return;
+            }
+            span?.end("OK", "", status);
+            resolve(out);
+          } else {
+            fail3(new Error(`context.invoke("${alias}") failed: ${status} ${text}`), status);
+          }
+        });
+      }
+    );
+    req.on("error", (err) => fail3(new Error(`context.invoke("${alias}") failed: ${err.message}`, { cause: err })));
+    req.end(body);
+  });
+}
+
+// src/kv.ts
+import http2 from "node:http";
+function send(method, path, body, member) {
+  return new Promise((resolve, reject) => {
+    const socketPath = process.env.FUNCD_INVOKE_SOCKET;
+    if (!socketPath) {
+      reject(new Error("context.kv: worker-node local API socket unavailable (FUNCD_INVOKE_SOCKET unset)"));
+      return;
+    }
+    const headers = {};
+    if (body) headers["content-length"] = body.byteLength;
+    if (member) headers[MEMBER_HEADER] = member;
+    const req = http2.request({ socketPath, path, method, headers }, (res) => {
+      const chunks = [];
+      res.on(
+        "error",
+        (err) => reject(
+          new Error(`context.kv ${method} ${path} failed: connection closed before the reply ended`, { cause: err })
+        )
+      );
+      res.on("data", (c) => chunks.push(c));
+      res.on("end", () => resolve({ status: res.statusCode ?? 0, body: Buffer.concat(chunks) }));
+    });
+    req.on("error", (err) => reject(new Error(`context.kv ${method} ${path} failed: ${err.message}`, { cause: err })));
+    if (body) req.end(body);
+    else req.end();
+  });
+}
+var enc = encodeURIComponent;
+var keyPath = (binding, key) => `/kv/${enc(binding)}/${key.split("/").map(enc).join("/")}`;
+var fail = (verb, r) => new Error(`context.kv.${verb} failed: ${r.status} ${r.body.toString("utf8")}`);
+var ok = (r) => r.status >= 200 && r.status < 300;
+var json2 = (verb, r, text) => {
+  try {
+    return JSON.parse(text);
+  } catch (err) {
+    throw new Error(`context.kv.${verb} failed: ${r.status} reply is not JSON: ${err.message}`, {
+      cause: err
+    });
+  }
+};
+function makeKV(member) {
+  const request = (method, path, body) => send(method, path, body, member);
+  return {
+    async get(binding, key) {
+      const r = await request("GET", keyPath(binding, key));
+      if (r.status === 404) return null;
+      if (!ok(r)) throw fail("get", r);
+      return new Uint8Array(r.body);
+    },
+    async getText(binding, key) {
+      const r = await request("GET", keyPath(binding, key));
+      if (r.status === 404) return null;
+      if (!ok(r)) throw fail("get", r);
+      return r.body.toString("utf8");
+    },
+    async getJSON(binding, key) {
+      const r = await request("GET", keyPath(binding, key));
+      if (r.status === 404) return null;
+      if (!ok(r)) throw fail("get", r);
+      return json2("getJSON", r, r.body.toString("utf8"));
+    },
+    async put(binding, key, value) {
+      const buf = typeof value === "string" ? Buffer.from(value, "utf8") : Buffer.from(value);
+      const r = await request("PUT", keyPath(binding, key), buf);
+      if (!ok(r)) throw fail("put", r);
+    },
+    async del(binding, key) {
+      const r = await request("DELETE", keyPath(binding, key));
+      if (!ok(r)) throw fail("del", r);
+    },
+    async list(binding, prefix) {
+      const q = prefix ? `?prefix=${enc(prefix)}` : "";
+      const r = await request("GET", `/kv/${enc(binding)}${q}`);
+      if (!ok(r)) throw fail("list", r);
+      return json2("list", r, r.body.toString("utf8") || "[]");
+    }
+  };
+}
+
+// src/blob.ts
+import http3 from "node:http";
+function send2(method, path, body, member) {
+  return new Promise((resolve, reject) => {
+    const socketPath = process.env.FUNCD_INVOKE_SOCKET;
+    if (!socketPath) {
+      reject(new Error("context.blob: worker-node local API socket unavailable (FUNCD_INVOKE_SOCKET unset)"));
+      return;
+    }
+    const headers = {};
+    if (body) headers["content-length"] = body.byteLength;
+    if (member) headers[MEMBER_HEADER] = member;
+    const req = http3.request({ socketPath, path, method, headers }, (res) => {
+      const chunks = [];
+      res.on(
+        "error",
+        (err) => reject(
+          new Error(`context.blob ${method} ${path} failed: connection closed before the reply ended`, { cause: err })
+        )
+      );
+      res.on("data", (c) => chunks.push(c));
+      res.on("end", () => resolve({ status: res.statusCode ?? 0, body: Buffer.concat(chunks) }));
+    });
+    req.on(
+      "error",
+      (err) => reject(new Error(`context.blob ${method} ${path} failed: ${err.message}`, { cause: err }))
+    );
+    if (body) req.end(body);
+    else req.end();
+  });
+}
+var enc2 = encodeURIComponent;
+var keyPath2 = (binding, key) => `/blob/${enc2(binding)}/${key.split("/").map(enc2).join("/")}`;
+var fail2 = (verb, r) => new Error(`context.blob.${verb} failed: ${r.status} ${r.body.toString("utf8")}`);
+var ok2 = (r) => r.status >= 200 && r.status < 300;
+var json3 = (verb, r, text) => {
+  try {
+    return JSON.parse(text);
+  } catch (err) {
+    throw new Error(`context.blob.${verb} failed: ${r.status} reply is not JSON: ${err.message}`, {
+      cause: err
+    });
+  }
+};
+function makeBlob(member) {
+  const request = (method, path, body) => send2(method, path, body, member);
+  return {
+    async get(binding, key) {
+      const r = await request("GET", keyPath2(binding, key));
+      if (r.status === 404) return null;
+      if (!ok2(r)) throw fail2("get", r);
+      return new Uint8Array(r.body);
+    },
+    async put(binding, key, value) {
+      const r = await request("PUT", keyPath2(binding, key), Buffer.from(value));
+      if (!ok2(r)) throw fail2("put", r);
+    },
+    async del(binding, key) {
+      const r = await request("DELETE", keyPath2(binding, key));
+      if (!ok2(r)) throw fail2("del", r);
+    },
+    async list(binding, prefix) {
+      const q = prefix ? `?prefix=${enc2(prefix)}` : "";
+      const r = await request("GET", `/blob/${enc2(binding)}${q}`);
+      if (!ok2(r)) throw fail2("list", r);
+      return json3("list", r, r.body.toString("utf8") || "[]");
+    },
+    async signedUrl(binding, key, opts) {
+      let path = `${keyPath2(binding, key)}?sign=1&method=${enc2(opts?.method ?? "GET")}`;
+      if (opts?.expiry) path += `&expiry=${enc2(opts.expiry)}`;
+      const r = await request("GET", path);
+      if (!ok2(r)) throw fail2("signedUrl", r);
+      return r.body.toString("utf8");
+    }
+  };
 }
 
 // src/pool.ts
@@ -11313,7 +11351,7 @@ async function workerMain() {
   }
   const ctx = {
     log: (...args) => console.log(`[${spec.name}]`, ...args),
-    invoke: makeInvoke({ member: spec.name }),
+    invoke: makeInvoke({ member: spec.name, sink: channel, bound: recordBound(process.env) }),
     kv: makeKV(spec.name),
     blob: makeBlob(spec.name)
   };
