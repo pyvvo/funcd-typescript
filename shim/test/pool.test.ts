@@ -3,12 +3,13 @@ import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { closeSync, constants, createReadStream, openSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { once } from 'node:events';
+import { createServer } from 'node:http';
 import { dirname, join } from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
 
 import type { Hono } from 'hono';
 
-import { callTimeoutMs, createPool } from '../src/pool.ts';
+import { callTimeoutMs, createPool, loadTimeoutMs, type MemberStatus } from '../src/pool.ts';
 import { tempDir } from './tempdir.ts';
 
 // writeHandlers writes each handler to a temp .mjs and returns the pool manifest.
@@ -385,5 +386,206 @@ test('scenario pooled-node-follows-limit: a never-settling handler answers 503 a
     assert.ok(elapsed >= 1_450 && elapsed < 5_000, `answered after ${elapsed} ms`);
   } finally {
     await pool.close();
+  }
+});
+
+const members = async (app: Hono) => (await (await app.request('/health/members')).json()) as MemberStatus[];
+
+// A fake worker-node local API on a unix socket: it records which member each call named and answers
+// every kv, blob and invoke call with that member's name.
+async function fakeLocalAPI(t: TestContext): Promise<{ socket: string; calls: string[] }> {
+  const socket = join(tempDir(t, 'funcd-pool-api-'), 'api.sock');
+  const calls: string[] = [];
+  const server = createServer((req, res) => {
+    const member = req.headers['x-funcd-member'];
+    calls.push(`${req.method} ${req.url} ${member ?? '-'}`);
+    req.resume();
+    req.on('end', () => {
+      if (typeof member !== 'string') {
+        res.writeHead(403).end('no member');
+        return;
+      }
+      const body = req.url?.startsWith('/invoke/') ? JSON.stringify({ via: member }) : `value-for-${member}`;
+      res.writeHead(200).end(body);
+    });
+  });
+  server.listen(socket);
+  await once(server, 'listening');
+  t.after(() => server.close());
+  return { socket, calls };
+}
+
+// scenario: pooled-member-kv — each member's context.kv/blob/invoke call names that member.
+test('scenario pooled-member-kv: every local API call names its pool member', async (t) => {
+  const api = await fakeLocalAPI(t);
+  const handler = `export async function handle(ctx) {
+  return {
+    kv: await ctx.kv.getText('t', 'k'),
+    blob: new TextDecoder().decode(await ctx.blob.get('raw', 'x')),
+    invoke: await ctx.invoke('peer', {}),
+  };
+}`;
+  process.env.FUNCD_INVOKE_SOCKET = api.socket;
+  const pool = createPool(writeHandlers(t, { a: handler, b: handler }));
+  delete process.env.FUNCD_INVOKE_SOCKET;
+  try {
+    await pool.ready;
+    for (const name of ['a', 'b']) {
+      const res = await post(pool.app, name, {});
+      assert.equal(res.status, 200, await res.clone().text());
+      assert.deepEqual(await res.json(), {
+        kv: `value-for-${name}`,
+        blob: `value-for-${name}`,
+        invoke: { via: name },
+      });
+    }
+    assert.deepEqual(api.calls.sort(), [
+      'GET /blob/raw/x a',
+      'GET /blob/raw/x b',
+      'GET /kv/t/k a',
+      'GET /kv/t/k b',
+      'POST /invoke/peer a',
+      'POST /invoke/peer b',
+    ]);
+  } finally {
+    await pool.close();
+  }
+});
+
+// scenario: pooled-member-logs — a member's log records and span carry its own name.
+test('scenario pooled-member-logs: log records and spans name their member', async (t) => {
+  const file = join(tempDir(t, 'funcd-pool-logs-'), 'channel');
+  const fd = openSync(file, 'w');
+  const handler = (tag: string) => `export function handle() { console.log("hello-${tag}"); }`;
+  process.env.FUNCD_LOG_FD = String(fd);
+  const pool = createPool(writeHandlers(t, { a: handler('a'), b: handler('b') }));
+  delete process.env.FUNCD_LOG_FD;
+  try {
+    await pool.ready;
+    assert.equal((await post(pool.app, 'a', {})).status, 204);
+    assert.equal((await post(pool.app, 'b', {})).status, 204);
+  } finally {
+    await pool.close();
+    closeSync(fd);
+  }
+  const records = readFileSync(file, 'utf8')
+    .split('\n')
+    .filter((l) => l.length > 0)
+    .map((l) => JSON.parse(l) as Record<string, unknown>);
+  const logs = records.filter((r) => r['funcd.signal'] === undefined);
+  const spans = records.filter((r) => r['funcd.signal'] === 'traces');
+  assert.deepEqual(
+    logs.map((r) => [r.body, r['funcd.member']]),
+    [
+      ['hello-a', 'a'],
+      ['hello-b', 'b'],
+    ],
+  );
+  assert.deepEqual(spans.map((r) => [r.name, r['funcd.member']]).sort(), [
+    ['a', 'a'],
+    ['b', 'b'],
+  ]);
+});
+
+// scenario: pool-member-load-failure — a member with no handle export fails alone; its siblings serve.
+test('scenario pool-member-load-failure: a member that cannot load fails alone', async (t) => {
+  const pool = createPool(
+    writeHandlers(t, {
+      a: 'export function handle() { return { from: "a" }; }',
+      b: 'export const notHandle = 1;',
+      c: 'export function handle() { return { from: "c" }; }',
+    }),
+  );
+  try {
+    await pool.ready;
+    const states = await members(pool.app);
+    assert.deepEqual(
+      states.map((m) => [m.name, m.state]),
+      [
+        ['a', 'ready'],
+        ['b', 'failed'],
+        ['c', 'ready'],
+      ],
+    );
+    assert.match(states[1].error ?? '', /shape error: .*handle/);
+    assert.equal((await pool.app.request('/health/readiness')).status, 200, 'no member is loading');
+    assert.equal((await post(pool.app, 'a', {})).status, 200);
+    assert.equal((await post(pool.app, 'c', {})).status, 200);
+    const b = await post(pool.app, 'b', {});
+    assert.equal(b.status, 503);
+    assert.deepEqual(await b.json(), { error: 'function b unavailable' });
+  } finally {
+    await pool.close();
+  }
+});
+
+test('a member whose import hangs past the load bound fails with load timed out', { timeout: 10_000 }, async (t) => {
+  const pool = createPool(
+    writeHandlers(t, {
+      hung: 'await new Promise((r) => setTimeout(r, 1e9));\nexport function handle() {}',
+      ok: 'export function handle() { return { ok: true }; }',
+    }),
+    { loadTimeoutMs: 500 },
+  );
+  try {
+    assert.equal((await pool.app.request('/health/liveness')).status, 200, 'the host answers while members load');
+    assert.equal((await pool.app.request('/health/readiness')).status, 503, 'a member is still loading');
+    await pool.ready;
+    assert.deepEqual(await members(pool.app), [
+      { name: 'hung', state: 'failed', error: 'load timed out' },
+      { name: 'ok', state: 'ready' },
+    ]);
+    assert.equal((await pool.app.request('/health/readiness')).status, 200);
+    assert.equal((await post(pool.app, 'ok', {})).status, 200);
+  } finally {
+    await pool.close();
+  }
+});
+
+// A member that faulted after it loaded is restarting, and a restart that cannot load is one more
+// fault: the member never turns failed.
+test('a member that faults after it loaded reads restarting, never failed', { timeout: 15_000 }, async (t) => {
+  const gone = join(tempDir(t, 'funcd-pool-restart-'), 'gone');
+  const pool = createPool(
+    writeHandlers(t, {
+      flaky: `import { existsSync } from 'node:fs';
+if (existsSync(${JSON.stringify(gone)})) throw new Error('dependency gone');
+export function handle() { process.exit(1); }`,
+      ok: 'export function handle() { return { ok: true }; }',
+    }),
+  );
+  try {
+    await pool.ready;
+    writeFileSync(gone, '');
+    assert.equal((await post(pool.app, 'flaky', {})).status, 503);
+    for (let i = 0; i < 10; i++) {
+      const [flaky] = await members(pool.app);
+      assert.deepEqual(flaky, { name: 'flaky', state: 'restarting' });
+      await sleep(100);
+    }
+    assert.equal((await post(pool.app, 'ok', {})).status, 200, 'the sibling keeps serving');
+  } finally {
+    await pool.close();
+  }
+});
+
+test('a member env reaches only that member', async (t) => {
+  const handler = 'export function handle() { return { v: process.env.FUNCD_TEST_MEMBER_VALUE ?? null }; }';
+  const [a, b] = writeHandlers(t, { a: handler, b: handler });
+  const pool = createPool([{ ...a, env: { FUNCD_TEST_MEMBER_VALUE: 'a-only' } }, b]);
+  try {
+    await pool.ready;
+    assert.deepEqual(await (await post(pool.app, 'a', {})).json(), { v: 'a-only' });
+    assert.deepEqual(await (await post(pool.app, 'b', {})).json(), { v: null });
+    assert.equal(process.env.FUNCD_TEST_MEMBER_VALUE, undefined, 'the host env is untouched');
+  } finally {
+    await pool.close();
+  }
+});
+
+test('the load bound follows FUNCD_POOL_LOAD_TIMEOUT_MS', () => {
+  assert.equal(loadTimeoutMs('250'), 250);
+  for (const value of [undefined, '', '0', '-1', '1.5', 'abc', '99999999999999999999']) {
+    assert.equal(loadTimeoutMs(value), 60_000, `value ${JSON.stringify(value)}`);
   }
 });

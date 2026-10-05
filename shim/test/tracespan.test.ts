@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 
 import { createApp, type Validator } from '../src/shim.ts';
 import { installConsoleCapture } from '../src/funclog.ts';
-import { parseTraceparent } from '../src/tracespan.ts';
+import { parseTraceparent, startSpan } from '../src/tracespan.ts';
 
 // ADR-0101 behavioral-span tier: the shim mints one per-invocation SERVER span and correlates logs.
 // These drive createApp with a STUB channel sink (a line collector), asserting the emitted records.
@@ -188,4 +188,14 @@ test('direct-invoke-unchanged: no X-Funcd-Span-Id → the shim mints its span-id
   const s = c.spans()[0];
   assert.match(s.span_id as string, /^[0-9a-f]{16}$/, 'minted span-id');
   assert.deepEqual(s.links, [], 'no links on a direct invoke');
+});
+
+test('a pooled span carries funcd.member; a solo span omits it', () => {
+  const lines: string[] = [];
+  const sink = (line: string) => lines.push(line);
+  startSpan(sink, 'a', undefined, undefined, [], 'a').end('OK');
+  startSpan(sink, 'solo', undefined).end('OK');
+  const [pooled, solo] = lines.map((l) => JSON.parse(l) as Record<string, unknown>);
+  assert.equal(pooled['funcd.member'], 'a');
+  assert.equal('funcd.member' in solo, false);
 });

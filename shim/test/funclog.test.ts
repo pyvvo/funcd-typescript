@@ -287,3 +287,18 @@ test('no channel env → installConsoleCapture is a no-op (returns false, consol
   assert.equal(installed, false);
   assert.equal(console.log, before, 'console.log not patched when no channel env is set');
 });
+
+test('a pool member name is stamped as funcd.member; the solo capture omits it', (t) => {
+  const restore = snapshotConsole();
+  t.after(restore);
+  const lines: string[] = [];
+  installConsoleCapture({} as NodeJS.ProcessEnv, (line) => lines.push(line), 'a');
+  console.log('pooled');
+  installConsoleCapture({} as NodeJS.ProcessEnv, (line) => lines.push(line));
+  console.log('solo');
+  restore();
+  const [pooled, solo] = lines.map((l) => JSON.parse(l) as Record<string, unknown>);
+  assert.equal(pooled['funcd.member'], 'a');
+  assert.equal(pooled.body, 'pooled');
+  assert.equal('funcd.member' in solo, false);
+});

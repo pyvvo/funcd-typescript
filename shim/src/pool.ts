@@ -8,8 +8,12 @@
 // resource group is the placement grouping within it. This shim trusts its single-namespace
 // manifest — boundary enforcement is the placement follow-up ADR's job.
 //
-// Bundled (Hono inlined) to pool.mjs. Env: FUNCD_POOL_MANIFEST (JSON [{name,artifact,handler?}]),
-// FUNCD_PORT | FUNCD_PORTFILE, FUNCD_POOL_MAX_OLD_MB (64), FUNCD_POOL_MAX_YOUNG_MB (16).
+// The host listens at once and loads each member on its own: a member that cannot load is `failed`
+// (calls get 503) while its siblings serve; GET /health/members reports each member's state.
+//
+// Bundled (Hono inlined) to pool.mjs. Env: FUNCD_POOL_MANIFEST (JSON [{name,artifact,handler?,
+// contract?,env?}]), FUNCD_PORT | FUNCD_PORTFILE, FUNCD_POOL_MAX_OLD_MB (64), FUNCD_POOL_MAX_YOUNG_MB
+// (16), FUNCD_POOL_LOAD_TIMEOUT_MS (60000).
 import { serve } from '@hono/node-server';
 import { Hono } from 'hono';
 import { readFileSync, realpathSync, writeFileSync } from 'node:fs';
@@ -31,6 +35,7 @@ interface WorkerSpec {
   artifact: string; // absolute local path, resolved like the single shim's FUNCD_ARTIFACT
   handler?: string; // export name, default "handle"
   contract?: string; // ADR-0123: delivered contract-blob path; the worker compiles its validator from it
+  env?: Record<string, string>; // this member's own env, over the process env; no sibling sees it
 }
 interface WorkerInit extends WorkerSpec {
   channelLock: ChannelLock; // one per pool: every worker writes the same FUNCD_LOG_FD
@@ -60,6 +65,15 @@ const timeoutMarginMs = 1_000;
 const maxHeaderTimeoutMs = 2_147_482_647;
 const restartBaseMs = 50;
 const restartMaxMs = 10_000;
+// funcd's runtime.bootTimeout default (1 m), used when FUNCD_POOL_LOAD_TIMEOUT_MS is unset or invalid.
+const defaultLoadTimeoutMs = 60_000;
+
+/** loadTimeoutMs reads FUNCD_POOL_LOAD_TIMEOUT_MS: a positive decimal integer, else the default. */
+export function loadTimeoutMs(value: string | undefined): number {
+  if (value === undefined || !/^[0-9]+$/.test(value)) return defaultLoadTimeoutMs;
+  const ms = Number(value);
+  return ms >= 1 && ms <= maxHeaderTimeoutMs ? ms : defaultLoadTimeoutMs;
+}
 
 /** header + timeoutMarginMs when a decimal integer in 1..2_147_482_647, else requestTimeoutMs (funcd ADR-0151). */
 export function callTimeoutMs(header: string | undefined): number {
@@ -81,35 +95,40 @@ async function workerMain(): Promise<void> {
   // console capture and the per-invocation span (a single channel per worker). No channel env ⇒ null
   // ⇒ both no-op. The pool's OWN operational lines go to process.stderr, never the patched console.
   const channel = openChannel(process.env, spec.channelLock);
-  installConsoleCapture(process.env, channel);
+  installConsoleCapture(process.env, channel, spec.name);
+
+  // A member that cannot load tells the host why, then exits; the host marks it failed and keeps
+  // serving its siblings.
+  const failLoad = (kind: string, err: unknown): never => {
+    const error = `${kind}: ${err instanceof Error ? err.message : err}`;
+    process.stderr.write(`funcd-pool[${spec.name}]: ${error}\n`);
+    port.postMessage({ failed: error });
+    process.exit(3);
+  };
 
   // ADR-0123: compile the delivered contract AHEAD of the handler import (the m3 reorder). A
-  // set-but-broken contract path fails the worker closed → the host fails pool readiness (exit 3).
-  let delivered: { input?: Validator; output?: Validator } | null;
+  // set-but-broken contract path fails the member closed.
+  let delivered: { input?: Validator; output?: Validator } | null = null;
   try {
     delivered = spec.contract ? loadFromPath(spec.contract) : null;
   } catch (err) {
-    process.stderr.write(
-      `funcd-pool[${spec.name}]: contract error: ${err instanceof ContractError ? err.message : err}\n`,
-    );
-    process.exit(3);
+    failLoad('contract error', err instanceof ContractError ? err.message : err);
   }
 
-  let handler: Handler;
-  let validators: { input?: Validator; output?: Validator };
+  let handler!: Handler;
+  let validators!: { input?: Validator; output?: Validator };
   try {
     const mod = (await import(pathToFileURL(spec.artifact).href)) as Record<string, unknown>;
     handler = resolveHandler(mod, spec.handler ?? 'handle');
     validators = delivered ?? resolveValidators(mod);
   } catch (err) {
-    process.stderr.write(`funcd-pool[${spec.name}]: shape error: ${err instanceof Error ? err.message : err}\n`);
-    process.exit(3); // boot shape error → host fails pool readiness (the materialization shape-gate)
+    failLoad('shape error', err);
   }
   const ctx: FunctionContext = {
     log: (...args) => console.log(`[${spec.name}]`, ...args),
-    invoke: makeInvoke(),
-    kv: makeKV(),
-    blob: makeBlob(),
+    invoke: makeInvoke({ member: spec.name }),
+    kv: makeKV(spec.name),
+    blob: makeBlob(spec.name),
   };
 
   port.on('message', (req: Req) => {
@@ -131,7 +150,7 @@ async function workerMain(): Promise<void> {
       }
       // ADR-0101: a real invocation → its SERVER span (adopts req.traceparent or mints a root),
       // emitted on the worker's channel; the handler runs inside the span's context so logs correlate.
-      const span = startSpan(channel, spec.name, req.traceparent, req.spanId, req.links ?? []);
+      const span = startSpan(channel, spec.name, req.traceparent, req.spanId, req.links ?? [], spec.name);
       try {
         const result = toWire(await span.run(() => handler(ctx, event)));
         if (validators.output) {
@@ -171,47 +190,84 @@ interface Pending {
   timer: ReturnType<typeof setTimeout>;
 }
 
+/** A member's state on GET /health/members: `failed` is a first load that failed or timed out in this
+ *  process (not retried here); `restarting` is a member that faulted after it loaded and is being
+ *  restarted with backoff (a restart that cannot load is another fault, never `failed`). */
+export type MemberState = 'loading' | 'ready' | 'restarting' | 'failed';
+
+export interface MemberStatus {
+  name: string;
+  state: MemberState;
+  error?: string;
+}
+
+const exitedBeforeLoad = 'the worker exited before it loaded';
+
 class PooledHandler {
   private worker!: Worker;
   private readonly pending = new Map<number, Pending>();
   private nextID = 0;
-  healthy = false;
-  readonly ready: Promise<void>;
-  private resolveReady!: () => void;
-  private rejectReady!: (e: Error) => void;
+  state: MemberState = 'loading';
+  error?: string;
+  /** Resolves once the first load settles: the member is ready or failed. */
+  readonly settled: Promise<void>;
+  private settle!: () => void;
   private booted = false;
   private closed = false;
   private restarts = 0; // restarts since a worker last booted
   private restartTimer?: ReturnType<typeof setTimeout>;
+  private loadTimer?: ReturnType<typeof setTimeout>;
   private readonly spec: WorkerSpec;
   private readonly entry: string;
-  private readonly limits: { maxOld: number; maxYoung: number };
+  private readonly limits: { maxOld: number; maxYoung: number; loadTimeout: number };
   private readonly channelLock: ChannelLock;
 
-  constructor(spec: WorkerSpec, entry: string, limits: { maxOld: number; maxYoung: number }, channelLock: ChannelLock) {
+  constructor(
+    spec: WorkerSpec,
+    entry: string,
+    limits: { maxOld: number; maxYoung: number; loadTimeout: number },
+    channelLock: ChannelLock,
+  ) {
     this.spec = spec;
     this.channelLock = channelLock;
     this.entry = entry;
     this.limits = limits;
-    this.ready = new Promise<void>((res, rej) => {
-      this.resolveReady = res;
-      this.rejectReady = rej;
+    this.settled = new Promise<void>((res) => {
+      this.settle = res;
     });
     this.spawn();
   }
 
+  get healthy(): boolean {
+    return this.state === 'ready';
+  }
+
   private spawn(): void {
-    this.worker = new Worker(this.entry, {
+    const worker = new Worker(this.entry, {
       workerData: { ...this.spec, channelLock: this.channelLock } satisfies WorkerInit,
+      env: { ...process.env, ...this.spec.env },
       resourceLimits: { maxOldGenerationSizeMb: this.limits.maxOld, maxYoungGenerationSizeMb: this.limits.maxYoung },
     });
-    const threadId = this.worker.threadId;
-    this.worker.on('message', (msg: Res & { ready?: boolean }) => {
+    this.worker = worker;
+    const threadId = worker.threadId;
+    // A load past the bound: a first load fails the member; a restart's is one more fault.
+    this.loadTimer = setTimeout(() => {
+      if (this.closed) return;
+      if (!this.booted) this.failLoad('load timed out');
+      void worker.terminate();
+    }, this.limits.loadTimeout);
+    worker.on('message', (msg: Res & { ready?: boolean; failed?: string }) => {
       if (msg.ready) {
+        clearTimeout(this.loadTimer);
         this.booted = true;
         this.restarts = 0;
-        this.healthy = true;
-        this.resolveReady();
+        this.state = 'ready';
+        this.error = undefined;
+        this.settle();
+        return;
+      }
+      if (msg.failed !== undefined) {
+        if (!this.booted && (this.state === 'loading' || this.error === exitedBeforeLoad)) this.failLoad(msg.failed);
         return;
       }
       const p = this.pending.get(msg.id);
@@ -229,28 +285,36 @@ class PooledHandler {
       faulted = true;
       this.fault();
     };
-    this.worker.on('error', fault);
-    this.worker.on('exit', () => {
+    worker.on('error', fault);
+    worker.on('exit', () => {
       releaseChannelLock(this.channelLock, threadId);
       fault();
     });
   }
 
+  private failLoad(error: string): void {
+    this.state = 'failed';
+    this.error = error;
+    this.settle();
+  }
+
   // fault handles a worker error/exit (incl. a resourceLimits OOM): fail in-flight requests with
-  // 503, then — boot-time → fail readiness fast (shape error); post-boot → restart the worker so
-  // siblings and the process are untouched.
+  // 503, then — before the first load → the member is failed (no exit, no retry in this process);
+  // after it → restart the worker with backoff so siblings and the process are untouched.
   private fault(): void {
+    clearTimeout(this.loadTimer);
     if (this.closed) return;
-    this.healthy = false;
+    if (!this.booted) {
+      if (this.state === 'loading') this.failLoad(exitedBeforeLoad);
+    } else {
+      this.state = 'restarting';
+    }
     for (const [, p] of this.pending) {
       clearTimeout(p.timer);
       p.resolve({ id: -1, status: 503, error: `function ${this.spec.name} worker faulted` });
     }
     this.pending.clear();
-    if (!this.booted) {
-      this.rejectReady(new Error(`function ${this.spec.name}: worker exited at boot (shape error)`));
-      return;
-    }
+    if (!this.booted) return;
     // A restart that faults before it boots (its handler no longer loads) doubles the next delay, so a
     // handler that cannot load is not re-imported every 50 ms.
     const delay = Math.min(restartBaseMs * 2 ** this.restarts, restartMaxMs);
@@ -258,6 +322,12 @@ class PooledHandler {
     this.restartTimer = setTimeout(() => {
       if (!this.closed) this.spawn();
     }, delay);
+  }
+
+  status(): MemberStatus {
+    return this.error === undefined
+      ? { name: this.spec.name, state: this.state }
+      : { name: this.spec.name, state: this.state, error: this.error };
   }
 
   async invoke(
@@ -282,35 +352,47 @@ class PooledHandler {
   async close(): Promise<void> {
     this.closed = true;
     clearTimeout(this.restartTimer);
+    clearTimeout(this.loadTimer);
     await this.worker.terminate();
   }
 }
 
 export interface Pool {
   app: Hono;
+  /** Resolves once no member is loading: each one is ready or failed. It never rejects. */
   ready: Promise<void>;
+  members: () => MemberStatus[];
   close: () => Promise<void>;
 }
 
-/** createPool spawns one worker per manifest entry and returns the routing host. The caller
- *  awaits `ready` (every worker loaded its handler) before serving. */
-export function createPool(manifest: WorkerSpec[], limits?: { maxOldMB?: number; maxYoungMB?: number }): Pool {
+/** createPool spawns one worker per manifest entry and returns the routing host, which serves at
+ *  once; a member answers 503 until it is ready. */
+export function createPool(
+  manifest: WorkerSpec[],
+  limits?: { maxOldMB?: number; maxYoungMB?: number; loadTimeoutMs?: number },
+): Pool {
   const entry = fileURLToPath(import.meta.url); // spawn this same file as the worker (isMainThread=false)
-  const resolved = { maxOld: limits?.maxOldMB ?? maxOldMB, maxYoung: limits?.maxYoungMB ?? maxYoungMB };
+  const resolved = {
+    maxOld: limits?.maxOldMB ?? maxOldMB,
+    maxYoung: limits?.maxYoungMB ?? maxYoungMB,
+    loadTimeout: limits?.loadTimeoutMs ?? loadTimeoutMs(process.env.FUNCD_POOL_LOAD_TIMEOUT_MS),
+  };
   const handlers = new Map<string, PooledHandler>();
   const channelLock = newChannelLock();
   for (const spec of manifest) {
     handlers.set(spec.name, new PooledHandler(spec, entry, resolved, channelLock));
   }
+  const members = () => [...handlers.values()].map((h) => h.status());
 
   const app = new Hono();
   app.get('/health/liveness', (c) => c.text('ok'));
   app.get('/health/readiness', (c) => {
     for (const h of handlers.values()) {
-      if (!h.healthy) return c.text('not ready', 503);
+      if (h.state === 'loading') return c.text('not ready', 503);
     }
     return c.text('ready');
   });
+  app.get('/health/members', (c) => c.json(members()));
   app.post('/function/:name', async (c) => {
     const h = handlers.get(c.req.param('name'));
     if (!h) return c.json({ error: `unknown function ${c.req.param('name')}` }, 404);
@@ -343,14 +425,15 @@ export function createPool(manifest: WorkerSpec[], limits?: { maxOldMB?: number;
 
   return {
     app,
-    ready: Promise.all([...handlers.values()].map((h) => h.ready)).then(() => undefined),
+    ready: Promise.all([...handlers.values()].map((h) => h.settled)).then(() => undefined),
+    members,
     close: async () => {
       await Promise.all([...handlers.values()].map((h) => h.close()));
     },
   };
 }
 
-/** main loads the manifest, spawns the pool, and serves once every worker is ready. */
+/** main loads the manifest, spawns the pool, and serves at once; members load in the background. */
 async function main(): Promise<void> {
   const manifestPath = process.env.FUNCD_POOL_MANIFEST;
   if (!manifestPath) {
@@ -359,12 +442,6 @@ async function main(): Promise<void> {
   }
   const manifest = JSON.parse(readFileSync(manifestPath, 'utf8')) as WorkerSpec[];
   const pool = createPool(manifest);
-  try {
-    await pool.ready;
-  } catch (err) {
-    process.stderr.write(`funcd-pool: ${err instanceof Error ? err.message : err}\n`);
-    process.exit(3);
-  }
   const fixedPort = process.env.FUNCD_PORT ? Number(process.env.FUNCD_PORT) : 0;
   const portFile = process.env.FUNCD_PORTFILE;
   const hostname = fixedPort > 0 ? '0.0.0.0' : '127.0.0.1';

@@ -7,7 +7,18 @@ import http from 'node:http';
  *  /invoke/<alias> over the worker-node UDS and resolves the target's JSON output, or rejects on a
  *  non-2xx (no link → 403, unknown target → 404, bad input → 422, the target's nested in-flight cap
  *  reached → 429, target down/timeout → 503) or on a 2xx body that is not JSON. */
-export function makeInvoke(): <I = unknown, O = unknown>(alias: string, input: I) => Promise<O> {
+/** The local API request header that names the calling pool member; funcd serves the call as that
+ *  member when it belongs to the pool, else 403. A solo sandbox sends none. */
+export const MEMBER_HEADER = 'X-Funcd-Member';
+
+export interface InvokeOptions {
+  /** The pool member making the calls; unset in the solo shim. */
+  member?: string;
+}
+
+export function makeInvoke(
+  opts: InvokeOptions = {},
+): <I = unknown, O = unknown>(alias: string, input: I) => Promise<O> {
   return <I, O>(alias: string, input: I): Promise<O> =>
     new Promise<O>((resolve, reject) => {
       const socketPath = process.env.FUNCD_INVOKE_SOCKET;
@@ -16,12 +27,17 @@ export function makeInvoke(): <I = unknown, O = unknown>(alias: string, input: I
         return;
       }
       const body = JSON.stringify(input ?? null);
+      const headers: Record<string, number | string> = {
+        'content-type': 'application/json',
+        'content-length': Buffer.byteLength(body),
+      };
+      if (opts.member) headers[MEMBER_HEADER] = opts.member;
       const req = http.request(
         {
           socketPath,
           path: `/invoke/${encodeURIComponent(alias)}`,
           method: 'POST',
-          headers: { 'content-type': 'application/json', 'content-length': Buffer.byteLength(body) },
+          headers,
         },
         (res) => {
           const chunks: Buffer[] = [];
