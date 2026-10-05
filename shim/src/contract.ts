@@ -29,6 +29,10 @@ export class ContractError extends Error {}
 // (ADR-0058), which Ajv alone ignores — advertised == enforced (ADR-0123).
 const ajv = new Ajv({ strict: false, allErrors: true });
 addFormats(ajv);
+// ADR-0150: int64 is the JSON safe-integer range ±(2^53 − 1) on every runtime. ajv-formats checks only
+// Number.isInteger, and JSON.parse rounds an integer beyond 2^53, so a wider range would pass a changed value.
+// Registered before any compile: Ajv caches a format's function per name on first compile.
+ajv.addFormat('int64', { type: 'number', validate: (n: number) => Number.isSafeInteger(n) });
 
 function compileSide(schema: unknown): Validator {
   const validate = ajv.compile(schema as object);

@@ -190,3 +190,68 @@ test('issue 186: a result with no JSON form sends no body (204), not an empty 20
     assert.equal(res.status, 204);
   }
 });
+
+// ADR-0150: int64 is the JSON safe-integer range ±(2^53 − 1) on every runtime. The HTTP bodies are written as
+// text because a JS number cannot hold 2^53 + 1.
+const INT64 = {
+  type: 'object',
+  properties: { n: { type: 'integer', format: 'int64' } },
+  required: ['n'],
+  additionalProperties: false,
+};
+const int64Event = (n: string) =>
+  ({ method: 'POST', headers: { 'content-type': 'application/json' }, body: `{"data":{"n":${n}}}` }) as const;
+
+test('scenario int64-safe-max-accepted: ±(2^53 − 1) reaches the handler exactly', async (t) => {
+  const v = loadFromPath(writeContract(t, { input: INT64, output: INT64 }));
+  for (const n of [Number.MAX_SAFE_INTEGER, Number.MIN_SAFE_INTEGER]) {
+    assert.deepEqual(v.input({ n }), [], `${n}: valid input`);
+    assert.deepEqual(v.output({ n }), [], `${n}: valid output`);
+  }
+  const seen: unknown[] = [];
+  const app = createApp((_ctx, e) => {
+    seen.push((e.data as { n: unknown }).n);
+    return e.data;
+  }, v);
+  for (const text of ['9007199254740991', '-9007199254740991']) {
+    const res = await app.request('/', int64Event(text));
+    assert.equal(res.status, 200, text);
+    assert.equal(await res.text(), `{"n":${text}}`);
+  }
+  assert.deepEqual(seen, [Number.MAX_SAFE_INTEGER, Number.MIN_SAFE_INTEGER]);
+});
+
+test('scenario int64-over-safe-range-rejected: 2^53, 2^53 + 1 and 2^70 → 422, the handler never runs', async (t) => {
+  const v = loadFromPath(writeContract(t, { input: INT64, output: {} }));
+  for (const n of [2 ** 53, 2 ** 70]) {
+    assert.ok(v.input({ n }).length > 0, `${n}: invalid input`);
+  }
+  let calls = 0;
+  const app = createApp(() => {
+    calls++;
+    return null;
+  }, v);
+  for (const text of ['9007199254740992', '9007199254740993', '1180591620717411303424']) {
+    assert.equal((await app.request('/', int64Event(text))).status, 422, text);
+  }
+  assert.equal(calls, 0);
+});
+
+test('scenario int64-under-safe-range-rejected: −2^53 → 422', async (t) => {
+  const v = loadFromPath(writeContract(t, { input: INT64, output: {} }));
+  assert.ok(v.input({ n: -(2 ** 53) }).length > 0);
+  let calls = 0;
+  const app = createApp(() => {
+    calls++;
+    return null;
+  }, v);
+  assert.equal((await app.request('/', int64Event('-9007199254740992'))).status, 422);
+  assert.equal(calls, 0);
+});
+
+test('scenario int64-output-over-safe-range-is-500: a handler returning 2^60 → 500', async (t) => {
+  const v = loadFromPath(writeContract(t, { input: {}, output: INT64 }));
+  assert.ok(v.output({ n: 2 ** 60 }).length > 0);
+  const res = await createApp(() => ({ n: 2 ** 60 }), v).request('/', wireCE);
+  assert.equal(res.status, 500);
+});
