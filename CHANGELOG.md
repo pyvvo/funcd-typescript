@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.9.0](https://github.com/pyvvo/funcd-typescript/compare/v0.8.2...v0.9.0) (2026-10-07)
+
+
+### ⚠ BREAKING CHANGES
+
+* **shim:** send an empty presign expiry so the server refuses it ([#55](https://github.com/pyvvo/funcd-typescript/issues/55))
+
+### Features
+
+* **shim:** send an empty presign expiry so the server refuses it ([#55](https://github.com/pyvvo/funcd-typescript/issues/55)) ([088b29e](https://github.com/pyvvo/funcd-typescript/commit/088b29e7905aec3b585841a8093f46c6de162b22))
+
 ## [0.8.2](https://github.com/pyvvo/funcd-typescript/compare/v0.8.1...v0.8.2) (2026-10-07)
 
 
