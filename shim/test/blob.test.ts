@@ -96,6 +96,39 @@ test(
 );
 
 test(
+  'scenario typescript-shim-takes-duration-string: "" is sent as expiry= and its 400 rejects',
+  withServer(
+    (req) => (req.url.endsWith('&expiry=') ? { status: 400, body: 'invalid expiry ""' } : { status: 200, body: 'u' }),
+    async (blob, recorded) => {
+      await assert.rejects(() => blob.signedUrl('files', 'k', { expiry: '' }), /context\.blob\.signedUrl failed: 400/);
+      assert.strictEqual(recorded[0].url, '/blob/files/k?sign=1&method=GET&expiry=');
+    },
+  ),
+);
+
+test(
+  'scenario typescript-shim-takes-duration-string: null and undefined omit expiry, "10m" is sent',
+  withServer(
+    () => ({ status: 200, body: 'u' }),
+    async (blob, recorded) => {
+      await blob.signedUrl('files', 'k');
+      await blob.signedUrl('files', 'k', { expiry: undefined });
+      await blob.signedUrl('files', 'k', { expiry: null as unknown as string });
+      await blob.signedUrl('files', 'k', { expiry: '10m' });
+      assert.deepStrictEqual(
+        recorded.map((r) => r.url),
+        [
+          '/blob/files/k?sign=1&method=GET',
+          '/blob/files/k?sign=1&method=GET',
+          '/blob/files/k?sign=1&method=GET',
+          '/blob/files/k?sign=1&method=GET&expiry=10m',
+        ],
+      );
+    },
+  ),
+);
+
+test(
   'scenario blob-error-throws: a non-2xx (e.g. 403 unbound) rejects',
   withServer(
     () => ({ status: 403, body: 'forbidden' }),

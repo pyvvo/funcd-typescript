@@ -41,8 +41,10 @@ function send(method: string, path: string, body: Buffer | undefined, member: st
   });
 }
 
-/** Options for a presigned URL: the HTTP method it grants (default GET) and its lifetime (a Go duration
- * string, e.g. "15m"; the driver's default when omitted). A PUT/DELETE URL requires s3::write. */
+/** Options for a presigned URL: the HTTP method it grants (default GET) and its lifetime, a duration string
+ * such as "10m" or "1h30m" (funcd ADR-0198: units h, m, s, ms in that order, whole seconds from 1s to 168h). The
+ * server checks it and answers 400 for a bad value, "" included; only an absent expiry gets the driver's default.
+ * A PUT/DELETE URL requires s3::write. */
 export interface SignOptions {
   method?: 'GET' | 'PUT' | 'DELETE';
   expiry?: string;
@@ -101,7 +103,7 @@ export function makeBlob(member?: string): BlobClient {
     },
     async signedUrl(binding, key, opts) {
       let path = `${keyPath(binding, key)}?sign=1&method=${enc(opts?.method ?? 'GET')}`;
-      if (opts?.expiry) path += `&expiry=${enc(opts.expiry)}`;
+      if (opts?.expiry != null) path += `&expiry=${enc(opts.expiry)}`;
       const r = await request('GET', path);
       if (!ok(r)) throw fail('signedUrl', r);
       return r.body.toString('utf8');

@@ -11293,7 +11293,7 @@ function makeBlob(member) {
     },
     async signedUrl(binding, key, opts) {
       let path = `${keyPath2(binding, key)}?sign=1&method=${enc2(opts?.method ?? "GET")}`;
-      if (opts?.expiry) path += `&expiry=${enc2(opts.expiry)}`;
+      if (opts?.expiry != null) path += `&expiry=${enc2(opts.expiry)}`;
       const r = await request("GET", path);
       if (!ok2(r)) throw fail2("signedUrl", r);
       return r.body.toString("utf8");
