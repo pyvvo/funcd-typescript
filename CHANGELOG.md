@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.8.2](https://github.com/pyvvo/funcd-typescript/compare/v0.8.1...v0.8.2) (2026-10-07)
+
+
+### Bug Fixes
+
+* **examples:** write the timer interval as a duration string ([#53](https://github.com/pyvvo/funcd-typescript/issues/53)) ([e3683e4](https://github.com/pyvvo/funcd-typescript/commit/e3683e48325855b28b68072dcf5980d7672e5d5b))
+
 ## [0.8.1](https://github.com/pyvvo/funcd-typescript/compare/v0.8.0...v0.8.1) (2026-10-05)
 
 
