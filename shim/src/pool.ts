@@ -9,7 +9,8 @@
 // manifest — boundary enforcement is the placement follow-up ADR's job.
 //
 // The host listens at once and loads each member on its own: a member that cannot load is `failed`
-// (calls get 503) while its siblings serve; GET /health/members reports each member's state.
+// (calls get 503) while its siblings serve; GET /health/members reports each member's state and, from
+// funcd's GET /health/dependencies, its dependency report (funcd ADR-0215).
 //
 // Bundled (Hono inlined) to pool.mjs. Env: FUNCD_POOL_MANIFEST (JSON [{name,artifact,handler?,
 // contract?,env?}]), FUNCD_PORT | FUNCD_PORTFILE, FUNCD_POOL_MAX_OLD_MB (64), FUNCD_POOL_MAX_YOUNG_MB
@@ -26,6 +27,7 @@ import type { CloudEvent, FunctionContext, Handler, Validator } from './types.ts
 import { makeInvoke } from './invoke.ts';
 import { makeKV } from './kv.ts';
 import { makeBlob } from './blob.ts';
+import { checkDependencies, type DependencyReport, dependencyCheckBudgetMs } from './dependencies.ts';
 import {
   type ChannelLock,
   installConsoleCapture,
@@ -214,6 +216,8 @@ export interface MemberStatus {
   name: string;
   state: MemberState;
   error?: string;
+  /** funcd's report on the member's bindings; absent when they pass. */
+  dependency?: DependencyReport;
 }
 
 const exitedBeforeLoad = 'the worker exited before it loaded';
@@ -384,7 +388,7 @@ export interface Pool {
  *  once; a member answers 503 until it is ready. */
 export function createPool(
   manifest: WorkerSpec[],
-  limits?: { maxOldMB?: number; maxYoungMB?: number; loadTimeoutMs?: number },
+  limits?: { maxOldMB?: number; maxYoungMB?: number; loadTimeoutMs?: number; dependencyBudgetMs?: number },
 ): Pool {
   const entry = fileURLToPath(import.meta.url); // spawn this same file as the worker (isMainThread=false)
   const resolved = {
@@ -407,7 +411,13 @@ export function createPool(
     }
     return c.text('ready');
   });
-  app.get('/health/members', (c) => c.json(members()));
+  // One bound for all members, so the answer fits funcd's 100 ms probe of this endpoint.
+  app.get('/health/members', async (c) => {
+    const signal = AbortSignal.timeout(limits?.dependencyBudgetMs ?? dependencyCheckBudgetMs);
+    const states = members();
+    const reports = await Promise.all(states.map((m) => checkDependencies(m.name, signal)));
+    return c.json(states.map((m, i) => (reports[i] ? { ...m, dependency: reports[i] } : m)));
+  });
   app.post('/function/:name', async (c) => {
     const h = handlers.get(c.req.param('name'));
     if (!h) return c.json({ error: `unknown function ${c.req.param('name')}` }, 404);

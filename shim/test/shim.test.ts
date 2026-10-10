@@ -5,6 +5,7 @@ import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createApp, resolveHandler, resolveValidators, type Validator } from '../src/shim.ts';
+import { type Answer, fakeDependencies } from './localapi.ts';
 import { tempDir } from './tempdir.ts';
 
 const jsonReq = (body: string) => ({ method: 'POST', headers: { 'content-type': 'application/json' }, body }) as const;
@@ -267,3 +268,103 @@ for (const kind of ['rejection', 'throw']) {
     }
   });
 }
+
+// funcd ADR-0215 Decision 4: readiness asks funcd's GET /health/dependencies on the invoke socket.
+const auditForbidden = {
+  kind: 'kv',
+  binding: 'audit',
+  reason: 'Forbidden',
+  message: 'kv::read on table audit is not allowed',
+};
+
+// A wide budget, so only the test of the bound depends on timing.
+const appWide = () => createApp(() => ({}), {}, {}, { dependencyBudgetMs: 5_000 });
+
+async function readiness(t: TestContext, answer: Answer, app = appWide()) {
+  const api = await fakeDependencies(t, () => answer);
+  const start = performance.now();
+  const res = await app.request('/health/readiness');
+  return { res, elapsed: performance.now() - start, calls: api.calls };
+}
+
+async function socketReport(res: Response, reason: string) {
+  assert.equal(res.status, 503);
+  const body = (await res.json()) as Record<string, unknown>;
+  assert.deepEqual({ ...body, message: '' }, { kind: 'socket', binding: '', reason, message: '' });
+  assert.match(String(body.message), /\/health\/dependencies/);
+  return body;
+}
+
+test('readiness: funcd answers 200 → 200 ready, asked once with no member header', async (t) => {
+  const { res, calls } = await readiness(t, { status: 200, body: '' });
+  assert.equal(res.status, 200);
+  assert.equal(await res.text(), 'ready');
+  assert.deepEqual(calls, ['GET /health/dependencies -']);
+});
+
+test('scenario app-dependency-check: a funcd 503 report is relayed as 503 with the same JSON body', async (t) => {
+  const { res } = await readiness(t, { status: 503, body: JSON.stringify(auditForbidden) });
+  assert.equal(res.status, 503);
+  assert.match(res.headers.get('content-type') ?? '', /application\/json/);
+  assert.deepEqual(await res.json(), auditForbidden);
+});
+
+test('scenario health-shim-compat: a funcd without the endpoint (404) → 200 ready', async (t) => {
+  const { res, calls } = await readiness(t, { status: 404, body: '404 page not found' });
+  assert.equal(res.status, 200);
+  assert.equal(await res.text(), 'ready');
+  assert.equal(calls.length, 1);
+});
+
+test('scenario health-shim-compat: no FUNCD_INVOKE_SOCKET → 200 ready', async () => {
+  assert.equal(process.env.FUNCD_INVOKE_SOCKET, undefined);
+  const res = await createApp(() => ({})).request('/health/readiness');
+  assert.equal(res.status, 200);
+  assert.equal(await res.text(), 'ready');
+});
+
+test('readiness: a 403 from funcd → 503 kind socket, reason Unreachable', async (t) => {
+  const { res } = await readiness(t, { status: 403, body: 'no member' });
+  const body = await socketReport(res, 'Unreachable');
+  assert.match(String(body.message), /403/);
+});
+
+test('readiness: a funcd 503 that is not a report → 503 kind socket, reason Unreachable', async (t) => {
+  const { res } = await readiness(t, { status: 503, body: 'service unavailable' });
+  await socketReport(res, 'Unreachable');
+});
+
+for (const [name, answer] of [
+  ['a connection closed before any reply', 'drop'],
+  ['a reply cut mid-body', { status: 200, body: 'ok', cut: true }],
+] as const) {
+  test(`readiness: ${name} → 503 kind socket, reason Unreachable`, async (t) => {
+    const { res } = await readiness(t, answer);
+    await socketReport(res, 'Unreachable');
+  });
+}
+
+test('readiness: a socket with no listener → 503 kind socket, reason Unreachable', async (t) => {
+  await fakeDependencies(t, () => ({ status: 200, body: '' }));
+  process.env.FUNCD_INVOKE_SOCKET += '.absent';
+  const res = await appWide().request('/health/readiness');
+  const body = await socketReport(res, 'Unreachable');
+  assert.match(String(body.message), /ENOENT/);
+});
+
+test('readiness: funcd that never answers → 503 kind socket, reason Timeout, within probeTimeout', async (t) => {
+  const { res, elapsed } = await readiness(
+    t,
+    'hold',
+    createApp(() => ({})),
+  );
+  await socketReport(res, 'Timeout');
+  assert.ok(elapsed >= 45 && elapsed < 100, `answered after ${elapsed} ms`);
+});
+
+test('liveness never calls funcd', async (t) => {
+  const api = await fakeDependencies(t, () => ({ status: 503, body: JSON.stringify(auditForbidden) }));
+  const res = await createApp(() => ({})).request('/health/liveness');
+  assert.equal(res.status, 200);
+  assert.deepEqual(api.calls, []);
+});

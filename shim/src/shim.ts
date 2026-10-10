@@ -3,8 +3,9 @@
 // and serves the runtime-shim HTTP contract:
 //   POST /                 CloudEvent -> [optional input contract] -> handler -> [optional output contract] -> response
 //                          (object->200 JSON, none/void->204, throw/output-mismatch->500, input-mismatch->422)
-//   GET  /health/readiness 200 once the handler resolved
-//   GET  /health/liveness  200 while up
+//   GET  /health/readiness 200 once the handler resolved and funcd passes its dependencies (ADR-0215),
+//                          else 503 with funcd's dependency report
+//   GET  /health/liveness  200 while up; never calls funcd
 // If the bundle carries precompiled validators (ADR-0058, generated at push from the author's
 // FuncInput/FuncOutput types), event.data is validated before the handler runs (mismatch -> 422)
 // and the handler's result after (mismatch -> 500). The validators are eval-free (compiled at
@@ -23,6 +24,7 @@ import type { CloudEvent, FunctionContext, Handler, Validator } from './types.ts
 import { makeInvoke } from './invoke.ts';
 import { makeKV } from './kv.ts';
 import { makeBlob } from './blob.ts';
+import { checkDependencies, dependencyCheckBudgetMs } from './dependencies.ts';
 import { installConsoleCapture, openChannel, recordBound, type Sink } from './funclog.ts';
 import { startSpan, parseLinks } from './tracespan.ts';
 
@@ -33,11 +35,13 @@ export { resolveHandler, resolveValidators } from './runtime.ts';
  *  precompiled validators (ADR-0058) gate the I/O: `input` validates event.data BEFORE the handler
  *  (mismatch -> 422, handler never called); `output` validates the result AFTER (mismatch -> 500, a
  *  bad-shaped result never goes out as 200). A `void`/`None` output contract is just an output
- *  validator that accepts only an empty result, so empty -> 204 and a non-empty return -> 500. */
+ *  validator that accepts only an empty result, so empty -> 204 and a non-empty return -> 500.
+ *  `health.dependencyBudgetMs` bounds the readiness check; unset is funcd's DependencyCheckBudget. */
 export function createApp(
   handler: Handler,
   validators: { input?: Validator; output?: Validator } = {},
   trace: { sink?: Sink | null; fnName?: string; bound?: number } = {},
+  health: { dependencyBudgetMs?: number } = {},
 ): Hono {
   const app = new Hono();
   const traceSink = trace.sink ?? null; // ADR-0101: per-invocation span emitter (null ⇒ context only)
@@ -50,7 +54,13 @@ export function createApp(
   const fnName = trace.fnName ?? 'invoke';
 
   app.get('/health/liveness', (c) => c.text('ok'));
-  app.get('/health/readiness', (c) => c.text('ready'));
+  app.get('/health/readiness', async (c) => {
+    const report = await checkDependencies(
+      undefined,
+      AbortSignal.timeout(health.dependencyBudgetMs ?? dependencyCheckBudgetMs),
+    );
+    return report ? c.json(report, 503) : c.text('ready');
+  });
 
   app.post('/', async (c) => {
     let event: CloudEvent;
