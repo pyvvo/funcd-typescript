@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.10.0](https://github.com/pyvvo/funcd-typescript/compare/v0.9.0...v0.10.0) (2026-10-10)
+
+
+### Features
+
+* **shim:** readiness checks the function's declared dependencies (funcd ADR-0215) ([#58](https://github.com/pyvvo/funcd-typescript/issues/58)) ([ee59a10](https://github.com/pyvvo/funcd-typescript/commit/ee59a102930f135068ad1c41271c7b817b759d2e))
+
 ## [0.9.0](https://github.com/pyvvo/funcd-typescript/compare/v0.8.2...v0.9.0) (2026-10-07)
 
 
