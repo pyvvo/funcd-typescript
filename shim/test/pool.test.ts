@@ -10,6 +10,7 @@ import { setTimeout as sleep } from 'node:timers/promises';
 import type { Hono } from 'hono';
 
 import { callTimeoutMs, createPool, loadTimeoutMs, type MemberStatus } from '../src/pool.ts';
+import { fakeDependencies } from './localapi.ts';
 import { tempDir } from './tempdir.ts';
 
 // writeHandlers writes each handler to a temp .mjs and returns the pool manifest.
@@ -587,5 +588,99 @@ test('the load bound follows FUNCD_POOL_LOAD_TIMEOUT_MS', () => {
   assert.equal(loadTimeoutMs('250'), 250);
   for (const value of [undefined, '', '0', '-1', '1.5', 'abc', '99999999999999999999']) {
     assert.equal(loadTimeoutMs(value), 60_000, `value ${JSON.stringify(value)}`);
+  }
+});
+
+// funcd ADR-0215 Decision 4: each /health/members entry carries the member's dependency report.
+const okHandler = 'export function handle() { return { ok: true }; }';
+// A wide budget, so only the test of the bound depends on timing.
+const wide = { dependencyBudgetMs: 5_000 };
+const auditForbidden = {
+  kind: 'kv',
+  binding: 'audit',
+  reason: 'Forbidden',
+  message: 'kv::read on table audit is not allowed',
+};
+
+test('scenario health-pool-member-dependency: /health/members reports a failing member and not its sibling', async (t) => {
+  const api = await fakeDependencies(t, (member) => {
+    if (member === 'a') return { status: 503, body: JSON.stringify(auditForbidden) };
+    if (member === 'b') return { status: 200, body: '' };
+    if (member === 'c') return { status: 404, body: '404 page not found' };
+    return { status: 403, body: 'no member' };
+  });
+  const pool = createPool(writeHandlers(t, { a: okHandler, b: okHandler, c: okHandler, d: okHandler }), wide);
+  try {
+    await pool.ready;
+    const [a, b, c, d] = await members(pool.app);
+    assert.deepEqual(a, { name: 'a', state: 'ready', dependency: auditForbidden });
+    assert.deepEqual(b, { name: 'b', state: 'ready' });
+    assert.deepEqual(c, { name: 'c', state: 'ready' }, 'a funcd without the endpoint (404) is a pass');
+    assert.deepEqual(
+      { ...d, dependency: { ...d.dependency, message: '' } },
+      {
+        name: 'd',
+        state: 'ready',
+        dependency: { kind: 'socket', binding: '', reason: 'Unreachable', message: '' },
+      },
+    );
+    assert.deepEqual(api.calls.sort(), [
+      'GET /health/dependencies a',
+      'GET /health/dependencies b',
+      'GET /health/dependencies c',
+      'GET /health/dependencies d',
+    ]);
+    assert.equal((await pool.app.request('/health/readiness')).status, 200, 'the host readiness is unchanged');
+  } finally {
+    await pool.close();
+  }
+});
+
+// Six members funcd never answers share one 50 ms bound: asked one after the other, they would take 300 ms.
+test('/health/members gives each member funcd does not answer kind socket, reason Timeout, within one bound', async (t) => {
+  const api = await fakeDependencies(t, () => 'hold');
+  const names = ['a', 'b', 'c', 'd', 'e', 'f'];
+  const pool = createPool(writeHandlers(t, Object.fromEntries(names.map((n) => [n, okHandler]))));
+  try {
+    await pool.ready;
+    const start = performance.now();
+    const states = await members(pool.app);
+    const elapsed = performance.now() - start;
+    assert.ok(elapsed >= 45 && elapsed < 250, `answered after ${elapsed} ms`);
+    assert.deepEqual(
+      states.map((s) => [s.name, s.state, s.dependency?.kind, s.dependency?.binding, s.dependency?.reason]),
+      names.map((n) => [n, 'ready', 'socket', '', 'Timeout']),
+    );
+    assert.match(states[0].dependency?.message ?? '', /did not answer within 50 ms/);
+    assert.deepEqual(
+      api.calls.sort(),
+      names.map((n) => `GET /health/dependencies ${n}`),
+    );
+  } finally {
+    await pool.close();
+  }
+});
+
+test('scenario health-shim-compat: with no FUNCD_INVOKE_SOCKET no member carries a dependency', async (t) => {
+  assert.equal(process.env.FUNCD_INVOKE_SOCKET, undefined);
+  const pool = createPool(writeHandlers(t, { a: okHandler }));
+  try {
+    await pool.ready;
+    assert.deepEqual(await members(pool.app), [{ name: 'a', state: 'ready' }]);
+  } finally {
+    await pool.close();
+  }
+});
+
+test('the pool host liveness and readiness never call funcd', async (t) => {
+  const api = await fakeDependencies(t, () => ({ status: 503, body: JSON.stringify(auditForbidden) }));
+  const pool = createPool(writeHandlers(t, { a: okHandler }));
+  try {
+    await pool.ready;
+    assert.equal((await pool.app.request('/health/liveness')).status, 200);
+    assert.equal((await pool.app.request('/health/readiness')).status, 200);
+    assert.deepEqual(api.calls, []);
+  } finally {
+    await pool.close();
   }
 });
