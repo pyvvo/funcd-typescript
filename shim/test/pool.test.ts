@@ -636,30 +636,26 @@ test('scenario health-pool-member-dependency: /health/members reports a failing 
   }
 });
 
-// Two members funcd never answers share one 50 ms bound: asked one after the other, they would take 100 ms.
+// Six members funcd never answers share one 50 ms bound: asked one after the other, they would take 300 ms.
 test('/health/members gives each member funcd does not answer kind socket, reason Timeout, within one bound', async (t) => {
   const api = await fakeDependencies(t, () => 'hold');
-  const pool = createPool(writeHandlers(t, { a: okHandler, b: okHandler }));
+  const names = ['a', 'b', 'c', 'd', 'e', 'f'];
+  const pool = createPool(writeHandlers(t, Object.fromEntries(names.map((n) => [n, okHandler]))));
   try {
     await pool.ready;
     const start = performance.now();
     const states = await members(pool.app);
     const elapsed = performance.now() - start;
-    assert.ok(elapsed >= 45 && elapsed < 100, `answered after ${elapsed} ms`);
-    assert.deepEqual(states, [
-      {
-        name: 'a',
-        state: 'ready',
-        dependency: { kind: 'socket', binding: '', reason: 'Timeout', message: states[0].dependency?.message },
-      },
-      {
-        name: 'b',
-        state: 'ready',
-        dependency: { kind: 'socket', binding: '', reason: 'Timeout', message: states[1].dependency?.message },
-      },
-    ]);
+    assert.ok(elapsed >= 45 && elapsed < 250, `answered after ${elapsed} ms`);
+    assert.deepEqual(
+      states.map((s) => [s.name, s.state, s.dependency?.kind, s.dependency?.binding, s.dependency?.reason]),
+      names.map((n) => [n, 'ready', 'socket', '', 'Timeout']),
+    );
     assert.match(states[0].dependency?.message ?? '', /did not answer within 50 ms/);
-    assert.deepEqual(api.calls.sort(), ['GET /health/dependencies a', 'GET /health/dependencies b']);
+    assert.deepEqual(
+      api.calls.sort(),
+      names.map((n) => `GET /health/dependencies ${n}`),
+    );
   } finally {
     await pool.close();
   }
