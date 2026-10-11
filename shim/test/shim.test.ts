@@ -1,11 +1,10 @@
 import { type TestContext, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { spawn } from 'node:child_process';
 import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
-import { fileURLToPath } from 'node:url';
 import { createApp, resolveHandler, resolveValidators, type Validator } from '../src/shim.ts';
+import { startEntrypoint } from './entrypoint.ts';
 import { type Answer, fakeDependencies } from './localapi.ts';
 import { tempDir } from './tempdir.ts';
 
@@ -232,45 +231,25 @@ export async function handle(_ctx, event) {
 }
 `;
 
-// startShim runs the real shim entrypoint over a temp artifact, as the process driver does, and
-// resolves once it listens.
+// startShim runs the real shim entrypoint over a temp artifact and resolves once it listens.
 async function startShim(t: TestContext, code: string) {
   const artifact = join(tempDir(t, 'funcd-shim-test-'), 'handler.mjs');
   writeFileSync(artifact, code);
-  const child = spawn(
-    process.execPath,
-    ['--experimental-strip-types', '--no-warnings', fileURLToPath(new URL('../src/shim.ts', import.meta.url))],
-    { env: { FUNCD_ARTIFACT: artifact }, stdio: ['ignore', 'pipe', 'pipe'] },
-  );
-  let stderr = '';
-  const exited = new Promise<number | null>((resolve) => child.on('exit', (code) => resolve(code)));
-  const port = await new Promise<number>((resolve, reject) => {
-    let stdout = '';
-    child.stderr.on('data', (chunk: Buffer) => {
-      stderr += chunk.toString();
-    });
-    // ADR-0168: the listening line is on stdout, so a normal start is not ERROR.
-    child.stdout.on('data', (chunk: Buffer) => {
-      stdout += chunk.toString();
-      const m = /listening on [^:]+:(\d+)/.exec(stdout);
-      if (m) resolve(Number(m[1]));
-    });
-    void exited.then((code) => reject(new Error(`shim exited ${code} before listening: ${stderr}`)));
-  });
+  const shim = await startEntrypoint('shim', { FUNCD_ARTIFACT: artifact });
   const call = (mode: string) =>
-    fetch(`http://127.0.0.1:${port}/`, {
+    fetch(`http://127.0.0.1:${shim.port}/`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ data: { mode } }),
     });
-  return { child, call, exited, stderr: () => stderr };
+  return { ...shim, call };
 }
 
 for (const kind of ['rejection', 'throw']) {
   test(`issue 132: a stray ${kind} in one call does not cut off a concurrent call`, { timeout: 15_000 }, async (t) => {
     const shim = await startShim(t, strayFaultHandler);
     let exitCode: number | null | undefined;
-    void shim.exited.then((code) => {
+    void shim.exited.then(({ code }) => {
       exitCode = code;
     });
     try {

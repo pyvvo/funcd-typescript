@@ -18,7 +18,14 @@ import { Hono } from 'hono';
 import { realpathSync, writeFileSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 
-import { containStrayFaults, dropBrokenPipes, resolveHandler, resolveValidators, toWire } from './runtime.ts';
+import {
+  containStrayFaults,
+  dropBrokenPipes,
+  exitOnSigterm,
+  resolveHandler,
+  resolveValidators,
+  toWire,
+} from './runtime.ts';
 import { ContractError, loadValidators } from './contract.ts';
 import type { CloudEvent, FunctionContext, Handler, Validator } from './types.ts';
 import { makeInvoke } from './invoke.ts';
@@ -127,6 +134,7 @@ async function main(): Promise<void> {
   // double-capture). No channel env ⇒ null ⇒ both are no-ops (console stays Path A). The shim's OWN
   // operational lines go to process.stdout/stderr directly — never through the patched console.
   dropBrokenPipes();
+  exitOnSigterm();
   const channel = openChannel(process.env);
   installConsoleCapture(process.env, channel);
 

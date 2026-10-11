@@ -10602,6 +10602,10 @@ function dropBrokenPipes() {
     });
   }
 }
+function exitOnSigterm() {
+  if (process.pid !== 1) return;
+  process.on("SIGTERM", () => process.exit(143));
+}
 function containStrayFaults(prefix) {
   const log = (kind) => (err) => process.stderr.write(`${prefix}: ${kind}: ${inspect(err)}
 `);
@@ -11446,6 +11450,7 @@ function createApp(handler, validators = {}, trace = {}, health = {}) {
 }
 async function main() {
   dropBrokenPipes();
+  exitOnSigterm();
   const channel = openChannel(process.env);
   installConsoleCapture(process.env, channel);
   const artifact = process.env.FUNCD_ARTIFACT;

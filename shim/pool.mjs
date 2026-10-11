@@ -10603,6 +10603,10 @@ function dropBrokenPipes() {
     });
   }
 }
+function exitOnSigterm() {
+  if (process.pid !== 1) return;
+  process.on("SIGTERM", () => process.exit(143));
+}
 function containStrayFaults(prefix) {
   const log = (kind) => (err) => process.stderr.write(`${prefix}: ${kind}: ${inspect(err)}
 `);
@@ -11735,6 +11739,7 @@ function createPool(manifest, limits) {
 }
 async function main() {
   dropBrokenPipes();
+  exitOnSigterm();
   const manifestPath = process.env.FUNCD_POOL_MANIFEST;
   if (!manifestPath) {
     process.stderr.write("funcd-pool: FUNCD_POOL_MANIFEST is required\n");

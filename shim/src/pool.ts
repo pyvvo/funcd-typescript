@@ -26,7 +26,14 @@ import { readFileSync, realpathSync, writeFileSync } from 'node:fs';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { isMainThread, parentPort, Worker, workerData } from 'node:worker_threads';
 
-import { containStrayFaults, dropBrokenPipes, resolveHandler, resolveValidators, toWire } from './runtime.ts';
+import {
+  containStrayFaults,
+  dropBrokenPipes,
+  exitOnSigterm,
+  resolveHandler,
+  resolveValidators,
+  toWire,
+} from './runtime.ts';
 import { ContractError, loadFromPath } from './contract.ts';
 import type { CloudEvent, FunctionContext, Handler, Validator } from './types.ts';
 import { makeInvoke } from './invoke.ts';
@@ -544,6 +551,7 @@ export function createPool(
 /** main loads the manifest, spawns the pool, and serves at once; members load in the background. */
 async function main(): Promise<void> {
   dropBrokenPipes();
+  exitOnSigterm();
   const manifestPath = process.env.FUNCD_POOL_MANIFEST;
   if (!manifestPath) {
     process.stderr.write('funcd-pool: FUNCD_POOL_MANIFEST is required\n');
