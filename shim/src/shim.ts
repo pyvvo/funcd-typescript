@@ -18,13 +18,21 @@ import { Hono } from 'hono';
 import { realpathSync, writeFileSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 
-import { containStrayFaults, dropBrokenPipes, resolveHandler, resolveValidators, toWire } from './runtime.ts';
+import {
+  containStrayFaults,
+  dropBrokenPipes,
+  exitOnSigterm,
+  resolveHandler,
+  resolveValidators,
+  toWire,
+} from './runtime.ts';
 import { ContractError, loadValidators } from './contract.ts';
 import type { CloudEvent, FunctionContext, Handler, Validator } from './types.ts';
 import { makeInvoke } from './invoke.ts';
 import { makeKV } from './kv.ts';
 import { makeBlob } from './blob.ts';
 import { checkDependencies, dependencyCheckBudgetMs } from './dependencies.ts';
+import { deadlineFrom, remainingMs } from './invcontext.ts';
 import { installConsoleCapture, openChannel, recordBound, type Sink } from './funclog.ts';
 import { startSpan, parseLinks } from './tracespan.ts';
 
@@ -50,6 +58,7 @@ export function createApp(
     invoke: makeInvoke({ sink: traceSink, bound: trace.bound }),
     kv: makeKV(),
     blob: makeBlob(),
+    remainingMs,
   };
   const fnName = trace.fnName ?? 'invoke';
 
@@ -63,6 +72,7 @@ export function createApp(
   });
 
   app.post('/', async (c) => {
+    const deadline = deadlineFrom(c.req.header('x-funcd-timeout-ms'));
     let event: CloudEvent;
     try {
       const text = await c.req.text();
@@ -94,6 +104,7 @@ export function createApp(
       parseLinks(c.req.header('x-funcd-span-links')),
       undefined,
       trace.bound,
+      deadline,
     );
     try {
       const result = toWire(await span.run(() => handler(ctx, event)));
@@ -123,6 +134,7 @@ async function main(): Promise<void> {
   // double-capture). No channel env ⇒ null ⇒ both are no-ops (console stays Path A). The shim's OWN
   // operational lines go to process.stdout/stderr directly — never through the patched console.
   dropBrokenPipes();
+  exitOnSigterm();
   const channel = openChannel(process.env);
   installConsoleCapture(process.env, channel);
 

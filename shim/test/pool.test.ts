@@ -11,24 +11,8 @@ import type { Hono } from 'hono';
 
 import { callTimeoutMs, createPool, loadTimeoutMs, type MemberStatus } from '../src/pool.ts';
 import { fakeDependencies } from './localapi.ts';
+import { post, writeHandlers } from './poolapp.ts';
 import { tempDir } from './tempdir.ts';
-
-// writeHandlers writes each handler to a temp .mjs and returns the pool manifest.
-function writeHandlers(t: TestContext, handlers: Record<string, string>): { name: string; artifact: string }[] {
-  const dir = tempDir(t, 'funcd-pool-test-');
-  return Object.entries(handlers).map(([name, code]) => {
-    const artifact = join(dir, `${name}.mjs`);
-    writeFileSync(artifact, code);
-    return { name, artifact };
-  });
-}
-
-const post = (app: Hono, name: string, data: unknown) =>
-  app.request(`/function/${name}`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ id: '1', source: 's', type: 't', data }),
-  });
 
 // scenario: pool-routes — POST /function/<name> reaches the right handler's worker; unknown → 404.
 test('routes each function to its own worker; unknown → 404', async (t) => {

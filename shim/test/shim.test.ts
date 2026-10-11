@@ -1,10 +1,10 @@
 import { type TestContext, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { spawn } from 'node:child_process';
 import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { setTimeout as sleep } from 'node:timers/promises';
 import { createApp, resolveHandler, resolveValidators, type Validator } from '../src/shim.ts';
+import { startEntrypoint } from './entrypoint.ts';
 import { type Answer, fakeDependencies } from './localapi.ts';
 import { tempDir } from './tempdir.ts';
 
@@ -86,6 +86,31 @@ test('the handler context exposes log()', async () => {
     return { ok: true };
   });
   assert.equal((await app.request('/', jsonReq('{}'))).status, 200);
+});
+
+// funcd ADR-0226 rung 1 (scenario handler-reads-deadline): ctx.remainingMs() counts down from the call's
+// x-funcd-timeout-ms in whole milliseconds, floored at 0; null without a valid header.
+test('scenario handler-reads-deadline: ctx.remainingMs() counts down from x-funcd-timeout-ms', async () => {
+  const app = createApp(async (ctx) => {
+    const first = ctx.remainingMs();
+    await sleep(50);
+    return { first, second: ctx.remainingMs() };
+  });
+  const left = async (header?: string) => {
+    const res = await app.request('/', {
+      method: 'POST',
+      headers: header === undefined ? {} : { 'x-funcd-timeout-ms': header },
+      body: '{}',
+    });
+    return (await res.json()) as { first: number | null; second: number | null };
+  };
+  const { first, second } = await left('5000');
+  assert.ok(first !== null && Number.isInteger(first) && first > 4_000 && first <= 5_000, `first ${first}`);
+  assert.ok(second !== null && Number.isInteger(second) && first - second >= 40, `second ${second}`);
+  assert.equal((await left('20')).second, 0, 'floored at 0 past the deadline');
+  for (const header of [undefined, '0', 'abc', '2147482648']) {
+    assert.deepEqual(await left(header), { first: null, second: null }, `header ${JSON.stringify(header)}`);
+  }
 });
 
 // The I/O contract (ADR-0058): precompiled, eval-free validators generated at push from the
@@ -206,45 +231,25 @@ export async function handle(_ctx, event) {
 }
 `;
 
-// startShim runs the real shim entrypoint over a temp artifact, as the process driver does, and
-// resolves once it listens.
+// startShim runs the real shim entrypoint over a temp artifact and resolves once it listens.
 async function startShim(t: TestContext, code: string) {
   const artifact = join(tempDir(t, 'funcd-shim-test-'), 'handler.mjs');
   writeFileSync(artifact, code);
-  const child = spawn(
-    process.execPath,
-    ['--experimental-strip-types', '--no-warnings', fileURLToPath(new URL('../src/shim.ts', import.meta.url))],
-    { env: { FUNCD_ARTIFACT: artifact }, stdio: ['ignore', 'pipe', 'pipe'] },
-  );
-  let stderr = '';
-  const exited = new Promise<number | null>((resolve) => child.on('exit', (code) => resolve(code)));
-  const port = await new Promise<number>((resolve, reject) => {
-    let stdout = '';
-    child.stderr.on('data', (chunk: Buffer) => {
-      stderr += chunk.toString();
-    });
-    // ADR-0168: the listening line is on stdout, so a normal start is not ERROR.
-    child.stdout.on('data', (chunk: Buffer) => {
-      stdout += chunk.toString();
-      const m = /listening on [^:]+:(\d+)/.exec(stdout);
-      if (m) resolve(Number(m[1]));
-    });
-    void exited.then((code) => reject(new Error(`shim exited ${code} before listening: ${stderr}`)));
-  });
+  const shim = await startEntrypoint('shim', { FUNCD_ARTIFACT: artifact });
   const call = (mode: string) =>
-    fetch(`http://127.0.0.1:${port}/`, {
+    fetch(`http://127.0.0.1:${shim.port}/`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ data: { mode } }),
     });
-  return { child, call, exited, stderr: () => stderr };
+  return { ...shim, call };
 }
 
 for (const kind of ['rejection', 'throw']) {
   test(`issue 132: a stray ${kind} in one call does not cut off a concurrent call`, { timeout: 15_000 }, async (t) => {
     const shim = await startShim(t, strayFaultHandler);
     let exitCode: number | null | undefined;
-    void shim.exited.then((code) => {
+    void shim.exited.then(({ code }) => {
       exitCode = code;
     });
     try {

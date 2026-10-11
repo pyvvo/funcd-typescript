@@ -42,6 +42,15 @@ export function dropBrokenPipes(): void {
   }
 }
 
+/** exitOnSigterm makes SIGTERM end the shim when it is PID 1 in a container, where the kernel drops a signal the
+ *  process does not handle: funcd's stop then waited out its grace and sent SIGKILL. It exits 143 (128 + SIGTERM),
+ *  which containerd reports as that signal (funcd ADR-0160). Any other process keeps Node's default action, which ends
+ *  it even while a call blocks its event loop, where a listener could not run. */
+export function exitOnSigterm(): void {
+  if (process.pid !== 1) return;
+  process.on('SIGTERM', () => process.exit(143));
+}
+
 /** containStrayFaults logs, instead of exiting on, a rejection a handler left unhandled or a throw from
  *  one of its callbacks after it returned: concurrent calls share one event loop (the solo shim's,
  *  ADR-0030; a pool worker's, ADR-0044), so Node's default exit would cut off every one of them. Install

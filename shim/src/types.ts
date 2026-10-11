@@ -39,6 +39,8 @@ export interface FunctionContext {
   /** Binding-scoped blob storage (ADR-0127): get/put/del/list a bound prefix's objects, or mint a
    *  presigned URL — the blob twin of kv. */
   blob: BlobClient;
+  /** Milliseconds left before the call's deadline (X-Funcd-Timeout-Ms), floored at 0; null without one (ADR-0226). */
+  remainingMs(): number | null;
 }
 
 /** A function handler: receives the context + CloudEvent, returns a response (or nothing). */
