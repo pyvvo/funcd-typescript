@@ -47,8 +47,9 @@ export function parseTraceparent(tp: string | undefined): { traceId: string; par
 
 /** newInvContext establishes the invocation identity: adopt the traceparent's trace-id + parent
  *  span-id when present, else mint a root (fresh 16-byte trace). The span-id is the engine-provided
- *  one (ADR-0105, X-Funcd-Span-Id) when a valid hex16 is given, else freshly minted (direct invoke). */
-export function newInvContext(tp: string | undefined, providedSpanId?: string): InvContext {
+ *  one (ADR-0105, X-Funcd-Span-Id) when a valid hex16 is given, else freshly minted (direct invoke).
+ *  `deadline` is the call's deadline (ADR-0226), absent without a valid X-Funcd-Timeout-Ms. */
+export function newInvContext(tp: string | undefined, providedSpanId?: string, deadline?: number): InvContext {
   const adopted = parseTraceparent(tp);
   const spanId =
     providedSpanId && /^[0-9a-f]{16}$/.test(providedSpanId) ? providedSpanId : randomBytes(8).toString('hex');
@@ -57,6 +58,7 @@ export function newInvContext(tp: string | undefined, providedSpanId?: string): 
     traceId: adopted ? adopted.traceId : randomBytes(16).toString('hex'),
     spanId,
     parentId: adopted ? adopted.parentId : '',
+    deadline,
   };
 }
 
@@ -128,7 +130,8 @@ export interface Span {
  *  the incoming `traceparent`; `spanId` is the engine-provided span-id to USE (ADR-0105,
  *  X-Funcd-Span-Id — else mint); `links` are fan-in edges (X-Funcd-Span-Links) attached to the span;
  *  `member` is the pool member, stamped as `funcd.member` (none in the solo shim); `bound` caps the span
- *  record line (FUNCD_FUNCLOG_MAX_RECORD_BYTES). */
+ *  record line (FUNCD_FUNCLOG_MAX_RECORD_BYTES); `deadline` is the call's deadline, which ctx.remainingMs()
+ *  reads (ADR-0226). */
 export function startSpan(
   sink: Sink | null,
   name: string,
@@ -137,8 +140,9 @@ export function startSpan(
   links: string[] = [],
   member?: string,
   bound: number = DEFAULT_MAX_RECORD_BYTES,
+  deadline?: number,
 ): Span {
-  const inv = newInvContext(tp, spanId);
+  const inv = newInvContext(tp, spanId, deadline);
   const startNs = Date.now() * 1e6;
   const t0 = process.hrtime.bigint();
   const validLinks = links.filter((l) => /^[0-9a-f]{16}$/.test(l));

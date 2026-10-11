@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { setTimeout as sleep } from 'node:timers/promises';
 import { fileURLToPath } from 'node:url';
 import { createApp, resolveHandler, resolveValidators, type Validator } from '../src/shim.ts';
 import { type Answer, fakeDependencies } from './localapi.ts';
@@ -86,6 +87,31 @@ test('the handler context exposes log()', async () => {
     return { ok: true };
   });
   assert.equal((await app.request('/', jsonReq('{}'))).status, 200);
+});
+
+// funcd ADR-0226 rung 1 (scenario handler-reads-deadline): ctx.remainingMs() counts down from the call's
+// x-funcd-timeout-ms in whole milliseconds, floored at 0; null without a valid header.
+test('scenario handler-reads-deadline: ctx.remainingMs() counts down from x-funcd-timeout-ms', async () => {
+  const app = createApp(async (ctx) => {
+    const first = ctx.remainingMs();
+    await sleep(50);
+    return { first, second: ctx.remainingMs() };
+  });
+  const left = async (header?: string) => {
+    const res = await app.request('/', {
+      method: 'POST',
+      headers: header === undefined ? {} : { 'x-funcd-timeout-ms': header },
+      body: '{}',
+    });
+    return (await res.json()) as { first: number | null; second: number | null };
+  };
+  const { first, second } = await left('5000');
+  assert.ok(first !== null && Number.isInteger(first) && first > 4_000 && first <= 5_000, `first ${first}`);
+  assert.ok(second !== null && Number.isInteger(second) && first - second >= 40, `second ${second}`);
+  assert.equal((await left('20')).second, 0, 'floored at 0 past the deadline');
+  for (const header of [undefined, '0', 'abc', '2147482648']) {
+    assert.deepEqual(await left(header), { first: null, second: null }, `header ${JSON.stringify(header)}`);
+  }
 });
 
 // The I/O contract (ADR-0058): precompiled, eval-free validators generated at push from the

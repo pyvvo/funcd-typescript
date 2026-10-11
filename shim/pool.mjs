@@ -10658,6 +10658,23 @@ var invStore = new AsyncLocalStorage();
 function currentInv() {
   return invStore.getStore();
 }
+var maxTimeoutMs = 2147482647;
+function parseTimeoutMs(value) {
+  if (value === void 0 || !/^[0-9]+$/.test(value)) return void 0;
+  const ms = Number(value);
+  return ms >= 1 && ms <= maxTimeoutMs ? ms : void 0;
+}
+function nowMs() {
+  return Number(process.hrtime.bigint()) / 1e6;
+}
+function deadlineFrom(header) {
+  const ms = parseTimeoutMs(header);
+  return ms === void 0 ? void 0 : nowMs() + ms;
+}
+function remainingMs() {
+  const deadline = currentInv()?.deadline;
+  return deadline === void 0 ? null : Math.max(0, Math.floor(deadline - nowMs()));
+}
 
 // src/funclog.ts
 import { writeSync } from "node:fs";
@@ -10987,14 +11004,15 @@ function parseTraceparent(tp) {
   if (!/^[0-9a-f]{16}$/.test(parentId) || parentId === ZERO_SPAN) return null;
   return { traceId, parentId };
 }
-function newInvContext(tp, providedSpanId) {
+function newInvContext(tp, providedSpanId, deadline) {
   const adopted = parseTraceparent(tp);
   const spanId = providedSpanId && /^[0-9a-f]{16}$/.test(providedSpanId) ? providedSpanId : randomBytes(8).toString("hex");
   return {
     inv: randomBytes(8).toString("hex"),
     traceId: adopted ? adopted.traceId : randomBytes(16).toString("hex"),
     spanId,
-    parentId: adopted ? adopted.parentId : ""
+    parentId: adopted ? adopted.parentId : "",
+    deadline
   };
 }
 function emitSpan(sink, ids, name, kind, start, end, status, statusMsg, attrs, links, member, bound) {
@@ -11030,8 +11048,8 @@ function boundSpan(rec, bound) {
   rec.attrs.keptBytes = String(b.kept);
   return JSON.stringify(rec);
 }
-function startSpan(sink, name, tp, spanId, links = [], member, bound = DEFAULT_MAX_RECORD_BYTES) {
-  const inv = newInvContext(tp, spanId);
+function startSpan(sink, name, tp, spanId, links = [], member, bound = DEFAULT_MAX_RECORD_BYTES, deadline) {
+  const inv = newInvContext(tp, spanId, deadline);
   const startNs = Date.now() * 1e6;
   const t0 = process.hrtime.bigint();
   const validLinks = links.filter((l) => /^[0-9a-f]{16}$/.test(l));
@@ -11363,20 +11381,16 @@ var maxOldMB = Number(process.env.FUNCD_POOL_MAX_OLD_MB ?? 64);
 var maxYoungMB = Number(process.env.FUNCD_POOL_MAX_YOUNG_MB ?? 16);
 var requestTimeoutMs = 3e4;
 var timeoutMarginMs = 1e3;
-var maxHeaderTimeoutMs = 2147482647;
+var stuckDelayMs = 1e4;
 var restartBaseMs = 50;
 var restartMaxMs = 1e4;
 var defaultLoadTimeoutMs = 6e4;
 function loadTimeoutMs(value) {
-  if (value === void 0 || !/^[0-9]+$/.test(value)) return defaultLoadTimeoutMs;
-  const ms = Number(value);
-  return ms >= 1 && ms <= maxHeaderTimeoutMs ? ms : defaultLoadTimeoutMs;
+  return parseTimeoutMs(value) ?? defaultLoadTimeoutMs;
 }
 function callTimeoutMs(header) {
-  if (header === void 0 || !/^[0-9]+$/.test(header)) return requestTimeoutMs;
-  const ms = Number(header);
-  if (ms < 1 || ms > maxHeaderTimeoutMs) return requestTimeoutMs;
-  return ms + timeoutMarginMs;
+  const ms = parseTimeoutMs(header);
+  return ms === void 0 ? requestTimeoutMs : ms + timeoutMarginMs;
 }
 async function workerMain() {
   const spec = workerData;
@@ -11410,9 +11424,15 @@ async function workerMain() {
     log: (...args) => console.log(`[${spec.name}]`, ...args),
     invoke: makeInvoke({ member: spec.name, sink: channel, bound: recordBound(process.env) }),
     kv: makeKV(spec.name),
-    blob: makeBlob(spec.name)
+    blob: makeBlob(spec.name),
+    remainingMs
   };
-  port.on("message", (req) => {
+  port.on("message", (msg) => {
+    if ("ping" in msg) {
+      port.postMessage({ pong: msg.ping });
+      return;
+    }
+    const req = msg;
     void (async () => {
       const event = req.event ?? {};
       if (validators.input) {
@@ -11434,7 +11454,8 @@ async function workerMain() {
         req.spanId,
         req.links ?? [],
         spec.name,
-        recordBound(process.env)
+        recordBound(process.env),
+        req.deadline
       );
       try {
         const result = toWire(await span.run(() => handler(ctx, event)));
@@ -11471,6 +11492,11 @@ var PooledHandler = class {
   worker;
   pending = /* @__PURE__ */ new Map();
   nextID = 0;
+  // ADR-0226: the unanswered pings, each with the worker it went to, and the workers the host ended, each with the
+  // time it ended them, until they exit. Both hold the worker object, so a successor is never ended in its place.
+  pings = /* @__PURE__ */ new Map();
+  ended = /* @__PURE__ */ new Map();
+  nextPing = 0;
   state = "loading";
   error;
   /** Resolves once the first load settles: the member is ready or failed. */
@@ -11513,6 +11539,11 @@ var PooledHandler = class {
       void worker.terminate();
     }, this.limits.loadTimeout);
     worker.on("message", (msg) => {
+      if (msg.pong !== void 0) {
+        clearTimeout(this.pings.get(msg.pong)?.timer);
+        this.pings.delete(msg.pong);
+        return;
+      }
       if (msg.ready) {
         clearTimeout(this.loadTimer);
         this.booted = true;
@@ -11542,8 +11573,42 @@ var PooledHandler = class {
     worker.on("error", fault);
     worker.on("exit", () => {
       releaseChannelLock(this.channelLock, threadId2);
+      this.forget(worker);
       fault();
     });
+  }
+  /** stuck reports a worker the host ended that has not exited stuckDelay later (ADR-0226 rung 3). */
+  get stuck() {
+    const now = nowMs();
+    return [...this.ended.values()].some((at) => now - at >= this.limits.stuckDelay);
+  }
+  // ping asks the worker that served a late call to answer from its event loop. No pong within stuckDelay means a
+  // handler blocks that loop, so the host ends that worker (ADR-0226 rung 2).
+  ping(worker) {
+    if (this.closed || this.ended.has(worker)) return;
+    const n = this.nextPing++;
+    const timer = setTimeout(() => {
+      this.pings.delete(n);
+      this.end(worker);
+    }, this.limits.stuckDelay);
+    this.pings.set(n, { worker, timer });
+    worker.postMessage({ ping: n });
+  }
+  // end terminates a worker; its exit takes the fault path. A worker blocked in a call that terminate() cannot
+  // interrupt, such as a blocking system call, does not exit, and liveness reports it (ADR-0226 rung 3).
+  end(worker) {
+    if (this.ended.has(worker)) return;
+    this.ended.set(worker, nowMs());
+    void worker.terminate();
+  }
+  // forget drops the pings and the end of a worker that exited.
+  forget(worker) {
+    for (const [n, p] of this.pings) {
+      if (p.worker !== worker) continue;
+      clearTimeout(p.timer);
+      this.pings.delete(n);
+    }
+    this.ended.delete(worker);
   }
   failLoad(error) {
     this.state = "failed";
@@ -11576,22 +11641,26 @@ var PooledHandler = class {
   status() {
     return this.error === void 0 ? { name: this.spec.name, state: this.state } : { name: this.spec.name, state: this.state, error: this.error };
   }
-  async invoke(event, timeoutMs, traceparent, spanId, links) {
+  async invoke(event, timeoutMs, traceparent, spanId, links, deadline) {
     if (!this.healthy) return { id: -1, status: 503, error: `function ${this.spec.name} unavailable` };
     const id = this.nextID++;
+    const worker = this.worker;
     return new Promise((resolve) => {
       const timer = setTimeout(() => {
         this.pending.delete(id);
         resolve({ id, status: 503, error: `function ${this.spec.name} timed out` });
+        if (deadline !== void 0) this.ping(worker);
       }, timeoutMs);
       this.pending.set(id, { resolve, timer });
-      this.worker.postMessage({ id, event, traceparent, spanId, links });
+      worker.postMessage({ id, event, traceparent, spanId, links, deadline });
     });
   }
   async close() {
     this.closed = true;
     clearTimeout(this.restartTimer);
     clearTimeout(this.loadTimer);
+    for (const { timer } of this.pings.values()) clearTimeout(timer);
+    this.pings.clear();
     await this.worker.terminate();
   }
 };
@@ -11600,7 +11669,8 @@ function createPool(manifest, limits) {
   const resolved = {
     maxOld: limits?.maxOldMB ?? maxOldMB,
     maxYoung: limits?.maxYoungMB ?? maxYoungMB,
-    loadTimeout: limits?.loadTimeoutMs ?? loadTimeoutMs(process.env.FUNCD_POOL_LOAD_TIMEOUT_MS)
+    loadTimeout: limits?.loadTimeoutMs ?? loadTimeoutMs(process.env.FUNCD_POOL_LOAD_TIMEOUT_MS),
+    stuckDelay: limits?.stuckDelayMs ?? stuckDelayMs
   };
   const handlers = /* @__PURE__ */ new Map();
   const channelLock = newChannelLock();
@@ -11609,7 +11679,10 @@ function createPool(manifest, limits) {
   }
   const members = () => [...handlers.values()].map((h) => h.status());
   const app = new Hono2();
-  app.get("/health/liveness", (c) => c.text("ok"));
+  app.get(
+    "/health/liveness",
+    (c) => [...handlers.values()].some((h) => h.stuck) ? c.text("stuck call", 503) : c.text("ok")
+  );
   app.get("/health/readiness", (c) => {
     for (const h of handlers.values()) {
       if (h.state === "loading") return c.text("not ready", 503);
@@ -11623,6 +11696,8 @@ function createPool(manifest, limits) {
     return c.json(states.map((m, i) => reports[i] ? { ...m, dependency: reports[i] } : m));
   });
   app.post("/function/:name", async (c) => {
+    const timeoutHeader = c.req.header("x-funcd-timeout-ms");
+    const deadline = deadlineFrom(timeoutHeader);
     const h = handlers.get(c.req.param("name"));
     if (!h) return c.json({ error: `unknown function ${c.req.param("name")}` }, 404);
     let event;
@@ -11637,10 +11712,11 @@ function createPool(manifest, limits) {
     }
     const res = await h.invoke(
       event,
-      callTimeoutMs(c.req.header("x-funcd-timeout-ms")),
+      callTimeoutMs(timeoutHeader),
       c.req.header("traceparent"),
       c.req.header("x-funcd-span-id"),
-      parseLinks(c.req.header("x-funcd-span-links"))
+      parseLinks(c.req.header("x-funcd-span-links")),
+      deadline
     );
     if (res.status === 422) return c.json({ error: res.error, details: res.details }, 422);
     if (res.status === 503) return c.json({ error: res.error }, 503);

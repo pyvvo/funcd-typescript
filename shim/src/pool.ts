@@ -12,6 +12,11 @@
 // (calls get 503) while its siblings serve; GET /health/members reports each member's state and, from
 // funcd's GET /health/dependencies, its dependency report (funcd ADR-0215).
 //
+// A late call (funcd ADR-0226): the host passes the call's deadline to the worker, whose ctx.remainingMs() reads it.
+// When a call with a deadline outlives its timer, the host pings the worker that served it; a worker whose event
+// loop does not answer within 10 s is ended and restarted. GET /health/liveness answers 503 while a worker the host
+// ended has not exited 10 s later, so funcd restarts the replica.
+//
 // Bundled (Hono inlined) to pool.mjs. Env: FUNCD_POOL_MANIFEST (JSON [{name,artifact,handler?,
 // contract?,env?}]), FUNCD_PORT | FUNCD_PORTFILE, FUNCD_POOL_MAX_OLD_MB (64), FUNCD_POOL_MAX_YOUNG_MB
 // (16), FUNCD_POOL_LOAD_TIMEOUT_MS (60000).
@@ -28,6 +33,7 @@ import { makeInvoke } from './invoke.ts';
 import { makeKV } from './kv.ts';
 import { makeBlob } from './blob.ts';
 import { checkDependencies, type DependencyReport, dependencyCheckBudgetMs } from './dependencies.ts';
+import { deadlineFrom, nowMs, parseTimeoutMs, remainingMs } from './invcontext.ts';
 import {
   type ChannelLock,
   installConsoleCapture,
@@ -55,6 +61,14 @@ interface Req {
   traceparent?: string; // ADR-0101: the host forwards the incoming W3C header so the worker's span adopts it
   spanId?: string; // ADR-0105: the engine-provided span-id the worker's span uses (X-Funcd-Span-Id)
   links?: string[]; // ADR-0105: fan-in edges (X-Funcd-Span-Links)
+  deadline?: number; // ADR-0226: the call's deadline, a nowMs() value
+}
+// ADR-0226: the host pings the worker that served a late call; the worker answers from its event loop.
+interface Ping {
+  ping: number;
+}
+interface Pong {
+  pong: number;
 }
 interface Res {
   id: number;
@@ -70,8 +84,9 @@ const maxYoungMB = Number(process.env.FUNCD_POOL_MAX_YOUNG_MB ?? 16);
 const requestTimeoutMs = 30_000; // without a valid x-funcd-timeout-ms header (unchanged)
 // The platform's own deadline answers first; the pool's timer only frees an entry it gave up on.
 const timeoutMarginMs = 1_000;
-// setTimeout's largest delay (2^31 - 1 ms) less the margin.
-const maxHeaderTimeoutMs = 2_147_482_647;
+// ADR-0226: how long a pinged worker has to answer, and how long a worker the host ended has to exit before
+// liveness fails.
+const stuckDelayMs = 10_000;
 const restartBaseMs = 50;
 const restartMaxMs = 10_000;
 // funcd's runtime.bootTimeout default (1 m), used when FUNCD_POOL_LOAD_TIMEOUT_MS is unset or invalid.
@@ -79,17 +94,13 @@ const defaultLoadTimeoutMs = 60_000;
 
 /** loadTimeoutMs reads FUNCD_POOL_LOAD_TIMEOUT_MS: a positive decimal integer, else the default. */
 export function loadTimeoutMs(value: string | undefined): number {
-  if (value === undefined || !/^[0-9]+$/.test(value)) return defaultLoadTimeoutMs;
-  const ms = Number(value);
-  return ms >= 1 && ms <= maxHeaderTimeoutMs ? ms : defaultLoadTimeoutMs;
+  return parseTimeoutMs(value) ?? defaultLoadTimeoutMs;
 }
 
 /** header + timeoutMarginMs when a decimal integer in 1..2_147_482_647, else requestTimeoutMs (funcd ADR-0151). */
 export function callTimeoutMs(header: string | undefined): number {
-  if (header === undefined || !/^[0-9]+$/.test(header)) return requestTimeoutMs;
-  const ms = Number(header);
-  if (ms < 1 || ms > maxHeaderTimeoutMs) return requestTimeoutMs;
-  return ms + timeoutMarginMs;
+  const ms = parseTimeoutMs(header);
+  return ms === undefined ? requestTimeoutMs : ms + timeoutMarginMs;
 }
 
 // =====================================================================================
@@ -138,9 +149,15 @@ async function workerMain(): Promise<void> {
     invoke: makeInvoke({ member: spec.name, sink: channel, bound: recordBound(process.env) }),
     kv: makeKV(spec.name),
     blob: makeBlob(spec.name),
+    remainingMs,
   };
 
-  port.on('message', (req: Req) => {
+  port.on('message', (msg: Req | Ping) => {
+    if ('ping' in msg) {
+      port.postMessage({ pong: msg.ping } satisfies Pong);
+      return;
+    }
+    const req = msg;
     void (async () => {
       const event = req.event ?? ({} as CloudEvent);
       if (validators.input) {
@@ -167,6 +184,7 @@ async function workerMain(): Promise<void> {
         req.links ?? [],
         spec.name,
         recordBound(process.env),
+        req.deadline,
       );
       try {
         const result = toWire(await span.run(() => handler(ctx, event)));
@@ -226,6 +244,11 @@ class PooledHandler {
   private worker!: Worker;
   private readonly pending = new Map<number, Pending>();
   private nextID = 0;
+  // ADR-0226: the unanswered pings, each with the worker it went to, and the workers the host ended, each with the
+  // time it ended them, until they exit. Both hold the worker object, so a successor is never ended in its place.
+  private readonly pings = new Map<number, { worker: Worker; timer: ReturnType<typeof setTimeout> }>();
+  private readonly ended = new Map<Worker, number>();
+  private nextPing = 0;
   state: MemberState = 'loading';
   error?: string;
   /** Resolves once the first load settles: the member is ready or failed. */
@@ -238,13 +261,13 @@ class PooledHandler {
   private loadTimer?: ReturnType<typeof setTimeout>;
   private readonly spec: WorkerSpec;
   private readonly entry: string;
-  private readonly limits: { maxOld: number; maxYoung: number; loadTimeout: number };
+  private readonly limits: { maxOld: number; maxYoung: number; loadTimeout: number; stuckDelay: number };
   private readonly channelLock: ChannelLock;
 
   constructor(
     spec: WorkerSpec,
     entry: string,
-    limits: { maxOld: number; maxYoung: number; loadTimeout: number },
+    limits: { maxOld: number; maxYoung: number; loadTimeout: number; stuckDelay: number },
     channelLock: ChannelLock,
   ) {
     this.spec = spec;
@@ -275,7 +298,12 @@ class PooledHandler {
       if (!this.booted) this.failLoad('load timed out');
       void worker.terminate();
     }, this.limits.loadTimeout);
-    worker.on('message', (msg: Res & { ready?: boolean; failed?: string }) => {
+    worker.on('message', (msg: Res & { ready?: boolean; failed?: string; pong?: number }) => {
+      if (msg.pong !== undefined) {
+        clearTimeout(this.pings.get(msg.pong)?.timer);
+        this.pings.delete(msg.pong);
+        return;
+      }
       if (msg.ready) {
         clearTimeout(this.loadTimer);
         this.booted = true;
@@ -307,8 +335,46 @@ class PooledHandler {
     worker.on('error', fault);
     worker.on('exit', () => {
       releaseChannelLock(this.channelLock, threadId);
+      this.forget(worker);
       fault();
     });
+  }
+
+  /** stuck reports a worker the host ended that has not exited stuckDelay later (ADR-0226 rung 3). */
+  get stuck(): boolean {
+    const now = nowMs();
+    return [...this.ended.values()].some((at) => now - at >= this.limits.stuckDelay);
+  }
+
+  // ping asks the worker that served a late call to answer from its event loop. No pong within stuckDelay means a
+  // handler blocks that loop, so the host ends that worker (ADR-0226 rung 2).
+  private ping(worker: Worker): void {
+    if (this.closed || this.ended.has(worker)) return;
+    const n = this.nextPing++;
+    const timer = setTimeout(() => {
+      this.pings.delete(n);
+      this.end(worker);
+    }, this.limits.stuckDelay);
+    this.pings.set(n, { worker, timer });
+    worker.postMessage({ ping: n } satisfies Ping);
+  }
+
+  // end terminates a worker; its exit takes the fault path. A worker blocked in a call that terminate() cannot
+  // interrupt, such as a blocking system call, does not exit, and liveness reports it (ADR-0226 rung 3).
+  private end(worker: Worker): void {
+    if (this.ended.has(worker)) return;
+    this.ended.set(worker, nowMs());
+    void worker.terminate();
+  }
+
+  // forget drops the pings and the end of a worker that exited.
+  private forget(worker: Worker): void {
+    for (const [n, p] of this.pings) {
+      if (p.worker !== worker) continue;
+      clearTimeout(p.timer);
+      this.pings.delete(n);
+    }
+    this.ended.delete(worker);
   }
 
   private failLoad(error: string): void {
@@ -355,16 +421,19 @@ class PooledHandler {
     traceparent?: string,
     spanId?: string,
     links?: string[],
+    deadline?: number,
   ): Promise<Res> {
     if (!this.healthy) return { id: -1, status: 503, error: `function ${this.spec.name} unavailable` };
     const id = this.nextID++;
+    const worker = this.worker;
     return new Promise<Res>((resolve) => {
       const timer = setTimeout(() => {
         this.pending.delete(id);
         resolve({ id, status: 503, error: `function ${this.spec.name} timed out` });
+        if (deadline !== undefined) this.ping(worker);
       }, timeoutMs);
       this.pending.set(id, { resolve, timer });
-      this.worker.postMessage({ id, event, traceparent, spanId, links } satisfies Req);
+      worker.postMessage({ id, event, traceparent, spanId, links, deadline } satisfies Req);
     });
   }
 
@@ -372,6 +441,8 @@ class PooledHandler {
     this.closed = true;
     clearTimeout(this.restartTimer);
     clearTimeout(this.loadTimer);
+    for (const { timer } of this.pings.values()) clearTimeout(timer);
+    this.pings.clear();
     await this.worker.terminate();
   }
 }
@@ -388,13 +459,20 @@ export interface Pool {
  *  once; a member answers 503 until it is ready. */
 export function createPool(
   manifest: WorkerSpec[],
-  limits?: { maxOldMB?: number; maxYoungMB?: number; loadTimeoutMs?: number; dependencyBudgetMs?: number },
+  limits?: {
+    maxOldMB?: number;
+    maxYoungMB?: number;
+    loadTimeoutMs?: number;
+    dependencyBudgetMs?: number;
+    stuckDelayMs?: number;
+  },
 ): Pool {
   const entry = fileURLToPath(import.meta.url); // spawn this same file as the worker (isMainThread=false)
   const resolved = {
     maxOld: limits?.maxOldMB ?? maxOldMB,
     maxYoung: limits?.maxYoungMB ?? maxYoungMB,
     loadTimeout: limits?.loadTimeoutMs ?? loadTimeoutMs(process.env.FUNCD_POOL_LOAD_TIMEOUT_MS),
+    stuckDelay: limits?.stuckDelayMs ?? stuckDelayMs,
   };
   const handlers = new Map<string, PooledHandler>();
   const channelLock = newChannelLock();
@@ -404,7 +482,9 @@ export function createPool(
   const members = () => [...handlers.values()].map((h) => h.status());
 
   const app = new Hono();
-  app.get('/health/liveness', (c) => c.text('ok'));
+  app.get('/health/liveness', (c) =>
+    [...handlers.values()].some((h) => h.stuck) ? c.text('stuck call', 503) : c.text('ok'),
+  );
   app.get('/health/readiness', (c) => {
     for (const h of handlers.values()) {
       if (h.state === 'loading') return c.text('not ready', 503);
@@ -419,6 +499,8 @@ export function createPool(
     return c.json(states.map((m, i) => (reports[i] ? { ...m, dependency: reports[i] } : m)));
   });
   app.post('/function/:name', async (c) => {
+    const timeoutHeader = c.req.header('x-funcd-timeout-ms');
+    const deadline = deadlineFrom(timeoutHeader);
     const h = handlers.get(c.req.param('name'));
     if (!h) return c.json({ error: `unknown function ${c.req.param('name')}` }, 404);
     let event: CloudEvent;
@@ -436,10 +518,11 @@ export function createPool(
     // ADR-0101/0105: forward the trace + span-id + fan-in links headers to the worker.
     const res = await h.invoke(
       event,
-      callTimeoutMs(c.req.header('x-funcd-timeout-ms')),
+      callTimeoutMs(timeoutHeader),
       c.req.header('traceparent'),
       c.req.header('x-funcd-span-id'),
       parseLinks(c.req.header('x-funcd-span-links')),
+      deadline,
     );
     if (res.status === 422) return c.json({ error: res.error, details: res.details }, 422);
     if (res.status === 503) return c.json({ error: res.error }, 503);

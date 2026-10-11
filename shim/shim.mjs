@@ -10662,6 +10662,23 @@ var invStore = new AsyncLocalStorage();
 function currentInv() {
   return invStore.getStore();
 }
+var maxTimeoutMs = 2147482647;
+function parseTimeoutMs(value) {
+  if (value === void 0 || !/^[0-9]+$/.test(value)) return void 0;
+  const ms = Number(value);
+  return ms >= 1 && ms <= maxTimeoutMs ? ms : void 0;
+}
+function nowMs() {
+  return Number(process.hrtime.bigint()) / 1e6;
+}
+function deadlineFrom(header) {
+  const ms = parseTimeoutMs(header);
+  return ms === void 0 ? void 0 : nowMs() + ms;
+}
+function remainingMs() {
+  const deadline = currentInv()?.deadline;
+  return deadline === void 0 ? null : Math.max(0, Math.floor(deadline - nowMs()));
+}
 
 // src/funclog.ts
 import { writeSync } from "node:fs";
@@ -10988,14 +11005,15 @@ function parseTraceparent(tp) {
   if (!/^[0-9a-f]{16}$/.test(parentId) || parentId === ZERO_SPAN) return null;
   return { traceId, parentId };
 }
-function newInvContext(tp, providedSpanId) {
+function newInvContext(tp, providedSpanId, deadline) {
   const adopted = parseTraceparent(tp);
   const spanId = providedSpanId && /^[0-9a-f]{16}$/.test(providedSpanId) ? providedSpanId : randomBytes(8).toString("hex");
   return {
     inv: randomBytes(8).toString("hex"),
     traceId: adopted ? adopted.traceId : randomBytes(16).toString("hex"),
     spanId,
-    parentId: adopted ? adopted.parentId : ""
+    parentId: adopted ? adopted.parentId : "",
+    deadline
   };
 }
 function emitSpan(sink, ids, name, kind, start, end, status, statusMsg, attrs, links, member, bound) {
@@ -11031,8 +11049,8 @@ function boundSpan(rec, bound) {
   rec.attrs.keptBytes = String(b.kept);
   return JSON.stringify(rec);
 }
-function startSpan(sink, name, tp, spanId, links = [], member, bound = DEFAULT_MAX_RECORD_BYTES) {
-  const inv = newInvContext(tp, spanId);
+function startSpan(sink, name, tp, spanId, links = [], member, bound = DEFAULT_MAX_RECORD_BYTES, deadline) {
+  const inv = newInvContext(tp, spanId, deadline);
   const startNs = Date.now() * 1e6;
   const t0 = process.hrtime.bigint();
   const validLinks = links.filter((l) => /^[0-9a-f]{16}$/.test(l));
@@ -11367,7 +11385,8 @@ function createApp(handler, validators = {}, trace = {}, health = {}) {
     log: (...args) => console.log(...args),
     invoke: makeInvoke({ sink: traceSink, bound: trace.bound }),
     kv: makeKV(),
-    blob: makeBlob()
+    blob: makeBlob(),
+    remainingMs
   };
   const fnName = trace.fnName ?? "invoke";
   app.get("/health/liveness", (c) => c.text("ok"));
@@ -11379,6 +11398,7 @@ function createApp(handler, validators = {}, trace = {}, health = {}) {
     return report ? c.json(report, 503) : c.text("ready");
   });
   app.post("/", async (c) => {
+    const deadline = deadlineFrom(c.req.header("x-funcd-timeout-ms"));
     let event;
     try {
       const text = await c.req.text();
@@ -11402,7 +11422,8 @@ function createApp(handler, validators = {}, trace = {}, health = {}) {
       c.req.header("x-funcd-span-id"),
       parseLinks(c.req.header("x-funcd-span-links")),
       void 0,
-      trace.bound
+      trace.bound,
+      deadline
     );
     try {
       const result = toWire(await span.run(() => handler(ctx, event)));
