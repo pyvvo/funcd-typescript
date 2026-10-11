@@ -11,12 +11,15 @@
   in {
     devShells = forAllSystems (system: let
       pkgs = import nixpkgs { inherit system; };
-    in {
       # node 22 matches the curated runtime image funcd ships the shim in (ADR-0039)
+      node = pkgs.nodejs_22;
+    in {
       default = pkgs.mkShellNoCC {
         packages = with pkgs; [
-          nodejs_22
-          yarn-berry
+          node
+          # yarn runs package scripts (the tests too) on the node that runs yarn itself, and nixpkgs builds
+          # yarn-berry on its default node
+          (yarn-berry.override { nodejs = node; })
           go
           just
           git
