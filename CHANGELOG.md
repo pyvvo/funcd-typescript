@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.12.0](https://github.com/pyvvo/funcd-typescript/compare/v0.11.0...v0.12.0) (2026-10-12)
+
+
+### Features
+
+* **shim:** context.sql, SQL over the local API (funcd ADR-0233) ([#65](https://github.com/pyvvo/funcd-typescript/issues/65)) ([2d0efca](https://github.com/pyvvo/funcd-typescript/commit/2d0efca4094de3a6fcfbe7e4fcaeb52673c463be))
+
 ## [0.11.0](https://github.com/pyvvo/funcd-typescript/compare/v0.10.0...v0.11.0) (2026-10-11)
 
 
