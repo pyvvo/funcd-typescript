@@ -907,6 +907,17 @@ __metadata:
   languageName: unknown
   linkType: soft
 
+"@funcd-dev/example-sql-search@workspace:examples/sql-search":
+  version: 0.0.0-use.local
+  resolution: "@funcd-dev/example-sql-search@workspace:examples/sql-search"
+  dependencies:
+    "@funcd-dev/vite-plugin": "workspace:*"
+    "@types/node": "npm:^22.0.0"
+    typescript: "npm:^5.7.0"
+    vite: "npm:^8.3.2"
+  languageName: unknown
+  linkType: soft
+
 "@funcd-dev/example-workflow@workspace:examples/workflow":
   version: 0.0.0-use.local
   resolution: "@funcd-dev/example-workflow@workspace:examples/workflow"
