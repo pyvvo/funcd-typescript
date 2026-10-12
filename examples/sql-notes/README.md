@@ -4,7 +4,7 @@ Two TypeScript functions over one SQL database, `notes-db`, served by its own rq
 
 | Function | What |
 |---|---|
-| `migrate` | applies the migrations drizzle-kit generated from the schema, the pending ones only |
+| `notes-migrate` | applies the migrations drizzle-kit generated from the schema, the pending ones only |
 | `notes` | adds, lists, completes, moves and removes notes with Drizzle queries; the owner of `notes-db` |
 
 The functions hold no credential and never reach the engine: `context.sql` calls funcd over the sandbox's socket,
@@ -24,7 +24,7 @@ A migration only adds to the schema, so the code one version back still runs on 
 
 ## Migrations
 
-`migrate` runs Drizzle's sqlite-proxy migrator over `context.sql` ([`src/db/migrator.ts`](src/db/migrator.ts)). It
+`notes-migrate` runs Drizzle's sqlite-proxy migrator over `context.sql` ([`src/db/migrator.ts`](src/db/migrator.ts)). It
 applies every migration that table `_migrations` lacks, with their `_migrations` rows, in one call: rqlite runs the
 call as one transaction, so a failed migration records nothing. Call it after each deploy, or make it an App's
 `preApply` hook, which runs before the new revision serves (funcd ADR-0236).
@@ -50,7 +50,7 @@ built with the engine (`just build-sql-engine` in funcd) is needed.
 ```bash
 yarn build
 funcdctl dev .
-curl -XPOST localhost:<gateway>/function/migrate -d '{"data":{}}'
+curl -XPOST localhost:<gateway>/function/notes-migrate -d '{"data":{}}'
 curl -XPOST localhost:<gateway>/function/notes -d '{"data":{"op":"add","notebook":"shopping","title":"milk"}}'
 curl -XPOST localhost:<gateway>/function/notes -d '{"data":{"op":"list"}}'
 ```
@@ -61,15 +61,15 @@ With `--persist` the rows outlive the session.
 
 ```bash
 funcdctl push notes.mjs <registry>:notes
-funcdctl push migrate.mjs <registry>:migrate
-funcdctl apply -f notes-db.yaml -f notes.yaml -f migrate.yaml -f grant.yaml
+funcdctl push notes-migrate.mjs <registry>:notes-migrate
+funcdctl apply -f notes-db.yaml -f notes.yaml -f notes-migrate.yaml -f grant.yaml
 ```
 
 | File | What |
 |---|---|
 | `notes-db.yaml` | SQLDatabase `notes-db`, owned by `notes`: only its owner writes it, unless a role allows another |
-| `notes.yaml`, `migrate.yaml` | the Functions, each binding `notes-db` as alias `app` |
-| `grant.yaml` | `SQL Data Writer` on `notes-db` for `migrate` |
+| `notes.yaml`, `notes-migrate.yaml` | the Functions, each binding `notes-db` as alias `app` |
+| `grant.yaml` | `SQL Data Writer` on `notes-db` for `notes-migrate` |
 | `funcdconfig.yaml` | a daemon config with file storage, so the engine keeps its data across restarts |
 
 ## Tests

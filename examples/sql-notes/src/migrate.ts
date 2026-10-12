@@ -1,4 +1,4 @@
-// The migrate function: it brings notes-db to the schema of src/db/schema.ts. Run it once after each deploy, or as an
+// The notes-migrate function: it brings notes-db to the schema of src/db/schema.ts. Run it once after each deploy, or as an
 // App's preApply hook (funcd ADR-0236). It writes notes-db through a SQL Data Writer grant (grant.yaml).
 import type { FunctionContext } from '@funcd-dev/shim';
 

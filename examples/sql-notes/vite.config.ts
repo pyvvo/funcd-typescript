@@ -3,5 +3,5 @@ import { defineConfig } from 'vite';
 
 // Bundles each function into one self-contained .mjs beside its funcdctl.yaml (funcd ADR-0144).
 export default defineConfig({
-  plugins: [funcd({ functions: { notes: 'src/notes.ts', migrate: 'src/migrate.ts' }, outDir: '.' })],
+  plugins: [funcd({ functions: { notes: 'src/notes.ts', 'notes-migrate': 'src/migrate.ts' }, outDir: '.' })],
 });
