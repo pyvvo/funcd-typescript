@@ -1,0 +1,17 @@
+{
+  "name": "@funcd-dev/example-sql-search",
+  "private": true,
+  "type": "module",
+  "description": "A funcd SQL example (FEAT-0011) with plain context.sql: full-text search with SQLite's FTS5, tags in a JSON column, named parameters and RETURNING, on a database's rqlite engine. vite build bundles search.mjs.",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "node --test --experimental-strip-types --experimental-sqlite --no-warnings test/*.test.ts",
+    "build": "vite build"
+  },
+  "devDependencies": {
+    "@funcd-dev/vite-plugin": "workspace:*",
+    "@types/node": "^22.0.0",
+    "typescript": "^5.7.0",
+    "vite": "^8.3.2"
+  }
+}
