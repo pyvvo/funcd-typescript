@@ -38,6 +38,7 @@ import { ContractError, loadFromPath } from './contract.ts';
 import type { CloudEvent, FunctionContext, Handler, Validator } from './types.ts';
 import { makeInvoke } from './invoke.ts';
 import { makeKV } from './kv.ts';
+import { makeSQL } from './sql.ts';
 import { makeBlob } from './blob.ts';
 import { checkDependencies, type DependencyReport, dependencyCheckBudgetMs } from './dependencies.ts';
 import { deadlineFrom, nowMs, parseTimeoutMs, remainingMs } from './invcontext.ts';
@@ -156,6 +157,7 @@ async function workerMain(): Promise<void> {
     invoke: makeInvoke({ member: spec.name, sink: channel, bound: recordBound(process.env) }),
     kv: makeKV(spec.name),
     blob: makeBlob(spec.name),
+    sql: makeSQL(spec.name),
     remainingMs,
   };
 

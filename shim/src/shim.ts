@@ -30,6 +30,7 @@ import { ContractError, loadValidators } from './contract.ts';
 import type { CloudEvent, FunctionContext, Handler, Validator } from './types.ts';
 import { makeInvoke } from './invoke.ts';
 import { makeKV } from './kv.ts';
+import { makeSQL } from './sql.ts';
 import { makeBlob } from './blob.ts';
 import { checkDependencies, dependencyCheckBudgetMs } from './dependencies.ts';
 import { deadlineFrom, remainingMs } from './invcontext.ts';
@@ -58,6 +59,7 @@ export function createApp(
     invoke: makeInvoke({ sink: traceSink, bound: trace.bound }),
     kv: makeKV(),
     blob: makeBlob(),
+    sql: makeSQL(),
     remainingMs,
   };
   const fnName = trace.fnName ?? 'invoke';

@@ -1,41 +1,10 @@
 // context.kv — function-facing KV over the worker-node local API (HTTP-over-UDS, ADR-0069). Dials the
 // same per-sandbox socket as context.invoke (FUNCD_INVOKE_SOCKET); the platform routes /kv/… to the
 // PDP-authorized Facade with the sandbox's namespace identity. Reached only through the built-in shim.
-import http from 'node:http';
+import { type Resp, send as sendOn } from './socket.ts';
 
-import { MEMBER_HEADER } from './invoke.ts';
-
-interface Resp {
-  status: number;
-  body: Buffer;
-}
-
-function send(method: string, path: string, body: Buffer | undefined, member: string | undefined): Promise<Resp> {
-  return new Promise<Resp>((resolve, reject) => {
-    const socketPath = process.env.FUNCD_INVOKE_SOCKET;
-    if (!socketPath) {
-      reject(new Error('context.kv: worker-node local API socket unavailable (FUNCD_INVOKE_SOCKET unset)'));
-      return;
-    }
-    const headers: Record<string, number | string> = {};
-    if (body) headers['content-length'] = body.byteLength;
-    if (member) headers[MEMBER_HEADER] = member;
-    const req = http.request({ socketPath, path, method, headers }, (res) => {
-      const chunks: Buffer[] = [];
-      // A connection that drops mid-body errors the response, not the request, and never ends it.
-      res.on('error', (err) =>
-        reject(
-          new Error(`context.kv ${method} ${path} failed: connection closed before the reply ended`, { cause: err }),
-        ),
-      );
-      res.on('data', (c: Buffer) => chunks.push(c));
-      res.on('end', () => resolve({ status: res.statusCode ?? 0, body: Buffer.concat(chunks) }));
-    });
-    req.on('error', (err) => reject(new Error(`context.kv ${method} ${path} failed: ${err.message}`, { cause: err })));
-    if (body) req.end(body);
-    else req.end();
-  });
-}
+const send = (method: string, path: string, body: Buffer | undefined, member: string | undefined) =>
+  sendOn('context.kv', method, path, body, member);
 
 /** A function's view of its namespace-scoped KV (ADR-0069): get/put/del a binding's key, or list keys. */
 export interface KVClient {

@@ -3,43 +3,10 @@
 // to the binding-gated, PDP-authorized Facade with the sandbox's function identity (bind-as-grant on
 // spec.blob). Reached only through the built-in shim — no @aws-sdk, no keypair. The blob twin of context.kv;
 // v1 is bytes-in-memory (streaming is a v2 follow-up).
-import http from 'node:http';
+import { type Resp, send as sendOn } from './socket.ts';
 
-import { MEMBER_HEADER } from './invoke.ts';
-
-interface Resp {
-  status: number;
-  body: Buffer;
-}
-
-function send(method: string, path: string, body: Buffer | undefined, member: string | undefined): Promise<Resp> {
-  return new Promise<Resp>((resolve, reject) => {
-    const socketPath = process.env.FUNCD_INVOKE_SOCKET;
-    if (!socketPath) {
-      reject(new Error('context.blob: worker-node local API socket unavailable (FUNCD_INVOKE_SOCKET unset)'));
-      return;
-    }
-    const headers: Record<string, number | string> = {};
-    if (body) headers['content-length'] = body.byteLength;
-    if (member) headers[MEMBER_HEADER] = member;
-    const req = http.request({ socketPath, path, method, headers }, (res) => {
-      const chunks: Buffer[] = [];
-      // A connection that drops mid-body errors the response, not the request, and never ends it.
-      res.on('error', (err) =>
-        reject(
-          new Error(`context.blob ${method} ${path} failed: connection closed before the reply ended`, { cause: err }),
-        ),
-      );
-      res.on('data', (c: Buffer) => chunks.push(c));
-      res.on('end', () => resolve({ status: res.statusCode ?? 0, body: Buffer.concat(chunks) }));
-    });
-    req.on('error', (err) =>
-      reject(new Error(`context.blob ${method} ${path} failed: ${err.message}`, { cause: err })),
-    );
-    if (body) req.end(body);
-    else req.end();
-  });
-}
+const send = (method: string, path: string, body: Buffer | undefined, member: string | undefined) =>
+  sendOn('context.blob', method, path, body, member);
 
 /** Options for a presigned URL: the HTTP method it grants (default GET) and its lifetime, a duration string
  * such as "10m" or "1h30m" (funcd ADR-0198: units h, m, s, ms in that order, whole seconds from 1s to 168h). The

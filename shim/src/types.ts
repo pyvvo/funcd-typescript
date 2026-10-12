@@ -3,9 +3,19 @@
 // import these types for a typed handler signature + autocomplete.
 import type { KVClient } from './kv.ts';
 import type { BlobClient } from './blob.ts';
+import type { SQLClient } from './sql.ts';
 
 export type { KVClient } from './kv.ts';
 export type { BlobClient, SignOptions } from './blob.ts';
+export type {
+  SQLClient,
+  SQLExecResult,
+  SQLParam,
+  SQLParams,
+  SQLRow,
+  SQLStatement,
+  SQLValues,
+} from './sql.ts';
 
 /** A CloudEvent — the normalized trigger envelope (ADR-0023). */
 export interface CloudEvent<T = unknown> {
@@ -39,6 +49,9 @@ export interface FunctionContext {
   /** Binding-scoped blob storage (ADR-0127): get/put/del/list a bound prefix's objects, or mint a
    *  presigned URL — the blob twin of kv. */
   blob: BlobClient;
+  /** The SQL databases a function binds (funcd ADR-0233): query reads, queryValues keeps every column of a join,
+   *  execute writes in one transaction. A write needs the database's owner or a writer role. */
+  sql: SQLClient;
   /** Milliseconds left before the call's deadline (X-Funcd-Timeout-Ms), floored at 0; null without one (ADR-0226). */
   remainingMs(): number | null;
 }

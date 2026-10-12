@@ -3728,7 +3728,7 @@ var require_schemes = __commonJS({
       urnComponent.nss = (uuidComponent.uuid || "").toLowerCase();
       return urnComponent;
     }
-    var http5 = (
+    var http4 = (
       /** @type {SchemeHandler} */
       {
         scheme: "http",
@@ -3741,7 +3741,7 @@ var require_schemes = __commonJS({
       /** @type {SchemeHandler} */
       {
         scheme: "https",
-        domainHost: http5.domainHost,
+        domainHost: http4.domainHost,
         parse: httpParse,
         serialize: httpSerialize
       }
@@ -3785,7 +3785,7 @@ var require_schemes = __commonJS({
     var SCHEMES = (
       /** @type {Record<SchemeName, SchemeHandler>} */
       {
-        http: http5,
+        http: http4,
         https,
         ws,
         wss,
@@ -11166,34 +11166,38 @@ function makeInvoke(opts = {}) {
   });
 }
 
-// src/kv.ts
+// src/socket.ts
 import http2 from "node:http";
-function send(method, path2, body, member) {
+function send(client, method, path2, body, member, contentType2) {
   return new Promise((resolve, reject) => {
     const socketPath = process.env.FUNCD_INVOKE_SOCKET;
     if (!socketPath) {
-      reject(new Error("context.kv: worker-node local API socket unavailable (FUNCD_INVOKE_SOCKET unset)"));
+      reject(new Error(`${client}: worker-node local API socket unavailable (FUNCD_INVOKE_SOCKET unset)`));
       return;
     }
     const headers = {};
     if (body) headers["content-length"] = body.byteLength;
+    if (contentType2) headers["content-type"] = contentType2;
     if (member) headers[MEMBER_HEADER] = member;
     const req = http2.request({ socketPath, path: path2, method, headers }, (res) => {
       const chunks = [];
       res.on(
         "error",
         (err) => reject(
-          new Error(`context.kv ${method} ${path2} failed: connection closed before the reply ended`, { cause: err })
+          new Error(`${client} ${method} ${path2} failed: connection closed before the reply ended`, { cause: err })
         )
       );
       res.on("data", (c) => chunks.push(c));
       res.on("end", () => resolve({ status: res.statusCode ?? 0, body: Buffer.concat(chunks) }));
     });
-    req.on("error", (err) => reject(new Error(`context.kv ${method} ${path2} failed: ${err.message}`, { cause: err })));
+    req.on("error", (err) => reject(new Error(`${client} ${method} ${path2} failed: ${err.message}`, { cause: err })));
     if (body) req.end(body);
     else req.end();
   });
 }
+
+// src/kv.ts
+var send2 = (method, path2, body, member) => send("context.kv", method, path2, body, member);
 var enc = encodeURIComponent;
 var keyPath = (binding, key) => `/kv/${enc(binding)}/${key.split("/").map(enc).join("/")}`;
 var fail = (verb, r) => new Error(`context.kv.${verb} failed: ${r.status} ${r.body.toString("utf8")}`);
@@ -11208,7 +11212,7 @@ var json2 = (verb, r, text) => {
   }
 };
 function makeKV(member) {
-  const request = (method, path2, body) => send(method, path2, body, member);
+  const request = (method, path2, body) => send2(method, path2, body, member);
   return {
     async get(binding, key) {
       const r = await request("GET", keyPath(binding, key));
@@ -11246,37 +11250,52 @@ function makeKV(member) {
   };
 }
 
-// src/blob.ts
-import http3 from "node:http";
-function send2(method, path2, body, member) {
-  return new Promise((resolve, reject) => {
-    const socketPath = process.env.FUNCD_INVOKE_SOCKET;
-    if (!socketPath) {
-      reject(new Error("context.blob: worker-node local API socket unavailable (FUNCD_INVOKE_SOCKET unset)"));
-      return;
-    }
-    const headers = {};
-    if (body) headers["content-length"] = body.byteLength;
-    if (member) headers[MEMBER_HEADER] = member;
-    const req = http3.request({ socketPath, path: path2, method, headers }, (res) => {
-      const chunks = [];
-      res.on(
-        "error",
-        (err) => reject(
-          new Error(`context.blob ${method} ${path2} failed: connection closed before the reply ended`, { cause: err })
-        )
-      );
-      res.on("data", (c) => chunks.push(c));
-      res.on("end", () => resolve({ status: res.statusCode ?? 0, body: Buffer.concat(chunks) }));
-    });
-    req.on(
-      "error",
-      (err) => reject(new Error(`context.blob ${method} ${path2} failed: ${err.message}`, { cause: err }))
-    );
-    if (body) req.end(body);
-    else req.end();
-  });
+// src/sql.ts
+function wire(sql, params) {
+  if (params === void 0) return [sql];
+  return Array.isArray(params) ? [sql, ...params] : [sql, params];
 }
+function toWire2(s) {
+  return typeof s === "string" ? [s] : wire(s[0], s[1]);
+}
+function makeSQL(member) {
+  async function call(verb, alias, statements) {
+    const path2 = `/sql/${encodeURIComponent(alias)}/${verb}`;
+    const body = Buffer.from(JSON.stringify({ statements }), "utf8");
+    const r = await send("context.sql", "POST", path2, body, member, "application/json");
+    const text = r.body.toString("utf8");
+    if (r.status < 200 || r.status >= 300) throw new Error(`context.sql.${verb} failed: ${r.status} ${text}`);
+    try {
+      return JSON.parse(text).results;
+    } catch (err) {
+      throw new Error(`context.sql.${verb} failed: ${r.status} reply is not JSON: ${err.message}`, {
+        cause: err
+      });
+    }
+  }
+  async function queryValues(alias, sql, params) {
+    const [res] = await call("query", alias, [wire(sql, params)]);
+    return res;
+  }
+  async function execute(alias, sqlOrStatements, params) {
+    if (typeof sqlOrStatements === "string") {
+      const [res] = await call("execute", alias, [wire(sqlOrStatements, params)]);
+      return res;
+    }
+    return call("execute", alias, sqlOrStatements.map(toWire2));
+  }
+  return {
+    async query(alias, sql, params) {
+      const { columns, values } = await queryValues(alias, sql, params);
+      return values.map((row) => Object.fromEntries(columns.map((c, i) => [c, row[i]])));
+    },
+    queryValues,
+    execute
+  };
+}
+
+// src/blob.ts
+var send3 = (method, path2, body, member) => send("context.blob", method, path2, body, member);
 var enc2 = encodeURIComponent;
 var keyPath2 = (binding, key) => `/blob/${enc2(binding)}/${key.split("/").map(enc2).join("/")}`;
 var fail2 = (verb, r) => new Error(`context.blob.${verb} failed: ${r.status} ${r.body.toString("utf8")}`);
@@ -11291,7 +11310,7 @@ var json3 = (verb, r, text) => {
   }
 };
 function makeBlob(member) {
-  const request = (method, path2, body) => send2(method, path2, body, member);
+  const request = (method, path2, body) => send3(method, path2, body, member);
   return {
     async get(binding, key) {
       const r = await request("GET", keyPath2(binding, key));
@@ -11324,7 +11343,7 @@ function makeBlob(member) {
 }
 
 // src/dependencies.ts
-import http4 from "node:http";
+import http3 from "node:http";
 var dependencyCheckBudgetMs = 50;
 var path = "/health/dependencies";
 var socketReport = (reason, message) => ({
@@ -11360,7 +11379,7 @@ function checkDependencies(member, signal) {
       resolve(report);
     };
     const unreachable = (err) => settle(socketReport("Unreachable", `GET ${path} failed: ${err.message}`));
-    const req = http4.request(
+    const req = http3.request(
       { socketPath, path, method: "GET", headers: member ? { [MEMBER_HEADER]: member } : {} },
       (res) => {
         const chunks = [];
@@ -11429,6 +11448,7 @@ async function workerMain() {
     invoke: makeInvoke({ member: spec.name, sink: channel, bound: recordBound(process.env) }),
     kv: makeKV(spec.name),
     blob: makeBlob(spec.name),
+    sql: makeSQL(spec.name),
     remainingMs
   };
   port.on("message", (msg) => {
