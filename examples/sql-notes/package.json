@@ -1,0 +1,22 @@
+{
+  "name": "@funcd-dev/example-sql-notes",
+  "private": true,
+  "type": "module",
+  "description": "A funcd SQL example (FEAT-0011): a notes database, code first with Drizzle. drizzle-kit generates the migrations from src/db/schema.ts; the migrate function applies them through context.sql and the notes function queries with Drizzle. vite build bundles notes.mjs and migrate.mjs.",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "node --test --experimental-strip-types --experimental-sqlite --no-warnings test/*.test.ts",
+    "generate": "drizzle-kit generate",
+    "build": "vite build"
+  },
+  "dependencies": {
+    "drizzle-orm": "0.45.3"
+  },
+  "devDependencies": {
+    "@funcd-dev/vite-plugin": "workspace:*",
+    "@types/node": "^22.0.0",
+    "drizzle-kit": "0.31.11",
+    "typescript": "^5.7.0",
+    "vite": "^8.3.2"
+  }
+}

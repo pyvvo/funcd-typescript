@@ -1,0 +1,14 @@
+# Function notes: its spec.sql binding is its access to notes-db as alias app (funcd ADR-0233).
+apiVersion: funcd.io/v1alpha1
+kind: Function
+metadata:
+  name: notes
+  namespace: default
+  resourceGroup: rg1
+spec:
+  runtime: nodejs22
+  handler: handle
+  image: oci-layout:///mnt/funcd-deps/registry:notes
+  sql:
+    - alias: app
+      database: notes-db

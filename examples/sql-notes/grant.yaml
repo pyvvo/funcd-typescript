@@ -1,0 +1,18 @@
+# The migrate function writes notes-db, whose owner is notes (funcd ADR-0233).
+apiVersion: funcd.io/v1alpha1
+kind: RolesAssignment
+metadata:
+  name: migrate-writes-notes-db
+  namespace: default
+  resourceGroup: rg1
+spec:
+  assignments:
+    - principal:
+        kind: Function
+        name: migrate
+      roleRef:
+        kind: BuiltinRole
+        name: SQL Data Writer
+      scope:
+        kind: SQLDatabase
+        name: notes-db

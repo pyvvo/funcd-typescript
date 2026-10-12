@@ -1,0 +1,23 @@
+# The client config of the migrate function (funcd ADR-0122). It binds notes-db too; `funcdctl dev` grants it
+# SQL Data Writer there, as grant.yaml does on a platform.
+runtime: nodejs22
+handler: handle
+bindings:
+  sql:
+    - alias: app
+      database: notes-db
+contract:
+  input:
+    type: object
+    additionalProperties: false
+    properties:
+      event:
+        type: string
+  output:
+    type: object
+    additionalProperties: false
+    properties:
+      applied:
+        type: integer
+    required:
+      - applied
