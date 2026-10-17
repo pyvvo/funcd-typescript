@@ -17,7 +17,8 @@ spec:
   # /site/docs serves the shell; anything outside it does not).
   spa: true
   ingress:
-    public: true
+    auth:
+      mode: open
     rules:
       # A data mount NESTED under the derived /site/docs mount (ADR-0140 allows it: the router is
       # longest-path-first, so this rule wins for /site/docs/data/*). It serves the gold layer the
