@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.14.0](https://github.com/pyvvo/funcd-typescript/compare/v0.13.0...v0.14.0) (2026-10-17)
+
+
+### ⚠ BREAKING CHANGES
+
+* **examples:** auth.mode open in place of public in the s3-roundtrip Sites (funcd ADR-0241) ([#69](https://github.com/pyvvo/funcd-typescript/issues/69))
+
+### Features
+
+* **examples:** auth.mode open in place of public in the s3-roundtrip Sites (funcd ADR-0241) ([#69](https://github.com/pyvvo/funcd-typescript/issues/69)) ([2f88c1b](https://github.com/pyvvo/funcd-typescript/commit/2f88c1b3a242608c1a2846e7d1a53e23f65c9188))
+
 ## [0.13.0](https://github.com/pyvvo/funcd-typescript/compare/v0.12.0...v0.13.0) (2026-10-12)
 
 
