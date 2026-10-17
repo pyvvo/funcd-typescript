@@ -637,17 +637,30 @@ test('scenario health-pool-member-dependency: /health/members reports a failing 
   }
 });
 
-// Six members funcd never answers share one 50 ms bound: asked one after the other, they would take 300 ms.
+// Six members funcd never answers share one 50 ms bound, so their six checks are in flight at once. The test fires
+// that bound itself once funcd has seen every check: on a loaded machine a real 50 ms timer can fire late, or
+// before funcd has seen all six.
 test('/health/members gives each member funcd does not answer kind socket, reason Timeout, within one bound', async (t) => {
   const api = await fakeDependencies(t, () => 'hold');
   const names = ['a', 'b', 'c', 'd', 'e', 'f'];
   const pool = createPool(writeHandlers(t, Object.fromEntries(names.map((n) => [n, okHandler]))));
   try {
     await pool.ready;
-    const start = performance.now();
-    const states = await members(pool.app);
-    const elapsed = performance.now() - start;
-    assert.ok(elapsed >= 45 && elapsed < 250, `answered after ${elapsed} ms`);
+    const bound = new AbortController();
+    const timeout = t.mock.method(AbortSignal, 'timeout', () => bound.signal);
+    const answer = members(pool.app);
+    const deadline = Date.now() + 5_000;
+    while (api.calls.length < names.length) {
+      assert.ok(Date.now() < deadline, `funcd saw ${api.calls.length} of ${names.length} checks before the bound`);
+      await sleep(5);
+    }
+    bound.abort();
+    const states = await answer;
+    assert.deepEqual(
+      timeout.mock.calls.map((c) => c.arguments),
+      [[50]],
+      'one 50 ms bound for every member',
+    );
     assert.deepEqual(
       states.map((s) => [s.name, s.state, s.dependency?.kind, s.dependency?.binding, s.dependency?.reason]),
       names.map((n) => [n, 'ready', 'socket', '', 'Timeout']),
