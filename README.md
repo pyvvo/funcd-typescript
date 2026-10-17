@@ -21,6 +21,24 @@ yarn add -D @funcd-dev/shim
 `import type { Handler, FunctionContext } from '@funcd-dev/shim'` types a handler, and
 `import { buildContract } from '@funcd-dev/shim/build'` builds its input and output contract.
 
+## Serve HTTP from a function
+
+A Function with `spec.protocol: http` exports an HTTP app instead of an event handler (funcd ADR-0243):
+
+```ts
+import { http } from '@funcd-dev/shim';
+import { Hono } from 'hono';
+
+const app = new Hono().get('/devices/:id', (c) => c.json({ id: c.req.param('id') }));
+export const handle = http(app);
+```
+
+Every request but the shim's own `/health/*` reaches the app with its method, path, query and headers, and the app's
+`Response` goes back as is, streamed. Only funcd's edge calls such a Function; another Function reaches it with
+`context.fetch(alias, path, init)` over a link, which resolves with the app's reply, whatever its status, and rejects
+when funcd refuses the call (no link, or a target that does not serve HTTP). See
+[`examples/http-api`](examples/http-api).
+
 ## Bundle your functions
 
 ```bash

@@ -3728,7 +3728,7 @@ var require_schemes = __commonJS({
       urnComponent.nss = (uuidComponent.uuid || "").toLowerCase();
       return urnComponent;
     }
-    var http4 = (
+    var http5 = (
       /** @type {SchemeHandler} */
       {
         scheme: "http",
@@ -3741,7 +3741,7 @@ var require_schemes = __commonJS({
       /** @type {SchemeHandler} */
       {
         scheme: "https",
-        domainHost: http4.domainHost,
+        domainHost: http5.domainHost,
         parse: httpParse,
         serialize: httpSerialize
       }
@@ -3785,7 +3785,7 @@ var require_schemes = __commonJS({
     var SCHEMES = (
       /** @type {Record<SchemeName, SchemeHandler>} */
       {
-        http: http4,
+        http: http5,
         https,
         ws,
         wss,
@@ -10580,10 +10580,42 @@ import { pathToFileURL } from "node:url";
 
 // src/runtime.ts
 import { inspect } from "node:util";
-function resolveHandler(mod, name) {
+
+// src/types.ts
+var HTTP_HANDLER = /* @__PURE__ */ Symbol.for("funcd.http");
+function http(app) {
+  const handler = (request, context) => app.fetch(request, { funcd: context });
+  return Object.assign(handler, { [HTTP_HANDLER]: true });
+}
+
+// src/runtime.ts
+function protocolFrom(env) {
+  const value = env.FUNCD_PROTOCOL ?? "";
+  if (value === "" || value === "cloudevent") return "cloudevent";
+  if (value === "http") return "http";
+  throw new Error(`FUNCD_PROTOCOL "${value}" is neither cloudevent nor http`);
+}
+function isHttpHandler(value) {
+  return typeof value === "function" && value[HTTP_HANDLER] === true;
+}
+function exportOf(mod, name) {
   const candidate = mod?.[name] ?? mod?.default?.[name] ?? mod?.default;
   if (typeof candidate !== "function") {
     throw new Error(`export "${name}" is not a function`);
+  }
+  return candidate;
+}
+function resolveHandler(mod, name) {
+  const candidate = exportOf(mod, name);
+  if (isHttpHandler(candidate)) {
+    throw new Error(`export "${name}" is an http(app) handler, which needs spec.protocol: http`);
+  }
+  return candidate;
+}
+function resolveHttpHandler(mod, name) {
+  const candidate = exportOf(mod, name);
+  if (!isHttpHandler(candidate)) {
+    throw new Error(`export "${name}" is not an http(app) handler, which spec.protocol: http needs`);
   }
   return candidate;
 }
@@ -10654,8 +10686,65 @@ function loadValidators(env) {
   return loadFromPath(path2);
 }
 
+// src/httpapp.ts
+var BODILESS = /* @__PURE__ */ new Set(["GET", "HEAD"]);
+async function appRequest(raw2) {
+  const headers = new Headers();
+  raw2.headers.forEach((value, key) => {
+    if (!key.startsWith("x-funcd-") && key !== "content-length") headers.append(key, value);
+  });
+  let body = null;
+  if (!BODILESS.has(raw2.method)) {
+    const bytes = new Uint8Array(await raw2.arrayBuffer());
+    body = bytes.length === 0 ? null : unwrap(bytes);
+  }
+  return new Request(raw2.url, { method: raw2.method, headers, body });
+}
+function unwrap(bytes) {
+  let value;
+  try {
+    value = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes));
+  } catch {
+    return bytes;
+  }
+  if (typeof value !== "object" || value === null || Array.isArray(value) || !("specversion" in value)) {
+    return bytes;
+  }
+  const data = value.data;
+  return data === void 0 || data === null ? null : JSON.stringify(data);
+}
+function streamed(res, span) {
+  const outcome = res.status >= 500 ? "ERROR" : "OK";
+  if (!res.body) {
+    span.end(outcome);
+    return res;
+  }
+  const reader = res.body.getReader();
+  const body = new ReadableStream({
+    async pull(controller) {
+      try {
+        const { done, value } = await reader.read();
+        if (done) {
+          span.end(outcome);
+          controller.close();
+          return;
+        }
+        controller.enqueue(value);
+      } catch (err) {
+        span.end("ERROR", String(err instanceof Error ? err.message : err));
+        controller.error(err);
+      }
+    },
+    cancel(reason) {
+      span.end("ERROR", "the client went away");
+      return reader.cancel(reason);
+    }
+  });
+  return new Response(body, { status: res.status, statusText: res.statusText, headers: res.headers });
+}
+
 // src/invoke.ts
-import http from "node:http";
+import http2 from "node:http";
 
 // src/tracespan.ts
 import { randomBytes } from "node:crypto";
@@ -11123,7 +11212,7 @@ function makeInvoke(opts = {}) {
     };
     if (opts.member) headers[MEMBER_HEADER] = opts.member;
     if (span) headers.traceparent = span.traceparent;
-    const req = http.request(
+    const req = http2.request(
       {
         socketPath,
         path: `/invoke/${encodeURIComponent(alias)}`,
@@ -11166,9 +11255,80 @@ function makeInvoke(opts = {}) {
     req.end(body);
   });
 }
+var NULL_BODY = /* @__PURE__ */ new Set([101, 204, 205, 304]);
+var FETCH_REPLY_HEADER = "x-funcd-fetch-reply";
+function makeFetch(opts = {}) {
+  return async (alias, path2, init) => {
+    const span = startClientSpan(opts.sink ?? null, alias, opts.member, opts.bound);
+    const fail3 = (err, httpStatus) => {
+      span?.end("ERROR", err.message, httpStatus);
+      throw err;
+    };
+    const socketPath = process.env.FUNCD_INVOKE_SOCKET;
+    if (!socketPath) {
+      return fail3(new Error("context.fetch: worker-node local API socket unavailable (FUNCD_INVOKE_SOCKET unset)"));
+    }
+    if (!path2.startsWith("/")) {
+      return fail3(new Error(`context.fetch("${alias}"): path "${path2}" must start with "/"`));
+    }
+    const request = new Request(new URL(path2, "http://funcd.local"), init);
+    const body = request.body ? Buffer.from(await request.arrayBuffer()) : void 0;
+    const headers = {};
+    request.headers.forEach((value, key) => {
+      headers[key] = value;
+    });
+    if (body) headers["content-length"] = String(body.length);
+    if (opts.member) headers[MEMBER_HEADER] = opts.member;
+    if (span) headers.traceparent = span.traceparent;
+    const target = new URL(request.url);
+    const reply = await new Promise((resolve, reject) => {
+      const req = http2.request(
+        {
+          socketPath,
+          path: `/fetch/${encodeURIComponent(alias)}${target.pathname}${target.search}`,
+          method: request.method,
+          headers
+        },
+        (res) => {
+          const chunks = [];
+          res.on(
+            "error",
+            (err) => reject(
+              new Error(`context.fetch("${alias}") failed: connection closed before the reply ended`, { cause: err })
+            )
+          );
+          res.on("data", (c) => chunks.push(c));
+          res.on("end", () => {
+            const replyHeaders = new Headers();
+            for (const [key, value] of Object.entries(res.headers)) {
+              for (const v of Array.isArray(value) ? value : [value]) {
+                if (v !== void 0) replyHeaders.append(key, v);
+              }
+            }
+            resolve({ status: res.statusCode ?? 0, headers: replyHeaders, body: Buffer.concat(chunks) });
+          });
+        }
+      );
+      req.on("error", (err) => reject(new Error(`context.fetch("${alias}") failed: ${err.message}`, { cause: err })));
+      req.end(body);
+    }).catch((err) => fail3(err));
+    if (!reply.headers.has(FETCH_REPLY_HEADER)) {
+      return fail3(
+        new Error(`context.fetch("${alias}") failed: ${reply.status} ${reply.body.toString("utf8")}`),
+        reply.status
+      );
+    }
+    reply.headers.delete(FETCH_REPLY_HEADER);
+    span?.end(reply.status >= 500 ? "ERROR" : "OK", "", reply.status);
+    return new Response(NULL_BODY.has(reply.status) ? null : new Uint8Array(reply.body), {
+      status: reply.status,
+      headers: reply.headers
+    });
+  };
+}
 
 // src/socket.ts
-import http2 from "node:http";
+import http3 from "node:http";
 function send(client, method, path2, body, member, contentType2) {
   return new Promise((resolve, reject) => {
     const socketPath = process.env.FUNCD_INVOKE_SOCKET;
@@ -11180,7 +11340,7 @@ function send(client, method, path2, body, member, contentType2) {
     if (body) headers["content-length"] = body.byteLength;
     if (contentType2) headers["content-type"] = contentType2;
     if (member) headers[MEMBER_HEADER] = member;
-    const req = http2.request({ socketPath, path: path2, method, headers }, (res) => {
+    const req = http3.request({ socketPath, path: path2, method, headers }, (res) => {
       const chunks = [];
       res.on(
         "error",
@@ -11344,7 +11504,7 @@ function makeBlob(member) {
 }
 
 // src/dependencies.ts
-import http3 from "node:http";
+import http4 from "node:http";
 var dependencyCheckBudgetMs = 50;
 var path = "/health/dependencies";
 var socketReport = (reason, message) => ({
@@ -11380,7 +11540,7 @@ function checkDependencies(member, signal) {
       resolve(report);
     };
     const unreachable = (err) => settle(socketReport("Unreachable", `GET ${path} failed: ${err.message}`));
-    const req = http3.request(
+    const req = http4.request(
       { socketPath, path, method: "GET", headers: member ? { [MEMBER_HEADER]: member } : {} },
       (res) => {
         const chunks = [];
@@ -11401,18 +11561,18 @@ function checkDependencies(member, signal) {
 }
 
 // src/shim.ts
-function createApp(handler, validators = {}, trace = {}, health = {}) {
-  const app = new Hono2();
-  const traceSink = trace.sink ?? null;
-  const ctx = {
+function contextFor(sink, bound) {
+  return {
     log: (...args) => console.log(...args),
-    invoke: makeInvoke({ sink: traceSink, bound: trace.bound }),
+    invoke: makeInvoke({ sink, bound }),
+    fetch: makeFetch({ sink, bound }),
     kv: makeKV(),
     blob: makeBlob(),
     sql: makeSQL(),
     remainingMs
   };
-  const fnName = trace.fnName ?? "invoke";
+}
+function addHealth(app, health) {
   app.get("/health/liveness", (c) => c.text("ok"));
   app.get("/health/readiness", async (c) => {
     const report = await checkDependencies(
@@ -11421,6 +11581,13 @@ function createApp(handler, validators = {}, trace = {}, health = {}) {
     );
     return report ? c.json(report, 503) : c.text("ready");
   });
+}
+function createApp(handler, validators = {}, trace = {}, health = {}) {
+  const app = new Hono2();
+  const traceSink = trace.sink ?? null;
+  const ctx = contextFor(traceSink, trace.bound);
+  const fnName = trace.fnName ?? "invoke";
+  addHealth(app, health);
   app.post("/", async (c) => {
     const deadline = deadlineFrom(c.req.header("x-funcd-timeout-ms"));
     let event;
@@ -11468,6 +11635,34 @@ function createApp(handler, validators = {}, trace = {}, health = {}) {
   });
   return app;
 }
+function createHttpApp(handler, trace = {}, health = {}) {
+  const app = new Hono2();
+  const traceSink = trace.sink ?? null;
+  const ctx = contextFor(traceSink, trace.bound);
+  const fnName = trace.fnName ?? "invoke";
+  addHealth(app, health);
+  app.all("*", async (c) => {
+    const span = startSpan(
+      traceSink,
+      fnName,
+      c.req.header("traceparent"),
+      c.req.header("x-funcd-span-id"),
+      parseLinks(c.req.header("x-funcd-span-links")),
+      void 0,
+      trace.bound,
+      deadlineFrom(c.req.header("x-funcd-timeout-ms"))
+    );
+    try {
+      const res = await span.run(async () => handler(await appRequest(c.req.raw), ctx));
+      return streamed(res, span);
+    } catch (err) {
+      const message = String(err instanceof Error ? err.message : err);
+      span.end("ERROR", message);
+      return c.json({ error: message }, 500);
+    }
+  });
+  return app;
+}
 async function main() {
   dropBrokenPipes();
   exitOnSigterm();
@@ -11481,6 +11676,18 @@ async function main() {
     process.stderr.write("funcd-shim: FUNCD_ARTIFACT is required\n");
     process.exit(2);
   }
+  let protocol;
+  try {
+    protocol = protocolFrom(process.env);
+  } catch (err) {
+    process.stderr.write(`funcd-shim: ${err instanceof Error ? err.message : err}
+`);
+    process.exit(2);
+  }
+  if (protocol === "http" && process.env.FUNCD_CONTRACT_PATH) {
+    process.stderr.write("funcd-shim: contract error: a Function with spec.protocol: http has no I/O contract\n");
+    process.exit(3);
+  }
   let delivered;
   try {
     delivered = loadValidators(process.env);
@@ -11489,21 +11696,19 @@ async function main() {
 `);
     process.exit(3);
   }
-  let handler;
-  let validators;
+  const fnName = process.env.FUNCD_FUNCTION ?? "invoke";
+  const appTrace = { sink: channel, fnName, bound: recordBound(process.env) };
+  let app;
   try {
     const mod = await import(pathToFileURL(artifact).href);
-    handler = resolveHandler(mod, handlerName);
-    validators = delivered ?? resolveValidators(mod);
+    app = protocol === "http" ? createHttpApp(resolveHttpHandler(mod, handlerName), appTrace) : createApp(resolveHandler(mod, handlerName), delivered ?? resolveValidators(mod), appTrace);
   } catch (err) {
     process.stderr.write(`funcd-shim: shape error: ${err instanceof Error ? err.message : err}
 `);
     process.exit(3);
   }
   const hostname = fixedPort > 0 ? "0.0.0.0" : "127.0.0.1";
-  const fnName = process.env.FUNCD_FUNCTION ?? "invoke";
-  const appTrace = { sink: channel, fnName, bound: recordBound(process.env) };
-  serve({ fetch: createApp(handler, validators, appTrace).fetch, hostname, port: fixedPort }, (info) => {
+  serve({ fetch: app.fetch, hostname, port: fixedPort }, (info) => {
     containStrayFaults("funcd-shim");
     if (portFile) writeFileSync(portFile, String(info.port));
     process.stdout.write(`funcd-shim: listening on ${hostname}:${info.port}
@@ -11516,6 +11721,9 @@ if (import.meta.url === entry) {
 }
 export {
   createApp,
+  createHttpApp,
+  http,
   resolveHandler,
+  resolveHttpHandler,
   resolveValidators
 };

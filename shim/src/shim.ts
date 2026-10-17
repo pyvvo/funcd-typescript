@@ -6,6 +6,8 @@
 //   GET  /health/readiness 200 once the handler resolved and funcd passes its dependencies (ADR-0215),
 //                          else 503 with funcd's dependency report
 //   GET  /health/liveness  200 while up; never calls funcd
+// With FUNCD_PROTOCOL=http (funcd ADR-0243) the export is an http(app) handler instead, and every request but
+// /health/* reaches it as the Request the edge received (createHttpApp).
 // If the bundle carries precompiled validators (ADR-0058, generated at push from the author's
 // FuncInput/FuncOutput types), event.data is validated before the handler runs (mismatch -> 422)
 // and the handler's result after (mismatch -> 500). The validators are eval-free (compiled at
@@ -22,13 +24,16 @@ import {
   containStrayFaults,
   dropBrokenPipes,
   exitOnSigterm,
+  protocolFrom,
   resolveHandler,
+  resolveHttpHandler,
   resolveValidators,
   toWire,
 } from './runtime.ts';
 import { ContractError, loadValidators } from './contract.ts';
-import type { CloudEvent, FunctionContext, Handler, Validator } from './types.ts';
-import { makeInvoke } from './invoke.ts';
+import type { CloudEvent, FunctionContext, Handler, HttpHandler, Validator } from './types.ts';
+import { appRequest, streamed } from './httpapp.ts';
+import { makeFetch, makeInvoke } from './invoke.ts';
 import { makeKV } from './kv.ts';
 import { makeSQL } from './sql.ts';
 import { makeBlob } from './blob.ts';
@@ -37,8 +42,46 @@ import { deadlineFrom, remainingMs } from './invcontext.ts';
 import { installConsoleCapture, openChannel, recordBound, type Sink } from './funclog.ts';
 import { startSpan, parseLinks } from './tracespan.ts';
 
-export type { CloudEvent, FunctionContext, Handler, Json, Validator } from './types.ts';
-export { resolveHandler, resolveValidators } from './runtime.ts';
+export type { CloudEvent, FunctionContext, Handler, HttpHandler, Json, Validator } from './types.ts';
+export { http } from './types.ts';
+export { resolveHandler, resolveHttpHandler, resolveValidators } from './runtime.ts';
+
+interface TraceOptions {
+  sink?: Sink | null;
+  fnName?: string;
+  bound?: number;
+}
+
+interface HealthOptions {
+  dependencyBudgetMs?: number;
+}
+
+/** contextFor builds the function context both apps hand their handler; `sink` carries the CLIENT spans of its
+ *  invoke and fetch calls. */
+function contextFor(sink: Sink | null, bound?: number): FunctionContext {
+  return {
+    log: (...args) => console.log(...args),
+    invoke: makeInvoke({ sink, bound }),
+    fetch: makeFetch({ sink, bound }),
+    kv: makeKV(),
+    blob: makeBlob(),
+    sql: makeSQL(),
+    remainingMs,
+  };
+}
+
+/** addHealth serves the shim's probes: liveness never calls funcd, readiness checks funcd's dependencies (ADR-0215)
+ *  within `health.dependencyBudgetMs`, unset meaning funcd's DependencyCheckBudget. */
+function addHealth(app: Hono, health: HealthOptions): void {
+  app.get('/health/liveness', (c) => c.text('ok'));
+  app.get('/health/readiness', async (c) => {
+    const report = await checkDependencies(
+      undefined,
+      AbortSignal.timeout(health.dependencyBudgetMs ?? dependencyCheckBudgetMs),
+    );
+    return report ? c.json(report, 503) : c.text('ready');
+  });
+}
 
 /** createApp builds the shim's HTTP app (the runtime contract) around a handler. The optional
  *  precompiled validators (ADR-0058) gate the I/O: `input` validates event.data BEFORE the handler
@@ -49,29 +92,14 @@ export { resolveHandler, resolveValidators } from './runtime.ts';
 export function createApp(
   handler: Handler,
   validators: { input?: Validator; output?: Validator } = {},
-  trace: { sink?: Sink | null; fnName?: string; bound?: number } = {},
-  health: { dependencyBudgetMs?: number } = {},
+  trace: TraceOptions = {},
+  health: HealthOptions = {},
 ): Hono {
   const app = new Hono();
   const traceSink = trace.sink ?? null; // ADR-0101: per-invocation span emitter (null ⇒ context only)
-  const ctx: FunctionContext = {
-    log: (...args) => console.log(...args),
-    invoke: makeInvoke({ sink: traceSink, bound: trace.bound }),
-    kv: makeKV(),
-    blob: makeBlob(),
-    sql: makeSQL(),
-    remainingMs,
-  };
+  const ctx = contextFor(traceSink, trace.bound);
   const fnName = trace.fnName ?? 'invoke';
-
-  app.get('/health/liveness', (c) => c.text('ok'));
-  app.get('/health/readiness', async (c) => {
-    const report = await checkDependencies(
-      undefined,
-      AbortSignal.timeout(health.dependencyBudgetMs ?? dependencyCheckBudgetMs),
-    );
-    return report ? c.json(report, 503) : c.text('ready');
-  });
+  addHealth(app, health);
 
   app.post('/', async (c) => {
     const deadline = deadlineFrom(c.req.header('x-funcd-timeout-ms'));
@@ -129,6 +157,39 @@ export function createApp(
   return app;
 }
 
+/** createHttpApp builds the shim's app around the http(app) handler of a Function with spec.protocol: http (funcd
+ *  ADR-0243): every request but the shim's own /health/*, which shadows the app's, reaches the handler as the
+ *  Request the edge received, and its Response goes back as is, its body streamed. The invocation span ends with the
+ *  body. */
+export function createHttpApp(handler: HttpHandler, trace: TraceOptions = {}, health: HealthOptions = {}): Hono {
+  const app = new Hono();
+  const traceSink = trace.sink ?? null;
+  const ctx = contextFor(traceSink, trace.bound);
+  const fnName = trace.fnName ?? 'invoke';
+  addHealth(app, health);
+  app.all('*', async (c) => {
+    const span = startSpan(
+      traceSink,
+      fnName,
+      c.req.header('traceparent'),
+      c.req.header('x-funcd-span-id'),
+      parseLinks(c.req.header('x-funcd-span-links')),
+      undefined,
+      trace.bound,
+      deadlineFrom(c.req.header('x-funcd-timeout-ms')),
+    );
+    try {
+      const res = await span.run(async () => handler(await appRequest(c.req.raw), ctx));
+      return streamed(res, span);
+    } catch (err) {
+      const message = String(err instanceof Error ? err.message : err);
+      span.end('ERROR', message);
+      return c.json({ error: message }, 500);
+    }
+  });
+  return app;
+}
+
 /** main loads the artifact, resolves the handler, and serves the contract. */
 async function main(): Promise<void> {
   // ADR-0081 Path B + ADR-0101 traces: open the telemetry channel ONCE and share it between console
@@ -149,6 +210,18 @@ async function main(): Promise<void> {
     process.stderr.write('funcd-shim: FUNCD_ARTIFACT is required\n');
     process.exit(2);
   }
+  let protocol: ReturnType<typeof protocolFrom>;
+  try {
+    protocol = protocolFrom(process.env);
+  } catch (err) {
+    process.stderr.write(`funcd-shim: ${err instanceof Error ? err.message : err}\n`);
+    process.exit(2);
+  }
+  // funcd ADR-0243: an HTTP Function has no I/O contract, so a delivered one is a mismatch, not something to ignore.
+  if (protocol === 'http' && process.env.FUNCD_CONTRACT_PATH) {
+    process.stderr.write('funcd-shim: contract error: a Function with spec.protocol: http has no I/O contract\n');
+    process.exit(3);
+  }
 
   // ADR-0123: compile the delivered contract BEFORE importing the (untrusted) handler module — the
   // bounded eval-free reversal (the ajv.compile runs over a contract.Check-gated, digest-pinned
@@ -161,23 +234,24 @@ async function main(): Promise<void> {
     process.exit(3);
   }
 
-  let handler: Handler;
-  let validators: { input?: Validator; output?: Validator };
+  const fnName = process.env.FUNCD_FUNCTION ?? 'invoke';
+  const appTrace = { sink: channel, fnName, bound: recordBound(process.env) };
+  let app: Hono;
   try {
     const mod = (await import(pathToFileURL(artifact).href)) as Record<string, unknown>;
-    handler = resolveHandler(mod, handlerName);
     // The delivered schema is authoritative when present; else fall back to the module-baked
     // validators (transition back-compat for bundles still carrying __funcdValidate*).
-    validators = delivered ?? resolveValidators(mod);
+    app =
+      protocol === 'http'
+        ? createHttpApp(resolveHttpHandler(mod, handlerName), appTrace)
+        : createApp(resolveHandler(mod, handlerName), delivered ?? resolveValidators(mod), appTrace);
   } catch (err) {
     process.stderr.write(`funcd-shim: shape error: ${err instanceof Error ? err.message : err}\n`);
     process.exit(3); // materialization shape-gate failure (ADR-0030)
   }
 
   const hostname = fixedPort > 0 ? '0.0.0.0' : '127.0.0.1';
-  const fnName = process.env.FUNCD_FUNCTION ?? 'invoke';
-  const appTrace = { sink: channel, fnName, bound: recordBound(process.env) };
-  serve({ fetch: createApp(handler, validators, appTrace).fetch, hostname, port: fixedPort }, (info) => {
+  serve({ fetch: app.fetch, hostname, port: fixedPort }, (info) => {
     containStrayFaults('funcd-shim');
     if (portFile) writeFileSync(portFile, String(info.port));
     process.stdout.write(`funcd-shim: listening on ${hostname}:${info.port}\n`);

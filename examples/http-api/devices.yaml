@@ -1,0 +1,15 @@
+# devices-api: a Function that serves HTTP (funcd ADR-0243). Every request reaches its Hono app; only the edge calls it.
+apiVersion: funcd.io/v1alpha1
+kind: Function
+metadata:
+  name: devices-api
+  namespace: default
+  resourceGroup: rg1
+spec:
+  runtime: nodejs22
+  handler: handle
+  protocol: http
+  image: oci-layout:///mnt/funcd-deps/registry:devices
+  replicas: 1
+  scaling:
+    minReplicas: 1

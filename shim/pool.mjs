@@ -10581,10 +10581,25 @@ import { isMainThread, parentPort, Worker, workerData } from "node:worker_thread
 
 // src/runtime.ts
 import { inspect } from "node:util";
-function resolveHandler(mod, name) {
+
+// src/types.ts
+var HTTP_HANDLER = /* @__PURE__ */ Symbol.for("funcd.http");
+
+// src/runtime.ts
+function isHttpHandler(value) {
+  return typeof value === "function" && value[HTTP_HANDLER] === true;
+}
+function exportOf(mod, name) {
   const candidate = mod?.[name] ?? mod?.default?.[name] ?? mod?.default;
   if (typeof candidate !== "function") {
     throw new Error(`export "${name}" is not a function`);
+  }
+  return candidate;
+}
+function resolveHandler(mod, name) {
+  const candidate = exportOf(mod, name);
+  if (isHttpHandler(candidate)) {
+    throw new Error(`export "${name}" is an http(app) handler, which needs spec.protocol: http`);
   }
   return candidate;
 }
@@ -11165,6 +11180,77 @@ function makeInvoke(opts = {}) {
     req.end(body);
   });
 }
+var NULL_BODY = /* @__PURE__ */ new Set([101, 204, 205, 304]);
+var FETCH_REPLY_HEADER = "x-funcd-fetch-reply";
+function makeFetch(opts = {}) {
+  return async (alias, path2, init) => {
+    const span = startClientSpan(opts.sink ?? null, alias, opts.member, opts.bound);
+    const fail3 = (err, httpStatus) => {
+      span?.end("ERROR", err.message, httpStatus);
+      throw err;
+    };
+    const socketPath = process.env.FUNCD_INVOKE_SOCKET;
+    if (!socketPath) {
+      return fail3(new Error("context.fetch: worker-node local API socket unavailable (FUNCD_INVOKE_SOCKET unset)"));
+    }
+    if (!path2.startsWith("/")) {
+      return fail3(new Error(`context.fetch("${alias}"): path "${path2}" must start with "/"`));
+    }
+    const request = new Request(new URL(path2, "http://funcd.local"), init);
+    const body = request.body ? Buffer.from(await request.arrayBuffer()) : void 0;
+    const headers = {};
+    request.headers.forEach((value, key) => {
+      headers[key] = value;
+    });
+    if (body) headers["content-length"] = String(body.length);
+    if (opts.member) headers[MEMBER_HEADER] = opts.member;
+    if (span) headers.traceparent = span.traceparent;
+    const target = new URL(request.url);
+    const reply = await new Promise((resolve, reject) => {
+      const req = http.request(
+        {
+          socketPath,
+          path: `/fetch/${encodeURIComponent(alias)}${target.pathname}${target.search}`,
+          method: request.method,
+          headers
+        },
+        (res) => {
+          const chunks = [];
+          res.on(
+            "error",
+            (err) => reject(
+              new Error(`context.fetch("${alias}") failed: connection closed before the reply ended`, { cause: err })
+            )
+          );
+          res.on("data", (c) => chunks.push(c));
+          res.on("end", () => {
+            const replyHeaders = new Headers();
+            for (const [key, value] of Object.entries(res.headers)) {
+              for (const v of Array.isArray(value) ? value : [value]) {
+                if (v !== void 0) replyHeaders.append(key, v);
+              }
+            }
+            resolve({ status: res.statusCode ?? 0, headers: replyHeaders, body: Buffer.concat(chunks) });
+          });
+        }
+      );
+      req.on("error", (err) => reject(new Error(`context.fetch("${alias}") failed: ${err.message}`, { cause: err })));
+      req.end(body);
+    }).catch((err) => fail3(err));
+    if (!reply.headers.has(FETCH_REPLY_HEADER)) {
+      return fail3(
+        new Error(`context.fetch("${alias}") failed: ${reply.status} ${reply.body.toString("utf8")}`),
+        reply.status
+      );
+    }
+    reply.headers.delete(FETCH_REPLY_HEADER);
+    span?.end(reply.status >= 500 ? "ERROR" : "OK", "", reply.status);
+    return new Response(NULL_BODY.has(reply.status) ? null : new Uint8Array(reply.body), {
+      status: reply.status,
+      headers: reply.headers
+    });
+  };
+}
 
 // src/socket.ts
 import http2 from "node:http";
@@ -11446,6 +11532,7 @@ async function workerMain() {
   const ctx = {
     log: (...args) => console.log(`[${spec.name}]`, ...args),
     invoke: makeInvoke({ member: spec.name, sink: channel, bound: recordBound(process.env) }),
+    fetch: makeFetch({ member: spec.name, sink: channel, bound: recordBound(process.env) }),
     kv: makeKV(spec.name),
     blob: makeBlob(spec.name),
     sql: makeSQL(spec.name),

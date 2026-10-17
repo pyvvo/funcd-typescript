@@ -3,16 +3,52 @@
 // the stray-fault containment both hosts install.
 import { inspect } from 'node:util';
 
-import type { Handler, Validator } from './types.ts';
+import { HTTP_HANDLER, type Handler, type HttpHandler, type Validator } from './types.ts';
 
-/** resolveHandler picks the handler export: `<name>`, `default.<name>`, or `default`. A
- *  non-function (missing handler) throws — the materialization shape-gate (ADR-0030). */
-export function resolveHandler(mod: Record<string, unknown>, name: string): Handler {
+/** How funcd calls a Function (FUNCD_PROTOCOL, funcd ADR-0243): with a CloudEvent, or with each HTTP request. */
+export type Protocol = 'cloudevent' | 'http';
+
+/** protocolFrom reads FUNCD_PROTOCOL: unset or "cloudevent" is an event Function, "http" one that serves HTTP. Any
+ *  other value throws. */
+export function protocolFrom(env: NodeJS.ProcessEnv): Protocol {
+  const value = env.FUNCD_PROTOCOL ?? '';
+  if (value === '' || value === 'cloudevent') return 'cloudevent';
+  if (value === 'http') return 'http';
+  throw new Error(`FUNCD_PROTOCOL "${value}" is neither cloudevent nor http`);
+}
+
+/** isHttpHandler reports whether an export is an http(app) handler. */
+export function isHttpHandler(value: unknown): value is HttpHandler {
+  return typeof value === 'function' && (value as { [HTTP_HANDLER]?: unknown })[HTTP_HANDLER] === true;
+}
+
+/** exportOf picks the handler export: `<name>`, `default.<name>`, or `default`. A non-function (missing handler)
+ *  throws — the materialization shape-gate (ADR-0030). */
+function exportOf(mod: Record<string, unknown>, name: string): unknown {
   const candidate = mod?.[name] ?? (mod?.default as Record<string, unknown> | undefined)?.[name] ?? mod?.default;
   if (typeof candidate !== 'function') {
     throw new Error(`export "${name}" is not a function`);
   }
+  return candidate;
+}
+
+/** resolveHandler picks an event Function's handler; an http(app) export throws, since only a Function with
+ *  spec.protocol: http may export one (funcd ADR-0243). */
+export function resolveHandler(mod: Record<string, unknown>, name: string): Handler {
+  const candidate = exportOf(mod, name);
+  if (isHttpHandler(candidate)) {
+    throw new Error(`export "${name}" is an http(app) handler, which needs spec.protocol: http`);
+  }
   return candidate as Handler;
+}
+
+/** resolveHttpHandler picks the http(app) handler of a Function with spec.protocol: http; any other export throws. */
+export function resolveHttpHandler(mod: Record<string, unknown>, name: string): HttpHandler {
+  const candidate = exportOf(mod, name);
+  if (!isHttpHandler(candidate)) {
+    throw new Error(`export "${name}" is not an http(app) handler, which spec.protocol: http needs`);
+  }
+  return candidate;
 }
 
 /** resolveValidators picks the optional precompiled, eval-free validators the push build inlined

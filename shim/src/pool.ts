@@ -36,7 +36,7 @@ import {
 } from './runtime.ts';
 import { ContractError, loadFromPath } from './contract.ts';
 import type { CloudEvent, FunctionContext, Handler, Validator } from './types.ts';
-import { makeInvoke } from './invoke.ts';
+import { makeFetch, makeInvoke } from './invoke.ts';
 import { makeKV } from './kv.ts';
 import { makeSQL } from './sql.ts';
 import { makeBlob } from './blob.ts';
@@ -155,6 +155,7 @@ async function workerMain(): Promise<void> {
   const ctx: FunctionContext = {
     log: (...args) => console.log(`[${spec.name}]`, ...args),
     invoke: makeInvoke({ member: spec.name, sink: channel, bound: recordBound(process.env) }),
+    fetch: makeFetch({ member: spec.name, sink: channel, bound: recordBound(process.env) }),
     kv: makeKV(spec.name),
     blob: makeBlob(spec.name),
     sql: makeSQL(spec.name),
