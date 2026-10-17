@@ -504,7 +504,12 @@ test('scenario pool-member-load-failure: a member that cannot load fails alone',
   }
 });
 
+// The host's load bound runs on mocked time, which the test moves only once `ok` is ready: a loaded machine
+// can take longer than a real bound to boot `ok`, which then fails too. The workers keep real time, so `hung`
+// really hangs.
 test('a member whose import hangs past the load bound fails with load timed out', { timeout: 10_000 }, async (t) => {
+  const realSleep = sleep; // taken before the mock, so it keeps real time
+  t.mock.timers.enable({ apis: ['setTimeout'] });
   const pool = createPool(
     writeHandlers(t, {
       hung: 'await new Promise((r) => setTimeout(r, 1e9));\nexport function handle() {}',
@@ -514,7 +519,19 @@ test('a member whose import hangs past the load bound fails with load timed out'
   );
   try {
     assert.equal((await pool.app.request('/health/liveness')).status, 200, 'the host answers while members load');
+    const deadline = Date.now() + 5_000;
+    while (pool.members()[1].state === 'loading') {
+      assert.ok(Date.now() < deadline, 'ok did not load');
+      await realSleep(10);
+    }
+    assert.deepEqual(await members(pool.app), [
+      { name: 'hung', state: 'loading' },
+      { name: 'ok', state: 'ready' },
+    ]);
     assert.equal((await pool.app.request('/health/readiness')).status, 503, 'a member is still loading');
+    t.mock.timers.tick(499);
+    assert.equal(pool.members()[0].state, 'loading', 'hung is not failed before the bound');
+    t.mock.timers.tick(1);
     await pool.ready;
     assert.deepEqual(await members(pool.app), [
       { name: 'hung', state: 'failed', error: 'load timed out' },
