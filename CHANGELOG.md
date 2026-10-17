@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.15.0](https://github.com/pyvvo/funcd-typescript/compare/v0.14.0...v0.15.0) (2026-10-17)
+
+
+### Features
+
+* **shim:** Functions that serve HTTP with http(app) and context.fetch (funcd ADR-0243) ([#71](https://github.com/pyvvo/funcd-typescript/issues/71)) ([a8ce265](https://github.com/pyvvo/funcd-typescript/commit/a8ce2651e981ac63376f98f25c08d7baef6c84f2))
+
 ## [0.14.0](https://github.com/pyvvo/funcd-typescript/compare/v0.13.0...v0.14.0) (2026-10-17)
 
 
