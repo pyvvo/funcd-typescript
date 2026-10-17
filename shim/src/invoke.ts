@@ -91,3 +91,86 @@ export function makeInvoke(
       req.end(body);
     });
 }
+
+/** The statuses whose Response carries no body. */
+const NULL_BODY = new Set([101, 204, 205, 304]);
+
+/** The local API header that marks a fetch answer as the target's reply; a call funcd refused carries none. */
+export const FETCH_REPLY_HEADER = 'x-funcd-fetch-reply';
+
+/** Build the context.fetch implementation (funcd ADR-0243). The returned function sends the request to
+ *  /fetch/<alias><path> over the worker-node UDS, which funcd forwards to the linked Function that serves HTTP, and
+ *  resolves with its whole reply as a Response, whatever its status. It rejects, as fetch does when no reply comes,
+ *  when funcd refuses the call before it reaches the target (no link → 403, a target that does not serve HTTP → 409,
+ *  the nested in-flight cap → 429), when the request cannot be sent, and when its reply is cut off. */
+export function makeFetch(
+  opts: InvokeOptions = {},
+): (alias: string, path: string, init?: RequestInit) => Promise<Response> {
+  return async (alias, path, init) => {
+    // ADR-0165: the CLIENT span brackets the whole call, so it opens before any check that can fail.
+    const span = startClientSpan(opts.sink ?? null, alias, opts.member, opts.bound);
+    const fail = (err: Error, httpStatus?: number): never => {
+      span?.end('ERROR', err.message, httpStatus);
+      throw err;
+    };
+    const socketPath = process.env.FUNCD_INVOKE_SOCKET;
+    if (!socketPath) {
+      return fail(new Error('context.fetch: worker-node local API socket unavailable (FUNCD_INVOKE_SOCKET unset)'));
+    }
+    if (!path.startsWith('/')) {
+      return fail(new Error(`context.fetch("${alias}"): path "${path}" must start with "/"`));
+    }
+    const request = new Request(new URL(path, 'http://funcd.local'), init);
+    const body = request.body ? Buffer.from(await request.arrayBuffer()) : undefined;
+    const headers: Record<string, string> = {};
+    request.headers.forEach((value, key) => {
+      headers[key] = value;
+    });
+    if (body) headers['content-length'] = String(body.length);
+    if (opts.member) headers[MEMBER_HEADER] = opts.member;
+    if (span) headers.traceparent = span.traceparent;
+    const target = new URL(request.url);
+    const reply = await new Promise<{ status: number; headers: Headers; body: Buffer }>((resolve, reject) => {
+      const req = http.request(
+        {
+          socketPath,
+          path: `/fetch/${encodeURIComponent(alias)}${target.pathname}${target.search}`,
+          method: request.method,
+          headers,
+        },
+        (res) => {
+          const chunks: Buffer[] = [];
+          res.on('error', (err) =>
+            reject(
+              new Error(`context.fetch("${alias}") failed: connection closed before the reply ended`, { cause: err }),
+            ),
+          );
+          res.on('data', (c: Buffer) => chunks.push(c));
+          res.on('end', () => {
+            const replyHeaders = new Headers();
+            for (const [key, value] of Object.entries(res.headers)) {
+              for (const v of Array.isArray(value) ? value : [value]) {
+                if (v !== undefined) replyHeaders.append(key, v);
+              }
+            }
+            resolve({ status: res.statusCode ?? 0, headers: replyHeaders, body: Buffer.concat(chunks) });
+          });
+        },
+      );
+      req.on('error', (err) => reject(new Error(`context.fetch("${alias}") failed: ${err.message}`, { cause: err })));
+      req.end(body);
+    }).catch((err: Error) => fail(err));
+    if (!reply.headers.has(FETCH_REPLY_HEADER)) {
+      return fail(
+        new Error(`context.fetch("${alias}") failed: ${reply.status} ${reply.body.toString('utf8')}`),
+        reply.status,
+      );
+    }
+    reply.headers.delete(FETCH_REPLY_HEADER);
+    span?.end(reply.status >= 500 ? 'ERROR' : 'OK', '', reply.status);
+    return new Response(NULL_BODY.has(reply.status) ? null : new Uint8Array(reply.body), {
+      status: reply.status,
+      headers: reply.headers,
+    });
+  };
+}

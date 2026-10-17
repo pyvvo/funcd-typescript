@@ -1,0 +1,12 @@
+# The devices API at /api: the edge strips the prefix and tells the app with X-Forwarded-Prefix (funcd ADR-0243).
+apiVersion: funcd.io/v1alpha1
+kind: Route
+metadata:
+  name: api
+  namespace: default
+  resourceGroup: rg1
+spec:
+  rules:
+    - path: /api
+      backend:
+        function: devices-api

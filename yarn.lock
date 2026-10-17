@@ -860,6 +860,18 @@ __metadata:
   languageName: unknown
   linkType: soft
 
+"@funcd-dev/example-http-api@workspace:examples/http-api":
+  version: 0.0.0-use.local
+  resolution: "@funcd-dev/example-http-api@workspace:examples/http-api"
+  dependencies:
+    "@funcd-dev/vite-plugin": "workspace:*"
+    "@types/node": "npm:^22.0.0"
+    hono: "npm:^4.12.25"
+    typescript: "npm:^5.7.0"
+    vite: "npm:^8.3.2"
+  languageName: unknown
+  linkType: soft
+
 "@funcd-dev/example-kv-counter@workspace:examples/kv-counter":
   version: 0.0.0-use.local
   resolution: "@funcd-dev/example-kv-counter@workspace:examples/kv-counter"
