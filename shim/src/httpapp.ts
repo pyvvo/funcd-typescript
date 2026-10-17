@@ -6,24 +6,25 @@ import type { Span } from './tracespan.ts';
 const BODILESS = new Set(['GET', 'HEAD']);
 
 /** appRequest rebuilds the request the edge received: its method, URL and headers, without funcd's own x-funcd-*
- *  headers and the envelope's Content-Length, and as its body the envelope's data re-encoded as JSON, none when the
- *  data is null, or the raw bytes of a body that is no envelope. */
+ *  headers, and as its body the envelope's data re-encoded as JSON, none when the data is null, or the raw bytes of
+ *  a body that is no envelope, its Content-Length recomputed. */
 export async function appRequest(raw: Request): Promise<Request> {
   const headers = new Headers();
   raw.headers.forEach((value, key) => {
     if (!key.startsWith('x-funcd-') && key !== 'content-length') headers.append(key, value);
   });
-  let body: Uint8Array | string | null = null;
+  let body: Uint8Array | null = null;
   if (!BODILESS.has(raw.method)) {
     const bytes = new Uint8Array(await raw.arrayBuffer());
     body = bytes.length === 0 ? null : unwrap(bytes);
   }
+  if (body) headers.set('content-length', String(body.byteLength));
   return new Request(raw.url, { method: raw.method, headers, body });
 }
 
-/** unwrap returns an envelope's data as JSON text, null when it has none, or the bytes unchanged when they are no
- *  envelope. */
-function unwrap(bytes: Uint8Array): Uint8Array | string | null {
+/** unwrap returns an envelope's data re-encoded as JSON, null when it has none, or the bytes unchanged when they are
+ *  no envelope. */
+function unwrap(bytes: Uint8Array): Uint8Array | null {
   let value: unknown;
   try {
     value = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes));
@@ -34,7 +35,7 @@ function unwrap(bytes: Uint8Array): Uint8Array | string | null {
     return bytes;
   }
   const data = (value as { data?: unknown }).data;
-  return data === undefined || data === null ? null : JSON.stringify(data);
+  return data === undefined || data === null ? null : new TextEncoder().encode(JSON.stringify(data));
 }
 
 /** streamed returns res with its body passed through as it is read, and ends span when the body ends: OK, or ERROR

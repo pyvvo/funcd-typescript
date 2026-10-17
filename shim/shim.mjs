@@ -10698,6 +10698,7 @@ async function appRequest(raw2) {
     const bytes = new Uint8Array(await raw2.arrayBuffer());
     body = bytes.length === 0 ? null : unwrap(bytes);
   }
+  if (body) headers.set("content-length", String(body.byteLength));
   return new Request(raw2.url, { method: raw2.method, headers, body });
 }
 function unwrap(bytes) {
@@ -10711,7 +10712,7 @@ function unwrap(bytes) {
     return bytes;
   }
   const data = value.data;
-  return data === void 0 || data === null ? null : JSON.stringify(data);
+  return data === void 0 || data === null ? null : new TextEncoder().encode(JSON.stringify(data));
 }
 function streamed(res, span) {
   const outcome = res.status >= 500 ? "ERROR" : "OK";

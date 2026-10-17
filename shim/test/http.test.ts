@@ -78,7 +78,11 @@ test('scenario http-rest: a JSON body reaches the app as the data of its envelop
   assert.equal(got.method, 'POST');
   assert.deepEqual(JSON.parse(got.body ?? ''), body);
   assert.equal(got.headers['content-type'], 'application/json');
-  assert.notEqual(got.headers['content-length'], String(envelope(body).length), 'the envelope length is not kept');
+  assert.equal(
+    got.headers['content-length'],
+    String(Buffer.byteLength(got.body ?? '')),
+    'the length of the body the app reads, not of the envelope',
+  );
 });
 
 test('an envelope with no data reaches the app with no body, whatever the method', async () => {
@@ -97,6 +101,7 @@ test('scenario http-limits: a body that is no envelope reaches the app byte for 
       await app.request('/devices', { method: 'POST', headers: { 'content-type': 'text/plain' }, body: raw }),
     );
     assert.equal(got.body, raw);
+    assert.equal(got.headers['content-length'], String(Buffer.byteLength(raw)));
   }
 });
 
