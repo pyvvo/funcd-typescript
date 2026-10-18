@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.16.0](https://github.com/pyvvo/funcd-typescript/compare/v0.15.0...v0.16.0) (2026-10-18)
+
+
+### Features
+
+* **vite-plugin:** deliver each rebuilt function to outDir under vite build --watch ([#75](https://github.com/pyvvo/funcd-typescript/issues/75)) ([15a959f](https://github.com/pyvvo/funcd-typescript/commit/15a959f379334e821376af39c29aa442d3815dc1))
+
 ## [0.15.0](https://github.com/pyvvo/funcd-typescript/compare/v0.14.0...v0.15.0) (2026-10-17)
 
 
