@@ -89,6 +89,23 @@ test('scenario: vite-missing-manifest-fails', async (t) => {
   });
 });
 
+// scenario: vite-build-unchanged
+test('scenario: vite-build-unchanged', async (t) => {
+  const root = fixture(t, { ...shared, 'funcdctl.yaml': manifest });
+  const functions = { 'env-echo': 'src/env-echo.ts', front: 'src/front.ts' };
+  const out = join(root, 'dist');
+  const files = (): string[][] => readdirSync(out).map((f) => [f, readFileSync(join(out, f), 'utf8')]);
+  await build(root, { functions });
+  const before = files();
+
+  writeFileSync(join(root, 'src/env-echo.ts'), shared['src/env-echo.ts'].replace("greet('echo')", "greet('echo-v2')"));
+  writeFileSync(join(root, 'src/front.ts'), 'export async function handle( {\n');
+  await assert.rejects(build(root, { functions }));
+  const staged = join(root, 'node_modules/.vite/funcd', environmentName('env-echo'), 'env-echo.mjs');
+  assert.match(readFileSync(staged, 'utf8'), /echo-v2/, 'env-echo was built before front failed');
+  assert.deepEqual(files(), before, 'outDir is as it was');
+});
+
 test('an environment-name collision fails', async (t) => {
   const root = fixture(t, { ...shared, 'funcdctl.yaml': manifest });
   await assert.rejects(
