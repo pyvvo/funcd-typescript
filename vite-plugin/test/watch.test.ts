@@ -242,3 +242,28 @@ test('scenario: vite-watch-error-keeps-last', async (t) => {
     await w.stop();
   }
 });
+
+test('a failed delivery leaves no temporary file', async (t) => {
+  const root = project(t, { 'funcdctl.yaml': manifest });
+  const target = join(root, 'dist/front.mjs');
+  const w = watch(root);
+  try {
+    await firstBuilds(w);
+    rmSync(target);
+    mkdirSync(target); // renaming a file over a directory fails with EISDIR
+    writeFileSync(join(root, 'src/front.ts'), handler('front-v2'));
+    await w.until('the failed delivery', () => w.printed('EISDIR'));
+    assert.deepEqual(
+      readdirSync(join(root, 'dist')).filter((f) => f.endsWith('.tmp')),
+      [],
+      'no temporary file is left',
+    );
+    assert.ok(w.alive(), 'vite keeps watching');
+
+    rmSync(target, { recursive: true });
+    writeFileSync(join(root, 'src/front.ts'), handler('front-v3'));
+    await w.until('the next delivery', () => holds(target, 'front-v3'));
+  } finally {
+    await w.stop();
+  }
+});
