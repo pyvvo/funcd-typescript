@@ -1,6 +1,5 @@
 // context.catalog — a catalog binding's proxy URL and this function's token (funcd ADR-0245, ADR-0091, ADR-0137), from
 // FUNCD_CATALOG_<ALIAS>_URL and _TOKEN at call time.
-import type { Env } from './config.ts';
 
 export interface CatalogEndpoint {
   url: string;
@@ -13,7 +12,7 @@ export interface CatalogClient {
   get(alias: string): CatalogEndpoint;
 }
 
-export function makeCatalog(env: Env = process.env): CatalogClient {
+export function makeCatalog(env: NodeJS.ProcessEnv = process.env): CatalogClient {
   return {
     get(alias) {
       const prefix = `FUNCD_CATALOG_${alias.toUpperCase()}_`;

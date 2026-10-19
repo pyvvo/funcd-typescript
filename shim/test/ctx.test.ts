@@ -60,12 +60,25 @@ test('an absent or empty key list is no keys', async () => {
   }
 });
 
-test('the clients read the environment at call time', () => {
+test('the clients read the environment at call time', async () => {
   const live: Record<string, string> = { FUNCD_CONFIG_KEYS: 'A', A: '1' };
   const config = makeConfig(live);
+  const secret = makeSecret(live);
+  const catalog = makeCatalog(live);
   assert.equal(config.get('A'), '1');
-  live.A = '2';
+  assert.deepEqual(await secret.list(), []);
+  assert.throws(() => catalog.get('lake'));
+  Object.assign(live, {
+    A: '2',
+    FUNCD_SECRET_KEYS: 'S',
+    S: 's',
+    FUNCD_CATALOG_LAKE_URL: '127.0.0.1:9100',
+    FUNCD_CATALOG_LAKE_TOKEN: 'tok',
+  });
   assert.equal(config.get('A'), '2');
+  assert.deepEqual(await secret.list(), ['S']);
+  assert.equal(await secret.get('S'), 's');
+  assert.deepEqual(catalog.get('lake'), { url: '127.0.0.1:9100', token: 'tok' });
 });
 
 test('scenario ctx-pooled-member: each member reads its own catalog token and the pool config and secrets', async (t) => {
