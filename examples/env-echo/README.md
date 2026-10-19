@@ -10,10 +10,12 @@ The Function declares both at its root (funcd ADR-0248): `configMaps` names the 
 `secrets` declares the Secret with the keys it must hold (`API_KEY`, `SHARED`); the Function waits until it does.
 
 The handler ([`src/main.ts`](src/main.ts)) takes **no input** (`FuncInput = void` → the ADR-0090
-void-input contract `{"type":"null"}`) and echoes three env vars back:
+void-input contract `{"type":"null"}`) and echoes three values back: `APP_MODE` from its environment, and
+`API_KEY` and `SHARED` through `ctx.secret`, since a bound Secret is not in the worker environment (funcd
+ADR-0249):
 
 ```json
-{ "config": "$APP_MODE", "secret": "$API_KEY", "shared": "$SHARED" }
+{ "config": "$APP_MODE", "secret": "<API_KEY>", "shared": "<SHARED>" }
 ```
 
 `APP_MODE` comes only from the ConfigMap, `API_KEY` only from the Secret, and `SHARED` is present in
