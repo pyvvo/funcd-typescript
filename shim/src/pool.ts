@@ -163,7 +163,7 @@ async function workerMain(): Promise<void> {
     blob: makeBlob(spec.name),
     sql: makeSQL(spec.name),
     config: makeConfig(),
-    secret: makeSecret(),
+    secret: makeSecret(spec.name),
     catalog: makeCatalog(),
     remainingMs,
   };

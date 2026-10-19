@@ -11121,13 +11121,13 @@ var MEMBER_HEADER = "X-Funcd-Member";
 function makeInvoke(opts = {}) {
   return (alias, input) => new Promise((resolve, reject) => {
     const span = startClientSpan(opts.sink ?? null, alias, opts.member, opts.bound);
-    const fail3 = (err, httpStatus) => {
+    const fail4 = (err, httpStatus) => {
       span?.end("ERROR", err.message, httpStatus);
       reject(err);
     };
     const socketPath = process.env.FUNCD_INVOKE_SOCKET;
     if (!socketPath) {
-      fail3(new Error("context.invoke: worker-node local API socket unavailable (FUNCD_INVOKE_SOCKET unset)"));
+      fail4(new Error("context.invoke: worker-node local API socket unavailable (FUNCD_INVOKE_SOCKET unset)"));
       return;
     }
     const body = JSON.stringify(input ?? null);
@@ -11149,7 +11149,7 @@ function makeInvoke(opts = {}) {
         const status = res.statusCode ?? 0;
         res.on(
           "error",
-          (err) => fail3(
+          (err) => fail4(
             new Error(`context.invoke("${alias}") failed: connection closed before the reply ended`, { cause: err }),
             status
           )
@@ -11162,7 +11162,7 @@ function makeInvoke(opts = {}) {
             try {
               out = text ? JSON.parse(text) : null;
             } catch (err) {
-              fail3(
+              fail4(
                 new Error(`context.invoke("${alias}") failed: ${status} reply is not JSON: ${text}`, { cause: err }),
                 status
               );
@@ -11171,12 +11171,12 @@ function makeInvoke(opts = {}) {
             span?.end("OK", "", status);
             resolve(out);
           } else {
-            fail3(new Error(`context.invoke("${alias}") failed: ${status} ${text}`), status);
+            fail4(new Error(`context.invoke("${alias}") failed: ${status} ${text}`), status);
           }
         });
       }
     );
-    req.on("error", (err) => fail3(new Error(`context.invoke("${alias}") failed: ${err.message}`, { cause: err })));
+    req.on("error", (err) => fail4(new Error(`context.invoke("${alias}") failed: ${err.message}`, { cause: err })));
     req.end(body);
   });
 }
@@ -11185,16 +11185,16 @@ var FETCH_REPLY_HEADER = "x-funcd-fetch-reply";
 function makeFetch(opts = {}) {
   return async (alias, path2, init) => {
     const span = startClientSpan(opts.sink ?? null, alias, opts.member, opts.bound);
-    const fail3 = (err, httpStatus) => {
+    const fail4 = (err, httpStatus) => {
       span?.end("ERROR", err.message, httpStatus);
       throw err;
     };
     const socketPath = process.env.FUNCD_INVOKE_SOCKET;
     if (!socketPath) {
-      return fail3(new Error("context.fetch: worker-node local API socket unavailable (FUNCD_INVOKE_SOCKET unset)"));
+      return fail4(new Error("context.fetch: worker-node local API socket unavailable (FUNCD_INVOKE_SOCKET unset)"));
     }
     if (!path2.startsWith("/")) {
-      return fail3(new Error(`context.fetch("${alias}"): path "${path2}" must start with "/"`));
+      return fail4(new Error(`context.fetch("${alias}"): path "${path2}" must start with "/"`));
     }
     const request = new Request(new URL(path2, "http://funcd.local"), init);
     const body = request.body ? Buffer.from(await request.arrayBuffer()) : void 0;
@@ -11236,9 +11236,9 @@ function makeFetch(opts = {}) {
       );
       req.on("error", (err) => reject(new Error(`context.fetch("${alias}") failed: ${err.message}`, { cause: err })));
       req.end(body);
-    }).catch((err) => fail3(err));
+    }).catch((err) => fail4(err));
     if (!reply.headers.has(FETCH_REPLY_HEADER)) {
-      return fail3(
+      return fail4(
         new Error(`context.fetch("${alias}") failed: ${reply.status} ${reply.body.toString("utf8")}`),
         reply.status
       );
@@ -11444,10 +11444,29 @@ function makeConfig(env = process.env) {
 }
 
 // src/secret.ts
-function makeSecret(env = process.env) {
+var fail3 = (verb, r) => new Error(`context.secret.${verb} failed: ${r.status} ${r.body.toString("utf8")}`);
+var json4 = (verb, r) => {
+  try {
+    return JSON.parse(r.body.toString("utf8"));
+  } catch (err) {
+    throw new Error(`context.secret.${verb} failed: ${r.status} reply is not JSON: ${err.message}`, {
+      cause: err
+    });
+  }
+};
+function makeSecret(member) {
   return {
-    get: async (key) => listedValue(env, "FUNCD_SECRET_KEYS", key),
-    list: async () => listedKeys(env, "FUNCD_SECRET_KEYS")
+    async get(key) {
+      const r = await send("context.secret", "GET", `/secret/${encodeURIComponent(key)}`, void 0, member);
+      if (r.status === 404) return void 0;
+      if (r.status !== 200) throw fail3("get", r);
+      return json4("get", r).value;
+    },
+    async list() {
+      const r = await send("context.secret", "GET", "/secret", void 0, member);
+      if (r.status !== 200) throw fail3("list", r);
+      return json4("list", r).keys;
+    }
   };
 }
 
@@ -11573,7 +11592,7 @@ async function workerMain() {
     blob: makeBlob(spec.name),
     sql: makeSQL(spec.name),
     config: makeConfig(),
-    secret: makeSecret(),
+    secret: makeSecret(spec.name),
     catalog: makeCatalog(),
     remainingMs
   };

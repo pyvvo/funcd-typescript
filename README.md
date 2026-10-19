@@ -33,7 +33,8 @@ const { url, token } = context.catalog.get('lake');
 
 `config` holds the keys of the Function's bound ConfigMaps and `secret` those of its Secrets; a key a secret overrides
 reads only through `secret`, and an unbound key reads as `undefined`. `list()` returns the bound keys, sorted.
-`secret`'s methods return Promises. `catalog.get(alias)` throws an Error naming the alias when it is not bound.
+`secret` asks funcd on every call (funcd ADR-0249), so its methods return Promises and no secret sits in the worker's
+environment. `catalog.get(alias)` throws an Error naming the alias when it is not bound.
 
 ## Serve HTTP from a function
 
