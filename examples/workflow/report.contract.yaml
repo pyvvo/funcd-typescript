@@ -1,0 +1,44 @@
+runtime: nodejs22
+input:
+  type: object
+  additionalProperties: false
+  properties:
+    hi:
+      type: object
+      additionalProperties: false
+      properties:
+        amount:
+          type: number
+        score:
+          type: number
+        tier:
+          type: string
+      required:
+        - amount
+        - score
+        - tier
+    lo:
+      type: object
+      additionalProperties: false
+      properties:
+        amount:
+          type: number
+        score:
+          type: number
+        tier:
+          type: string
+      required:
+        - amount
+        - score
+        - tier
+output:
+  type: object
+  additionalProperties: false
+  properties:
+    done:
+      type: boolean
+    tier:
+      type: string
+  required:
+    - done
+    - tier

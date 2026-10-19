@@ -18,19 +18,19 @@ client ──HTTP──▶ front ──context.invoke("greeter")──▶ [worke
 ## Layout
 
 ```
-src/greeter.ts   # the callee  — Handler<GreeterInput, GreeterOutput>
-src/front.ts     # the caller  — calls context.invoke<…>("greeter", …); type-only import of greeter's contract
+src/greeter/main.ts   # the callee  — Handler<GreeterInput, GreeterOutput>
+src/front/main.ts     # the caller  — calls context.invoke<…>("greeter", …); type-only import of greeter's contract
 test/handlers.test.ts
 vite.config.ts   # the build (ADR-0144): @funcd-dev/vite-plugin bundles each handler to one self-contained .mjs
 package.json     # build = vite build
-*.funcdctl.yaml  # per function (greeter, front): runtime + I/O contract, read by funcdctl push
+*.contract.yaml  # per function (greeter, front): runtime + I/O contract, read by funcdctl push
 tsconfig.json    # @funcd-dev/shim → ../../shim/src/types.ts (so context.invoke is typed)
 ```
 
 Each handler declares a typed **`FuncInput`/`FuncOutput`** (ADR-0058). `yarn build` only bundles: it
 writes one self-contained `.mjs` per handler (dependencies inlined) and derives no schema from the
-types. The I/O contract lives in each function's **`<fn>.funcdctl.yaml`** (`contract.input` /
-`contract.output`): `funcdctl push <fn>.mjs <ref>` reads it from the manifest beside the file, and the
+types. The I/O contract lives in each function's **`<fn>.contract.yaml`** (`input` /
+`output`): `funcdctl push <fn>.mjs <ref>` reads it from the contract file beside the file, and the
 shim compiles a validator from the pushed contract at worker start (ADR-0123) and runs it — bad input →
 **422**, before the handler. So the typed contracts are *enforced*, not decoration — and a fn-to-fn
 invoke with a bad payload gets the target's 422 **propagated back** (see the e2e). `greeter` requires
@@ -64,9 +64,10 @@ spec:
 
 ## Run it locally (`funcdctl dev`)
 
-`funcdctl dev` runs **both** functions from source — no hand-written CRDs — printing a colored
-services banner + live logs (it builds the `-tags dev` funcdctl for you). Each single-file
-`<stem>.funcdctl.yaml` names its function by **file stem**, so you get `front` + `greeter`:
+`funcdctl dev` runs **both** functions from its resource and contract files (funcd ADR-0247) — printing a colored
+services banner + live logs (it builds the `-tags dev` funcdctl for you). Each Function resource
+runs the build of its name, `<name>.mjs` beside `<name>.contract.yaml`, so you get `front`, `greeter`,
+`hold` and `fanout`:
 
 ```bash
 just dev-example js/fn-to-fn      # gateway :3005 · S3 :3006 — override: just dev-example js/fn-to-fn 4000 4001
@@ -74,7 +75,7 @@ just dev-example js/fn-to-fn      # gateway :3005 · S3 :3006 — override: just
 
 Invoke the **entry** function `front` on the gateway the banner prints (default
 `http://127.0.0.1:3005`); its handler calls `context.invoke("greeter", …)`. The invoke is a
-**CloudEvent envelope** — `{"data": <input>}` matching `front.funcdctl.yaml`'s `contract.input`
+**CloudEvent envelope** — `{"data": <input>}` matching `front.contract.yaml`'s `input`
 (`{name?: string}`):
 
 ```bash
@@ -91,7 +92,7 @@ Build the artifacts, push them to an OCI store (a registry, or a **local layout*
 ```bash
 yarn build   # → greeter.mjs + front.mjs
 
-# push each handler; funcdctl reads its contract + runtime from <fn>.funcdctl.yaml beside the .mjs
+# push each handler; funcdctl reads its contract + runtime from <fn>.contract.yaml beside the .mjs
 # (gated against the funcd profile, embedded as OCI metadata)
 funcdctl push greeter.mjs oci-layout://./registry:greeter
 funcdctl push front.mjs oci-layout://./registry:front

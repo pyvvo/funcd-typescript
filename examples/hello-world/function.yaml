@@ -1,0 +1,12 @@
+# hello-world — the resource file `funcdctl dev` and `funcdctl apply` read (funcd ADR-0247); its contract is in
+# hello-world.contract.yaml.
+apiVersion: funcd.io/v1alpha1
+kind: Function
+metadata:
+  name: hello-world
+  namespace: default
+  resourceGroup: rg1
+spec:
+  runtime: nodejs22
+  handler: handle
+  image: oci-layout:///mnt/funcd-deps/registry:hello-world   # funcdctl push hello-world.mjs

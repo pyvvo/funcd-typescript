@@ -8,7 +8,7 @@ metadata:
 spec:
   runtime: nodejs22
   handler: handle
-  image: oci-layout:///mnt/funcd-deps/registry:fanout       # funcdctl push fanout.mjs (built from src/fanout.ts)
+  image: oci-layout:///mnt/funcd-deps/registry:fanout       # funcdctl push fanout.mjs (built from src/fanout/main.ts)
   replicas: 1
   scaling:
     minReplicas: 1

@@ -12,7 +12,7 @@ metadata:
 spec:
   runtime: nodejs22
   handler: handle
-  image: oci-layout:///mnt/funcd-deps/registry:blob-object   # funcdctl push object.mjs (built from src/object.ts)
+  image: oci-layout:///mnt/funcd-deps/registry:blob-object   # funcdctl push blob-object.mjs (built from src/main.ts)
   replicas: 1
   scaling:
     minReplicas: 1

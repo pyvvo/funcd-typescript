@@ -2,7 +2,7 @@
   "name": "@funcd-dev/example-http-api",
   "private": true,
   "type": "module",
-  "description": "A funcd Function that serves HTTP (funcd ADR-0243): a Hono REST API with a streamed export, exported with http(app) under spec.protocol: http. vite build (@funcd-dev/vite-plugin) bundles it, Hono included, to a self-contained devices.mjs.",
+  "description": "A funcd Function that serves HTTP (funcd ADR-0243): a Hono REST API with a streamed export, exported with http(app) under spec.protocol: http. vite build (@funcd-dev/vite-plugin) bundles it, Hono included, to a self-contained devices-api.mjs.",
   "scripts": {
     "typecheck": "tsc --noEmit",
     "test": "node --test --experimental-strip-types test/*.test.ts",

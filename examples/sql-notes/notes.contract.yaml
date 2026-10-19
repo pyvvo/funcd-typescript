@@ -1,0 +1,64 @@
+runtime: nodejs22
+input:
+  type: object
+  additionalProperties: false
+  properties:
+    op:
+      type: string
+      enum:
+        - add
+        - list
+        - done
+        - remove
+        - move
+    notebook:
+      type: string
+    title:
+      type: string
+    priority:
+      type: integer
+    id:
+      type: integer
+    to:
+      type: string
+  required:
+    - op
+output:
+  type: object
+  additionalProperties: false
+  properties:
+    note:
+      type: object
+      additionalProperties: false
+      properties:
+        id:
+          type: integer
+        title:
+          type: string
+      required:
+        - id
+        - title
+    notes:
+      type: array
+      items:
+        type: object
+        additionalProperties: false
+        properties:
+          id:
+            type: integer
+          notebook:
+            type: string
+          title:
+            type: string
+          done:
+            type: boolean
+          priority:
+            type: integer
+        required:
+          - id
+          - notebook
+          - title
+          - done
+          - priority
+    changed:
+      type: integer

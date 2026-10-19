@@ -1,0 +1,19 @@
+runtime: nodejs22
+input:
+  type: object
+  additionalProperties: false
+  properties:
+    items:
+      type: number
+    batch:
+      type: string
+    big:
+      type: number
+output:
+  type: object
+  additionalProperties: false
+  properties:
+    emitted:
+      type: number
+  required:
+    - emitted

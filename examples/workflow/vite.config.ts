@@ -1,16 +1,16 @@
 import { funcd } from '@funcd-dev/vite-plugin';
 import { defineConfig } from 'vite';
 
-// Bundles each function into one self-contained .mjs beside its funcdctl.yaml (funcd ADR-0144).
+// Bundles each function into one self-contained .mjs beside its contract file (funcd ADR-0144, ADR-0247).
 export default defineConfig({
   plugins: [
     funcd({
       functions: {
-        ingest: 'src/ingest.ts',
-        score: 'src/score.ts',
-        hi: 'src/hi.ts',
-        lo: 'src/lo.ts',
-        report: 'src/report.ts',
+        ingest: 'src/ingest/main.ts',
+        score: 'src/score/main.ts',
+        hi: 'src/hi/main.ts',
+        lo: 'src/lo/main.ts',
+        report: 'src/report/main.ts',
       },
       outDir: '.',
     }),

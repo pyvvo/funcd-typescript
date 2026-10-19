@@ -31,14 +31,14 @@ function does **not** declare the `other` alias, so a write there is `Forbidden`
 
 | File | What |
 |---|---|
-| [`src/object.ts`](src/object.ts) | the handler (typed against `@funcd-dev/shim`) |
-| [`funcdctl.yaml`](funcdctl.yaml) | the client push/dev config (runtime · handler · blob binding · contract) |
+| [`src/main.ts`](src/main.ts) | the handler (typed against `@funcd-dev/shim`) |
+| [`blob-object.contract.yaml`](blob-object.contract.yaml) | the client push/dev config (runtime · handler · blob binding · contract) |
 | [`function.yaml`](function.yaml) | the deploy `Function` CRD: its own `lakehouse` Bucket (`buckets`) and the capability (`spec.bindings.blob`) |
 
 ## Build
 
 ```bash
-yarn install && yarn build   # → object.mjs (self-contained; the contract stays in funcdctl.yaml)
+yarn install && yarn build   # → blob-object.mjs (self-contained; the contract stays in blob-object.contract.yaml)
 ```
 
 The in-process end-to-end lane lives at `pkg/funcd/blob_e2e_test.go` (`just test-e2e`): it builds this

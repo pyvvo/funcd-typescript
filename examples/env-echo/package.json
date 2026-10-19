@@ -2,7 +2,7 @@
   "name": "@funcd-dev/example-env-echo",
   "private": true,
   "type": "module",
-  "description": "A funcd config+secret example (ADR-0093/0057): a void-input function that echoes the env injected by its bindings — spec.bindings.config (a ConfigMap) and spec.bindings.secret (a Secret) — proving both reach the running handler (and the Secret wins a key present in both). Authored in TypeScript against @funcd-dev/shim; vite build (@funcd-dev/vite-plugin) bundles it to a self-contained env-echo.mjs; the I/O contract lives in funcdctl.yaml.",
+  "description": "A funcd config+secret example (ADR-0093/0057): a void-input function that echoes the env injected by its bindings — spec.bindings.config (a ConfigMap) and spec.bindings.secret (a Secret) — proving both reach the running handler (and the Secret wins a key present in both). Authored in TypeScript against @funcd-dev/shim; vite build (@funcd-dev/vite-plugin) bundles it to a self-contained env-echo.mjs; the I/O contract lives in env-echo.contract.yaml.",
   "scripts": {
     "typecheck": "tsc --noEmit",
     "build": "vite build"

@@ -2,7 +2,7 @@
   "name": "@funcd-dev/example-kv-counter",
   "private": true,
   "type": "module",
-  "description": "A funcd KV example (ADR-0069): a function that increments a per-name counter via context.kv. Authored in TypeScript against @funcd-dev/shim; vite build (@funcd-dev/vite-plugin) bundles it to a self-contained counter.mjs; the I/O contract lives in funcdctl.yaml.",
+  "description": "A funcd KV example (ADR-0069): a function that increments a per-name counter via context.kv. Authored in TypeScript against @funcd-dev/shim; vite build (@funcd-dev/vite-plugin) bundles it to a self-contained counter.mjs; the I/O contract lives in counter.contract.yaml.",
   "scripts": {
     "typecheck": "tsc --noEmit",
     "build": "vite build"

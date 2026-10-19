@@ -11,7 +11,7 @@ metadata:
 spec:
   runtime: nodejs22
   handler: handle
-  image: oci-layout:///mnt/funcd-deps/registry:env-echo   # funcdctl push env-echo.mjs (built from src/handler.ts)
+  image: oci-layout:///mnt/funcd-deps/registry:env-echo   # funcdctl push env-echo.mjs (built from src/main.ts)
   replicas: 1
   scaling:
     minReplicas: 1

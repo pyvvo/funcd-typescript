@@ -76,7 +76,7 @@ swap is atomic and the previous digest's objects are kept, so rolling back is re
 
 ## Run it locally (`funcdctl dev`)
 
-`funcdctl dev` runs the function from source — no hand-written CRDs — printing a colored services
+`funcdctl dev` runs the function from its resource and contract files (funcd ADR-0247) — printing a colored services
 banner + live logs (it builds the `-tags dev` funcdctl for you) and boots the in-process S3 endpoint
 alongside the gateway. It loads every manifest in the dir, so the `lakehouse` Bucket and its
 `spec.bindings.blob` binding are wired automatically:
@@ -86,8 +86,8 @@ just dev-example js/s3-roundtrip      # gateway :3005 · S3 :3006 — override: 
 ```
 
 Invoke the gateway the banner prints (default `http://127.0.0.1:3005`). The single generic
-`funcdctl.yaml` names the function after its directory (`s3-roundtrip`); the invoke is a **CloudEvent
-envelope** — `{"data": <input>}` matching the manifest's `contract.input` (`{inv?: string}`):
+`s3-roundtrip.contract.yaml` names the function after its directory (`s3-roundtrip`); the invoke is a **CloudEvent
+envelope** — `{"data": <input>}` matching the contract file's `input` (`{inv?: string}`):
 
 ```bash
 curl -sS -XPOST http://127.0.0.1:3005/function/s3-roundtrip \
@@ -106,7 +106,7 @@ aws s3 ls s3://lakehouse/gold/ --endpoint-url http://127.0.0.1:3006
 
 ```bash
 yarn install   # @aws-sdk/client-s3 + vite
-yarn build     # → roundtrip.mjs (the SDK is bundled in)
+yarn build     # → s3-roundtrip.mjs (the SDK is bundled in)
 ```
 
 ## Run the e2e
