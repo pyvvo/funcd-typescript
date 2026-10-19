@@ -18,7 +18,8 @@ spec:
   replicas: 1
   scaling:
     minReplicas: 1
-  blob:
-    - alias: gold           # the in-code handle / S3 scope: s3://lakehouse/gold/<key>
-      bucket: lakehouse     # the Bucket (domain)
-      prefix: gold          # the sub-domain it owns → reads AND writes (single writer)
+  bindings:
+    blob:
+      - alias: gold           # the in-code handle / S3 scope: s3://lakehouse/gold/<key>
+        bucket: lakehouse     # the Bucket (domain)
+        prefix: gold          # the sub-domain it owns → reads AND writes (single writer)

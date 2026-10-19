@@ -15,7 +15,8 @@ spec:
   replicas: 1
   scaling:
     minReplicas: 1
-  config:
-    - app-config    # ConfigMap → non-sensitive env (APP_MODE, SHARED)
-  secrets:
-    - app-secret    # Secret → sensitive env (API_KEY, SHARED — wins the shared key)
+  bindings:
+    config:
+      - app-config    # ConfigMap → non-sensitive env (APP_MODE, SHARED)
+    secret:
+      - app-secret    # Secret → sensitive env (API_KEY, SHARED — wins the shared key)

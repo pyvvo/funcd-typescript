@@ -15,7 +15,8 @@ spec:
   replicas: 1
   scaling:
     minReplicas: 1
-  kv:
-    - alias: counters         # the in-code handle: ctx.kv.*('counters', …)
-      store: counters-kv      # the KVStore (domain)
-      table: table-counters   # the sub-domain counter owns (single writer)
+  bindings:
+    kv:
+      - alias: counters         # the in-code handle: ctx.kv.*('counters', …)
+        store: counters-kv      # the KVStore (domain)
+        table: table-counters   # the sub-domain counter owns (single writer)

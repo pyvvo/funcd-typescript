@@ -54,9 +54,10 @@ spec:
   handler: handle
   artifact: { uri: "file://…/front.mjs" }
   replicas: 1
-  links:
-    - alias: greeter   # the local name front's handler passes to context.invoke
-      target: greeter  # the Function it resolves to (same namespace, latest-Ready revision)
+  bindings:
+    links:
+      - alias: greeter   # the local name front's handler passes to context.invoke
+        target: greeter  # the Function it resolves to (same namespace, latest-Ready revision)
 ```
 
 `greeter` is an ordinary Function with no links — it doesn't know it's being called.
