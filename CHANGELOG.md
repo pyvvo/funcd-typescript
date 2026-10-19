@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.17.0](https://github.com/pyvvo/funcd-typescript/compare/v0.16.0...v0.17.0) (2026-10-19)
+
+
+### Features
+
+* **shim:** context.config, context.secret and context.catalog (funcd ADR-0245) ([#77](https://github.com/pyvvo/funcd-typescript/issues/77)) ([3204a85](https://github.com/pyvvo/funcd-typescript/commit/3204a8513d60ebd6d1d17cdbda4002bf99746d98))
+
 ## [0.16.0](https://github.com/pyvvo/funcd-typescript/compare/v0.15.0...v0.16.0) (2026-10-18)
 
 
