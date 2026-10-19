@@ -1,12 +1,12 @@
 // context.config — the keys of a function's bound ConfigMaps (funcd ADR-0245), read from the environment at call time.
-// funcd sets FUNCD_CONFIG_KEYS and FUNCD_SECRET_KEYS, comma-separated lists of the bound keys of each kind in the
-// environment; an absent or empty list is no keys. context.secret reads its list with the same helpers.
-export function listedKeys(env: NodeJS.ProcessEnv, list: string): string[] {
+// funcd sets FUNCD_CONFIG_KEYS, the comma-separated bound config keys in the environment; an absent or empty list is no
+// keys. Secrets are read from funcd instead (context.secret, funcd ADR-0249).
+function listedKeys(env: NodeJS.ProcessEnv, list: string): string[] {
   const v = env[list];
   return v ? v.split(',') : [];
 }
 
-export function listedValue(env: NodeJS.ProcessEnv, list: string, key: string): string | undefined {
+function listedValue(env: NodeJS.ProcessEnv, list: string, key: string): string | undefined {
   return listedKeys(env, list).includes(key) ? env[key] : undefined;
 }
 

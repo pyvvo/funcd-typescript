@@ -66,7 +66,7 @@ export interface FunctionContext {
   sql: SQLClient;
   /** The keys of the ConfigMaps a function binds (funcd ADR-0245); a key a bound Secret overrides is a secret. */
   config: ConfigClient;
-  /** The keys of the Secrets a function binds (funcd ADR-0245). */
+  /** The keys and values of the Secrets a function binds, read from funcd on every call (funcd ADR-0249). */
   secret: SecretClient;
   /** A bound catalog's proxy URL and this function's token, by spec.catalogs alias (funcd ADR-0245). */
   catalog: CatalogClient;

@@ -1,22 +1,20 @@
-// Scenario tests for context.config, context.secret and context.catalog (funcd ADR-0245) over the environment funcd
-// gives a worker: ConfigMap app-settings (LOG_LEVEL, MODE), Secret api-keys (STRIPE_KEY, MODE) and catalog lake.
+// Scenario tests for context.config and context.catalog (funcd ADR-0245) over the environment funcd gives a worker:
+// ConfigMap app-settings (LOG_LEVEL, MODE, which a bound Secret also holds, so it is not listed) and catalog lake.
+// context.secret reads funcd's local API instead (secret.test.ts, funcd ADR-0249).
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import { makeCatalog } from '../src/catalog.ts';
 import { makeConfig } from '../src/config.ts';
 import { createPool } from '../src/pool.ts';
-import { makeSecret } from '../src/secret.ts';
+import { fakeDependencies } from './localapi.ts';
 import { post, writeHandlers } from './poolapp.ts';
 
 const env = {
   PATH: '/usr/bin',
   FUNCD_INVOKE_SOCKET: '/run/funcd/api.sock',
   LOG_LEVEL: 'debug',
-  MODE: 'prod',
-  STRIPE_KEY: 'sk',
   FUNCD_CONFIG_KEYS: 'LOG_LEVEL',
-  FUNCD_SECRET_KEYS: 'MODE,STRIPE_KEY',
   FUNCD_CATALOG_LAKE_URL: '127.0.0.1:9100',
   FUNCD_CATALOG_LAKE_TOKEN: 'tok-a',
 };
@@ -27,21 +25,9 @@ test('scenario ctx-config-get: config.get returns a bound key and list() the lis
   assert.deepEqual(config.list(), ['LOG_LEVEL']);
 });
 
-test('scenario ctx-secret-get: secret.get returns a bound secret, which config.get does not', async () => {
-  const secret = makeSecret(env);
-  assert.equal(await secret.get('STRIPE_KEY'), 'sk');
-  assert.deepEqual(await secret.list(), ['MODE', 'STRIPE_KEY']);
-  assert.equal(makeConfig(env).get('STRIPE_KEY'), undefined);
-});
-
-test('scenario ctx-secret-shadows-config: a key a secret overrides reads only through secret', async () => {
-  assert.equal(await makeSecret(env).get('MODE'), 'prod');
-  assert.equal(makeConfig(env).get('MODE'), undefined);
-});
-
-test('scenario ctx-unbound-key: an unbound variable reads as undefined', async () => {
+test('scenario ctx-unbound-key: an unbound variable reads as undefined', () => {
   assert.equal(makeConfig(env).get('PATH'), undefined);
-  assert.equal(await makeSecret(env).get('FUNCD_INVOKE_SOCKET'), undefined);
+  assert.equal(makeConfig(env).get('FUNCD_INVOKE_SOCKET'), undefined);
 });
 
 test('scenario ctx-catalog-get: catalog.get returns the URL and token, and throws naming an unbound alias', () => {
@@ -50,44 +36,29 @@ test('scenario ctx-catalog-get: catalog.get returns the URL and token, and throw
   assert.throws(() => catalog.get('other'), /"other"/);
 });
 
-test('an absent or empty key list is no keys', async () => {
-  for (const list of [{}, { FUNCD_CONFIG_KEYS: '', FUNCD_SECRET_KEYS: '' }]) {
-    const e = { ...list, LOG_LEVEL: 'debug', STRIPE_KEY: 'sk' };
+test('an absent or empty key list is no keys', () => {
+  for (const list of [{}, { FUNCD_CONFIG_KEYS: '' }]) {
+    const e = { ...list, LOG_LEVEL: 'debug' };
     assert.deepEqual(makeConfig(e).list(), []);
     assert.equal(makeConfig(e).get('LOG_LEVEL'), undefined);
-    assert.deepEqual(await makeSecret(e).list(), []);
-    assert.equal(await makeSecret(e).get('STRIPE_KEY'), undefined);
   }
 });
 
-test('the clients read the environment at call time', async () => {
+test('the clients read the environment at call time', () => {
   const live: Record<string, string> = { FUNCD_CONFIG_KEYS: 'A', A: '1' };
   const config = makeConfig(live);
-  const secret = makeSecret(live);
   const catalog = makeCatalog(live);
   assert.equal(config.get('A'), '1');
-  assert.deepEqual(await secret.list(), []);
   assert.throws(() => catalog.get('lake'));
-  Object.assign(live, {
-    A: '2',
-    FUNCD_SECRET_KEYS: 'S',
-    S: 's',
-    FUNCD_CATALOG_LAKE_URL: '127.0.0.1:9100',
-    FUNCD_CATALOG_LAKE_TOKEN: 'tok',
-  });
+  Object.assign(live, { A: '2', FUNCD_CATALOG_LAKE_URL: '127.0.0.1:9100', FUNCD_CATALOG_LAKE_TOKEN: 'tok' });
   assert.equal(config.get('A'), '2');
-  assert.deepEqual(await secret.list(), ['S']);
-  assert.equal(await secret.get('S'), 's');
   assert.deepEqual(catalog.get('lake'), { url: '127.0.0.1:9100', token: 'tok' });
 });
 
-test('scenario ctx-pooled-member: each member reads its own catalog token and the pool config and secrets', async (t) => {
-  const shared = {
-    LOG_LEVEL: 'debug',
-    STRIPE_KEY: 'sk',
-    FUNCD_CONFIG_KEYS: 'LOG_LEVEL',
-    FUNCD_SECRET_KEYS: 'STRIPE_KEY',
-  };
+test('scenario ctx-pooled-member: each member reads its own catalog token and secrets, and the pool config', async (t) => {
+  // funcd answers each member's secret read as that member (funcd ADR-0249): the fake names it in the value.
+  await fakeDependencies(t, (member) => ({ status: 200, body: JSON.stringify({ value: `sk-${member}` }) }));
+  const shared = { LOG_LEVEL: 'debug', FUNCD_CONFIG_KEYS: 'LOG_LEVEL' };
   const prev = Object.fromEntries(Object.keys(shared).map((k) => [k, process.env[k]]));
   Object.assign(process.env, shared, { FUNCD_CATALOG_LAKE_URL: '127.0.0.1:9100' });
   t.after(() => {
@@ -112,7 +83,7 @@ test('scenario ctx-pooled-member: each member reads its own catalog token and th
     ]) {
       const r = await post(pool.app, name, {});
       assert.equal(r.status, 200);
-      assert.deepEqual(await r.json(), { lake: { url: '127.0.0.1:9100', token }, level: 'debug', key: 'sk' });
+      assert.deepEqual(await r.json(), { lake: { url: '127.0.0.1:9100', token }, level: 'debug', key: `sk-${name}` });
     }
   } finally {
     await pool.close();
