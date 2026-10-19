@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.18.0](https://github.com/pyvvo/funcd-typescript/compare/v0.17.0...v0.18.0) (2026-10-19)
+
+
+### ⚠ BREAKING CHANGES
+
+* bindings under spec.bindings and stores at the root (funcd ADR-0246, ADR-0248) ([#80](https://github.com/pyvvo/funcd-typescript/issues/80))
+
+### Features
+
+* bindings under spec.bindings and stores at the root (funcd ADR-0246, ADR-0248) ([#80](https://github.com/pyvvo/funcd-typescript/issues/80)) ([ea76b04](https://github.com/pyvvo/funcd-typescript/commit/ea76b04096baa311804b0250fc914d865f907b7a))
+
 ## [0.17.0](https://github.com/pyvvo/funcd-typescript/compare/v0.16.0...v0.17.0) (2026-10-19)
 
 
