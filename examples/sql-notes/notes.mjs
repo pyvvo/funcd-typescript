@@ -4167,7 +4167,7 @@ function db(ctx, alias = "app") {
 	}, { schema: schema_exports });
 }
 //#endregion
-//#region src/notes.ts
+//#region src/notes/main.ts
 async function notebookId(d, name) {
 	const [row] = await d.insert(notebooks).values({ name }).onConflictDoUpdate({
 		target: notebooks.name,

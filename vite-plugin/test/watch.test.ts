@@ -1,4 +1,4 @@
-// Scenario tests for the funcd Vite plugin under `vite build --watch` (funcd ADR-0244). Each runs Vite's CLI on a
+// Scenario tests for the funcd Vite plugin under `vite build --watch` (funcd ADR-0244, ADR-0247). Each runs Vite's CLI on a
 // fixture project and edits the project while the watch runs.
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
@@ -27,7 +27,8 @@ const plugin = fileURLToPath(new URL('../src/index.ts', import.meta.url));
 const vite = join(dirname(createRequire(import.meta.url).resolve('vite/package.json')), 'bin', 'vite.js');
 const deadline = 30_000;
 
-const manifest = 'runtime: nodejs22\nhandler: handle\n';
+const contract = 'runtime: nodejs22\ninput:\n  type: object\noutput:\n  type: object\n';
+const contracts = { 'front.contract.yaml': contract, 'env-echo.contract.yaml': contract };
 const greet = (word: string): string => `export const greet = (name: string): string => '${word} ' + name;\n`;
 const changes = "const changes = { name: 'changes', watchChange(id) { console.error('[changed] ' + id); } };\n";
 const handler = (msg: string): string =>
@@ -128,7 +129,7 @@ function firstBuilds(w: Watch): Promise<void> {
 
 // scenario: vite-watch-first-build
 test('scenario: vite-watch-first-build', async (t) => {
-  const root = project(t, { 'funcdctl.yaml': manifest });
+  const root = project(t, contracts);
   const w = watch(root);
   try {
     await firstBuilds(w);
@@ -138,7 +139,7 @@ test('scenario: vite-watch-first-build', async (t) => {
     ]) {
       const mod = await import(pathToFileURL(join(root, 'dist', `${name}.mjs`)).href);
       assert.equal(((await mod.handle()) as { msg: string }).msg, msg);
-      assert.equal(readFileSync(join(root, 'dist', `${name}.funcdctl.yaml`), 'utf8'), manifest);
+      assert.equal(readFileSync(join(root, 'dist', `${name}.contract.yaml`), 'utf8'), contract);
     }
     assert.ok(w.alive(), 'vite keeps watching');
   } finally {
@@ -149,7 +150,7 @@ test('scenario: vite-watch-first-build', async (t) => {
 for (const outDir of ['dist', '.']) {
   // scenario: vite-watch-rebuilds-one
   test(`scenario: vite-watch-rebuilds-one (outDir ${outDir})`, async (t) => {
-    const root = project(t, { 'funcdctl.yaml': manifest }, outDir);
+    const root = project(t, contracts, outDir);
     const out = join(root, outDir);
     const w = watch(root);
     try {
@@ -182,33 +183,18 @@ for (const outDir of ['dist', '.']) {
   });
 }
 
-// scenario: vite-watch-manifest
-test('scenario: vite-watch-manifest (each function has its own manifest)', async (t) => {
-  const root = project(t, { 'front.funcdctl.yaml': manifest, 'env-echo.funcdctl.yaml': manifest });
+// scenario: vite-watch-contract
+test('scenario: vite-watch-contract (saving a contract file rebuilds only its function)', async (t) => {
+  const root = project(t, contracts);
   const w = watch(root);
   try {
     await firstBuilds(w);
-    const echo = stamp(join(root, 'dist/env-echo.funcdctl.yaml'));
+    const echo = stamp(join(root, 'dist/env-echo.contract.yaml'));
 
-    writeFileSync(join(root, 'front.funcdctl.yaml'), `${manifest}# edited\n`);
-    await w.until('the front rebuild', () => holds(join(root, 'dist/front.funcdctl.yaml'), '# edited'));
+    writeFileSync(join(root, 'front.contract.yaml'), `${contract}# edited\n`);
+    await w.until('the front rebuild', () => holds(join(root, 'dist/front.contract.yaml'), '# edited'));
     assert.equal(w.builds('env-echo'), 1, 'env-echo does not rebuild');
-    assert.deepEqual(stamp(join(root, 'dist/env-echo.funcdctl.yaml')), echo, "env-echo's copy is not rewritten");
-  } finally {
-    await w.stop();
-  }
-});
-
-test('scenario: vite-watch-manifest (both functions use one funcdctl.yaml)', async (t) => {
-  const root = project(t, { 'funcdctl.yaml': manifest });
-  const w = watch(root);
-  try {
-    await firstBuilds(w);
-
-    writeFileSync(join(root, 'funcdctl.yaml'), `${manifest}# edited\n`);
-    await w.until('both copies', () =>
-      ['front', 'env-echo'].every((name) => holds(join(root, `dist/${name}.funcdctl.yaml`), '# edited')),
-    );
+    assert.deepEqual(stamp(join(root, 'dist/env-echo.contract.yaml')), echo, "env-echo's copy is not rewritten");
   } finally {
     await w.stop();
   }
@@ -216,7 +202,7 @@ test('scenario: vite-watch-manifest (both functions use one funcdctl.yaml)', asy
 
 // scenario: vite-watch-error-keeps-last
 test('scenario: vite-watch-error-keeps-last', async (t) => {
-  const root = project(t, { 'front.funcdctl.yaml': manifest, 'env-echo.funcdctl.yaml': manifest });
+  const root = project(t, contracts);
   const bundle = join(root, 'dist/front.mjs');
   const w = watch(root);
   try {
@@ -231,12 +217,12 @@ test('scenario: vite-watch-error-keeps-last', async (t) => {
     await w.until('the fixed rebuild', () => holds(bundle, 'front-fixed'));
     const fixed = readFileSync(bundle, 'utf8');
 
-    rmSync(join(root, 'front.funcdctl.yaml'));
-    await w.until('the missing manifest', () => w.failures() >= 2 && w.printed('"front" has no manifest'));
+    rmSync(join(root, 'front.contract.yaml'));
+    await w.until('the missing contract file', () => w.failures() >= 2 && w.printed('"front" has no contract file'));
     assert.equal(readFileSync(bundle, 'utf8'), fixed, 'the last good build stays');
 
-    writeFileSync(join(root, 'front.funcdctl.yaml'), `${manifest}# restored\n`);
-    await w.until('the rebuild after the restore', () => holds(join(root, 'dist/front.funcdctl.yaml'), '# restored'));
+    writeFileSync(join(root, 'front.contract.yaml'), `${contract}# restored\n`);
+    await w.until('the rebuild after the restore', () => holds(join(root, 'dist/front.contract.yaml'), '# restored'));
     assert.ok(w.alive(), 'vite keeps watching');
   } finally {
     await w.stop();
@@ -244,7 +230,7 @@ test('scenario: vite-watch-error-keeps-last', async (t) => {
 });
 
 test('a failed delivery leaves no temporary file', async (t) => {
-  const root = project(t, { 'funcdctl.yaml': manifest });
+  const root = project(t, contracts);
   const target = join(root, 'dist/front.mjs');
   const w = watch(root);
   try {

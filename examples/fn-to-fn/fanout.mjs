@@ -1,6 +1,6 @@
 import { createRequire as __funcdCreateRequire } from "node:module";
 __funcdCreateRequire(import.meta.url);
-//#region src/fanout.ts
+//#region src/fanout/main.ts
 var nestedCapOp = "workernode.local.nested-cap";
 /**
 * fanout — the CALLER of the fan-out demo (funcd ADR-0147). It declares the link `peer → hold` and calls

@@ -28,28 +28,28 @@ const keys = await ctx.kv.list('counters', 'a');     // GET  /kv/counters?prefix
 ## Contract (ADR-0058/0060)
 
 The closed JSON Schema for the handler's `FuncInput` / `FuncOutput` lives in
-[`funcdctl.yaml`](funcdctl.yaml) (`contract.input` / `contract.output`), like `examples/fn-to-fn`.
+[`counter.contract.yaml`](counter.contract.yaml) (`input` / `output`), like `examples/fn-to-fn`.
 `yarn build` only bundles `counter.mjs`; `funcdctl push counter.mjs <ref>` reads the contract from the
-manifest beside the file and pushes it as OCI metadata, and the shim compiles a validator from it at
+contract file beside the file and pushes it as OCI metadata, and the shim compiles a validator from it at
 worker start (ADR-0123), so a malformed call is rejected (422) before the handler runs — KV functions
 are contract-validated, not just KV-enabled.
 
 ## Run it locally (`funcdctl dev`)
 
-`funcdctl dev` runs the function from source — no hand-written CRDs — printing a colored services
+`funcdctl dev` runs the function from its resource and contract files (funcd ADR-0247) — printing a colored services
 banner + live logs (it builds the `-tags dev` funcdctl for you):
 
 ```bash
 just dev-example js/kv-counter      # gateway :3005 · S3 :3006 — override: just dev-example js/kv-counter 4000 4001
 ```
 
-Invoke the gateway the banner prints (default `http://127.0.0.1:3005`). The single generic
-`funcdctl.yaml` names the function after its directory (`kv-counter`); the invoke is a **CloudEvent
-envelope** — `{"data": <input>}` matching the manifest's `contract.input` (`{name: string}`). POST
+Invoke the gateway the banner prints (default `http://127.0.0.1:3005`). Dev runs the
+Function its resource file names (`counter`), from the build beside `counter.contract.yaml`; the invoke is a **CloudEvent
+envelope** — `{"data": <input>}` matching the contract file's `input` (`{name: string}`). POST
 **twice** and the durable `context.kv` counter increments `1 → 2`:
 
 ```bash
-curl -sS -XPOST http://127.0.0.1:3005/function/kv-counter \
+curl -sS -XPOST http://127.0.0.1:3005/function/counter \
   -H 'Content-Type: application/json' -d '{"data":{"name":"alice"}}'
 # → {"name":"alice","count":1}   then, on the second POST,   {"name":"alice","count":2}
 ```
@@ -58,7 +58,7 @@ curl -sS -XPOST http://127.0.0.1:3005/function/kv-counter \
 
 This example is **built and run** end-to-end by `pkg/funcd/kv_e2e_test.go`
 (`TestScenarioE2EKVCounterViaContextKV`): it builds `counter.mjs`, pushes it to an OCI layout (with
-the contract from `funcdctl.yaml`), applies `counter.yaml`, then POSTs twice and asserts the count goes
+the contract from `counter.contract.yaml`), applies `counter.yaml`, then POSTs twice and asserts the count goes
 `1 → 2` (KV persisted across invocations).
 
 ```bash

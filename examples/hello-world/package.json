@@ -2,7 +2,7 @@
   "name": "@funcd-dev/example-hello-world",
   "private": true,
   "type": "module",
-  "description": "A funcd function authored in TypeScript against the @funcd-dev/shim typed contract, bundled by vite build (@funcd-dev/vite-plugin) to a self-contained handler.mjs and deployed with funcdctl (ADR-0037 typed-authoring-contract).",
+  "description": "A funcd function authored in TypeScript against the @funcd-dev/shim typed contract, bundled by vite build (@funcd-dev/vite-plugin) to a self-contained hello-world.mjs and deployed with funcdctl (ADR-0037 typed-authoring-contract).",
   "scripts": {
     "typecheck": "tsc --noEmit",
     "test": "node --test --experimental-strip-types test/*.test.ts",

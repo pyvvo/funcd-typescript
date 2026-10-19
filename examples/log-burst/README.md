@@ -30,16 +30,16 @@ log records (≈115 for the default 100 items). It returns `{ emitted }` (the ex
 ## Build it
 
 ```bash
-yarn build   # → burst.mjs (see vite.config.ts)
+yarn build   # → log-burst.mjs (see vite.config.ts)
 ```
 
-[`vite.config.ts`](vite.config.ts) bundles `src/burst.ts` into one self-contained `burst.mjs` with
+[`vite.config.ts`](vite.config.ts) bundles `src/main.ts` into one self-contained `log-burst.mjs` with
 `@funcd-dev/vite-plugin` (ADR-0144), like every other example. The build derives no contract; the
-I/O contract lives in [`funcdctl.yaml`](funcdctl.yaml).
+I/O contract lives in [`log-burst.contract.yaml`](log-burst.contract.yaml).
 
 ## Run it locally (`funcdctl dev`)
 
-`funcdctl dev` runs the function from source — no hand-written CRDs — printing a colored services
+`funcdctl dev` runs the function from its resource and contract files (funcd ADR-0247) — printing a colored services
 banner + **live logs** (it builds the `-tags dev` funcdctl for you), so the burst streams straight
 into your terminal:
 
@@ -47,9 +47,9 @@ into your terminal:
 just dev-example js/log-burst      # gateway :3005 · S3 :3006 — override: just dev-example js/log-burst 4000 4001
 ```
 
-Invoke the gateway the banner prints (default `http://127.0.0.1:3005`). The single generic
-`funcdctl.yaml` names the function after its directory (`log-burst`); the invoke is a **CloudEvent
-envelope** — `{"data": <input>}` matching the manifest's `contract.input` (`{items?: number, batch?: string}`):
+Invoke the gateway the banner prints (default `http://127.0.0.1:3005`). Dev runs the
+Function its resource file names (`log-burst`), from the build beside `log-burst.contract.yaml`; the invoke is a **CloudEvent
+envelope** — `{"data": <input>}` matching the contract file's `input` (`{items?: number, batch?: string}`):
 
 ```bash
 curl -sS -XPOST http://127.0.0.1:3005/function/log-burst \

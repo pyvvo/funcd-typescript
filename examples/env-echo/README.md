@@ -9,7 +9,7 @@ environment at runtime:
 The Function declares both at its root (funcd ADR-0248): `configMaps` names the ConfigMap by `ref`, and
 `secrets` declares the Secret with the keys it must hold (`API_KEY`, `SHARED`); the Function waits until it does.
 
-The handler ([`src/handler.ts`](src/handler.ts)) takes **no input** (`FuncInput = void` → the ADR-0090
+The handler ([`src/main.ts`](src/main.ts)) takes **no input** (`FuncInput = void` → the ADR-0090
 void-input contract `{"type":"null"}`) and echoes three env vars back:
 
 ```json
@@ -28,7 +28,7 @@ Expected invoke body:
 
 ## Run it locally (`funcdctl dev`)
 
-`funcdctl dev` runs the function from source — no hand-written CRDs — printing a colored services
+`funcdctl dev` runs the function from its resource and contract files (funcd ADR-0247) — printing a colored services
 banner + live logs (it builds the `-tags dev` funcdctl for you). It loads every manifest in the dir,
 so the `app-config` ConfigMap and `app-secret` Secret are injected as env:
 
@@ -36,9 +36,9 @@ so the `app-config` ConfigMap and `app-secret` Secret are injected as env:
 just dev-example js/env-echo      # gateway :3005 · S3 :3006 — override: just dev-example js/env-echo 4000 4001
 ```
 
-Invoke the gateway the banner prints (default `http://127.0.0.1:3005`). The single generic
-`funcdctl.yaml` names the function after its directory (`env-echo`); its input is **void**
-(`contract.input: {type: "null"}`), so the **CloudEvent envelope** carries `null` data:
+Invoke the gateway the banner prints (default `http://127.0.0.1:3005`). Dev runs the
+Function its resource file names (`env-echo`), from the build beside `env-echo.contract.yaml`; its input is **void**
+(`input: {type: "null"}`), so the **CloudEvent envelope** carries `null` data:
 
 ```bash
 curl -sS -XPOST http://127.0.0.1:3005/function/env-echo \
@@ -63,10 +63,10 @@ VM (which pushes the artifact and applies configmap → secret → function, the
 
 ## Files
 
-- `src/handler.ts` — the typed void-input handler that echoes the injected env.
+- `src/main.ts` — the typed void-input handler that echoes the injected env.
 - `vite.config.ts`, `package.json`, `tsconfig.json` — the build (`yarn build` bundles
-  `src/handler.ts` into the self-contained `env-echo.mjs`, committed beside the manifests).
-- `funcdctl.yaml` — the client push/dev config: runtime, handler, bindings and the I/O contract
+  `src/main.ts` into the self-contained `env-echo.mjs`, committed beside the manifests).
+- `env-echo.contract.yaml` — the client push/dev config: runtime, handler, bindings and the I/O contract
   (`funcdctl push env-echo.mjs <ref>` reads it from beside the file).
 - `configmap.yaml` — the `app-config` ConfigMap (`APP_MODE=prod`, `SHARED=from-config`).
 - `secret.yaml` — the `app-secret` Secret (`API_KEY=s3cr3t`, `SHARED=from-secret`, base64-encoded).

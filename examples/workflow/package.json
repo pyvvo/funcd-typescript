@@ -2,7 +2,7 @@
   "name": "@funcd-dev/example-workflow",
   "private": true,
   "type": "module",
-  "description": "A five-step funcd Workflow example (ADR-0094): ingest → score → {hi | lo, exclusive via when} → report (join: any). Each step is an ordinary contract-bearing TypeScript function; the Workflow materializes them into owned Functions the engine drives. Authored against @funcd-dev/shim; vite build (@funcd-dev/vite-plugin) bundles each step to a self-contained <step>.mjs; each step's I/O contract lives in its <step>.funcdctl.yaml.",
+  "description": "A five-step funcd Workflow example (ADR-0094): ingest → score → {hi | lo, exclusive via when} → report (join: any). Each step is an ordinary contract-bearing TypeScript function; the Workflow materializes them into owned Functions the engine drives. Authored against @funcd-dev/shim; vite build (@funcd-dev/vite-plugin) bundles each step to a self-contained <step>.mjs; each step's I/O contract lives in its <step>.contract.yaml.",
   "scripts": {
     "typecheck": "tsc --noEmit",
     "build": "vite build"

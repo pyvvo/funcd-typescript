@@ -1,6 +1,6 @@
 import { createRequire as __funcdCreateRequire } from "node:module";
 __funcdCreateRequire(import.meta.url);
-//#region src/hi.ts
+//#region src/hi/main.ts
 var handle = (context, event) => {
 	const { amount, score } = event.data;
 	return {

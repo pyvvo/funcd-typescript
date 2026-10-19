@@ -1,7 +1,7 @@
-// Scenario tests for the funcd Vite plugin (funcd ADR-0144). Each builds a fixture project in a temp dir.
+// Scenario tests for the funcd Vite plugin (funcd ADR-0144, ADR-0247). Each builds a fixture project in a temp dir.
 import assert from 'node:assert/strict';
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 import { type TestContext, test } from 'node:test';
 import { pathToFileURL } from 'node:url';
 
@@ -10,7 +10,8 @@ import { createBuilder } from 'vite';
 import { tempDir } from '../../shim/test/tempdir.ts';
 import { environmentName, type FuncdPluginOptions, funcd } from '../src/index.ts';
 
-const manifest = 'runtime: nodejs22\nhandler: handle\n';
+const contract = 'runtime: nodejs22\ninput:\n  type: object\noutput:\n  type: object\n';
+const contractJSON = '{"runtime":"nodejs22","input":{"type":"object"},"output":{"type":"object"}}\n';
 
 function fixture(t: TestContext, files: Record<string, string>): string {
   const root = tempDir(t, 'funcd-vite-');
@@ -34,11 +35,13 @@ const shared = {
   'src/front.ts':
     "import { greet } from './shared.ts';\nexport async function handle(): Promise<unknown> { return { msg: greet('front') }; }\n",
 };
+const contracts = { 'env-echo.contract.yaml': contract, 'front.contract.yaml': contract };
+const both = { 'env-echo': 'src/env-echo.ts', front: 'src/front.ts' };
 
 // scenario: vite-builds-one-file-per-function
 test('scenario: vite-builds-one-file-per-function', async (t) => {
-  const root = fixture(t, { ...shared, 'funcdctl.yaml': manifest });
-  await build(root, { functions: { 'env-echo': 'src/env-echo.ts', front: 'src/front.ts' } });
+  const root = fixture(t, { ...shared, ...contracts });
+  await build(root, { functions: both });
 
   const out = join(root, 'dist');
   const mjs = readdirSync(out).filter((f) => f.endsWith('.js') || f.endsWith('.mjs'));
@@ -55,59 +58,90 @@ test('scenario: vite-builds-one-file-per-function', async (t) => {
   }
 });
 
-// scenario: vite-output-pushes-from-manifest
-test('scenario: vite-output-pushes-from-manifest (stem and generic manifests, separate outDir)', async (t) => {
-  const root = fixture(t, { ...shared, 'front.funcdctl.yaml': `${manifest}# front\n`, 'funcdctl.yaml': manifest });
-  await build(root, { functions: { 'env-echo': 'src/env-echo.ts', front: 'src/front.ts' } });
+// scenario: bundlers-copy-the-contract
+test('scenario: bundlers-copy-the-contract (a .yaml and a .json contract, separate outDir)', async (t) => {
+  const root = fixture(t, {
+    ...shared,
+    'front.contract.yaml': contract,
+    'env-echo.contract.json': contractJSON,
+    // a copy of the variant the project no longer has, left by an earlier build
+    'dist/env-echo.contract.yaml': contract,
+  });
+  await build(root, { functions: both });
 
   const out = join(root, 'dist');
-  assert.equal(
-    readFileSync(join(out, 'front.funcdctl.yaml'), 'utf8'),
-    `${manifest}# front\n`,
-    'the stem manifest wins',
-  );
-  assert.equal(readFileSync(join(out, 'env-echo.funcdctl.yaml'), 'utf8'), manifest, 'else the generic manifest');
+  assert.equal(readFileSync(join(out, 'front.contract.yaml'), 'utf8'), contract);
+  assert.equal(readFileSync(join(out, 'env-echo.contract.json'), 'utf8'), contractJSON);
+  assert.ok(!existsSync(join(out, 'env-echo.contract.yaml')), 'the stale copy of the other variant is removed');
 });
 
-test('scenario: vite-output-pushes-from-manifest (outDir is the root: no copy)', async (t) => {
-  const root = fixture(t, { ...shared, 'funcdctl.yaml': manifest });
+test('scenario: bundlers-copy-the-contract (outDir is the root: no copy)', async (t) => {
+  const root = fixture(t, { ...shared, 'front.contract.yaml': contract });
   await build(root, { functions: { front: 'src/front.ts' }, outDir: '.' });
 
   assert.ok(existsSync(join(root, 'front.mjs')));
-  assert.ok(!existsSync(join(root, 'front.funcdctl.yaml')), 'funcdctl resolves the root funcdctl.yaml already');
+  assert.equal(readFileSync(join(root, 'front.contract.yaml'), 'utf8'), contract, 'the contract file stays as it is');
   assert.ok(existsSync(join(root, 'src', 'front.ts')), 'sources are untouched');
 });
 
-// scenario: vite-missing-manifest-fails
-test('scenario: vite-missing-manifest-fails', async (t) => {
+test('scenario: bundlers-copy-the-contract (a function without one fails, naming the paths)', async (t) => {
   const root = fixture(t, shared);
   await assert.rejects(build(root, { functions: { front: 'src/front.ts' } }), (err: Error) => {
-    assert.match(err.message, /front\.funcdctl\.yaml/);
-    // the generic path, which the stem path cannot satisfy
-    assert.match(err.message, /[/\\]funcdctl\.yaml/);
+    assert.match(err.message, /"front" has no contract file/);
+    assert.match(err.message, /front\.contract\.yaml/);
+    assert.match(err.message, /front\.contract\.json/);
     return true;
   });
 });
 
+test('two contract files of one function fail', async (t) => {
+  const root = fixture(t, { ...shared, 'front.contract.yaml': contract, 'front.contract.json': contractJSON });
+  await assert.rejects(
+    build(root, { functions: { front: 'src/front.ts' } }),
+    /"front" has two contract files, .*front\.contract\.yaml and .*front\.contract\.json/,
+  );
+});
+
+// scenario: old-manifest-refused
+for (const manifest of ['funcdctl.yaml', 'front.funcdctl.yaml']) {
+  test(`scenario: old-manifest-refused (${manifest})`, async (t) => {
+    const root = fixture(t, { ...shared, 'front.contract.yaml': contract, [manifest]: 'runtime: nodejs22\n' });
+    await assert.rejects(build(root, { functions: { front: 'src/front.ts' } }), (err: Error) => {
+      assert.match(err.message, new RegExp(`[/\\\\]${manifest.replace('.', '\\.')} is no longer read`));
+      assert.match(err.message, /front\.contract\.yaml/, 'it names the contract file that replaces it');
+      assert.match(err.message, /Function resource file/, 'and where the bindings go');
+      return true;
+    });
+  });
+}
+
+test('the default entry is src/main.ts, for a function named after the folder', async (t) => {
+  const root = fixture(t, { 'src/main.ts': 'export async function handle(): Promise<unknown> { return 1; }\n' });
+  const name = basename(root);
+  writeFileSync(join(root, `${name}.contract.yaml`), contract);
+  await build(root, {});
+  assert.ok(existsSync(join(root, 'dist', `${name}.mjs`)));
+  assert.ok(existsSync(join(root, 'dist', `${name}.contract.yaml`)));
+});
+
 // scenario: vite-build-unchanged
 test('scenario: vite-build-unchanged', async (t) => {
-  const root = fixture(t, { ...shared, 'funcdctl.yaml': manifest });
-  const functions = { 'env-echo': 'src/env-echo.ts', front: 'src/front.ts' };
+  const root = fixture(t, { ...shared, ...contracts });
   const out = join(root, 'dist');
   const files = (): string[][] => readdirSync(out).map((f) => [f, readFileSync(join(out, f), 'utf8')]);
-  await build(root, { functions });
+  await build(root, { functions: both });
   const before = files();
 
   writeFileSync(join(root, 'src/env-echo.ts'), shared['src/env-echo.ts'].replace("greet('echo')", "greet('echo-v2')"));
   writeFileSync(join(root, 'src/front.ts'), 'export async function handle( {\n');
-  await assert.rejects(build(root, { functions }));
+  await assert.rejects(build(root, { functions: both }));
   const staged = join(root, 'node_modules/.vite/funcd', environmentName('env-echo'), 'env-echo.mjs');
   assert.match(readFileSync(staged, 'utf8'), /echo-v2/, 'env-echo was built before front failed');
   assert.deepEqual(files(), before, 'outDir is as it was');
 });
 
 test('an environment-name collision fails', async (t) => {
-  const root = fixture(t, { ...shared, 'funcdctl.yaml': manifest });
+  const root = fixture(t, { ...shared, 'a-b.contract.yaml': contract, 'a_b.contract.yaml': contract });
   await assert.rejects(
     build(root, { functions: { 'a-b': 'src/front.ts', a_b: 'src/front.ts' } }),
     /same Vite environment "funcd_a_b"/,

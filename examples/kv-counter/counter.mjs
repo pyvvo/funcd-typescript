@@ -1,6 +1,6 @@
 import { createRequire as __funcdCreateRequire } from "node:module";
 __funcdCreateRequire(import.meta.url);
-//#region src/counter.ts
+//#region src/main.ts
 async function handle(ctx, event) {
 	const name = event.data?.name ?? "world";
 	const cur = await ctx.kv.getText("counters", name);

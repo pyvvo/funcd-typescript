@@ -15,7 +15,7 @@ ingest ── score ──┬── hi  (when score > 30) ──┐
 
 Each step is an ordinary contract-bearing function (`src/<step>.ts`, `FuncInput`/`FuncOutput`): the
 dispatcher delivers the flowing input as a CloudEvent `data`, the shim validates it against the
-step's contract (declared in `<step>.funcdctl.yaml`, compiled at worker start), and the return value
+step's contract (declared in `<step>.contract.yaml`, compiled at worker start), and the return value
 flows on. `funcdctl push` records each step's runtime (`nodejs22`, the `dev.funcd.runtime.v1`
 annotation) from that manifest, so the materializer resolves each step's runtime from the
 manifest alone.
@@ -39,7 +39,7 @@ just dev-example workflow      # gateway :3005 · S3 :3006 — override: just de
 
 A Workflow isn't POSTed directly — you **trigger a run**, then the step logs (ingest → score →
 hi/lo → report) stream live. Against the control plane the banner prints, either drive the CLI or
-apply a `WorkflowRun` manifest (the run input matches `ingest`'s `contract.input`, `{amount: number}`):
+apply a `WorkflowRun` manifest (the run input matches `ingest`'s `input`, `{amount: number}`):
 
 ```bash
 funcdctl workflow run orders my-run --input '{"amount":40}'   # 40 > 30 → the hi branch
@@ -60,7 +60,7 @@ cancel lifecycle over `funcdctl workflow …`.
 ## Deploy manually
 
 ```bash
-funcdctl push ingest.mjs oci-layout://<registry>:ingest   # reads contract + runtime from ingest.funcdctl.yaml
+funcdctl push ingest.mjs oci-layout://<registry>:ingest   # reads contract + runtime from ingest.contract.yaml
 # … repeat for score, hi, lo, report …
 funcdctl apply -f workflow.yaml
 funcdctl workflow run orders my-run --input '{"amount":4}'   # score 40 > 30 → the hi branch

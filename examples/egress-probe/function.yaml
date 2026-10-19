@@ -14,7 +14,7 @@ metadata:
 spec:
   runtime: nodejs22
   handler: handle
-  image: oci-layout:///mnt/funcd-deps/registry:egress-probe   # funcdctl push probe.mjs
+  image: oci-layout:///mnt/funcd-deps/registry:egress-probe   # funcdctl push egress-probe.mjs
   replicas: 1
   scaling:
     minReplicas: 1

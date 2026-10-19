@@ -2,7 +2,7 @@
   "name": "@funcd-dev/example-log-burst",
   "private": true,
   "type": "module",
-  "description": "A funcd log-capture example (ADR-0081, Path B): a function whose handler emits a burst of ≥100 console.* logs (a mix of log/warn/error, structured) per invocation. Authored in TypeScript against @funcd-dev/shim; vite build (@funcd-dev/vite-plugin) bundles it to a self-contained burst.mjs; the I/O contract lives in funcdctl.yaml. The Lima e2e deploys it to prove ≥100 function logs are captured channel-only by the runtime-shim console producer.",
+  "description": "A funcd log-capture example (ADR-0081, Path B): a function whose handler emits a burst of ≥100 console.* logs (a mix of log/warn/error, structured) per invocation. Authored in TypeScript against @funcd-dev/shim; vite build (@funcd-dev/vite-plugin) bundles it to a self-contained log-burst.mjs; the I/O contract lives in log-burst.contract.yaml. The Lima e2e deploys it to prove ≥100 function logs are captured channel-only by the runtime-shim console producer.",
   "scripts": {
     "typecheck": "tsc --noEmit",
     "build": "vite build"

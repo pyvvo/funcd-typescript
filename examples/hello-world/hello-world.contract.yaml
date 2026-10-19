@@ -1,0 +1,19 @@
+runtime: nodejs22
+input:
+  type: object
+  additionalProperties: false
+  properties:
+    name:
+      type: string
+    excited:
+      type: boolean
+  required:
+    - name
+output:
+  type: object
+  additionalProperties: false
+  properties:
+    greeting:
+      type: string
+  required:
+    - greeting

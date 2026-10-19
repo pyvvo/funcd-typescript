@@ -23,7 +23,7 @@ the health endpoints, the invoke socket, log capture, trace spans) needs a funcd
 | `shim/` | The runtime shim. `src/*.ts` builds to `shim.mjs` and `pool.mjs`, both committed. `embed.go` is the Go package funcd imports (`Shim`, `Pool`) |
 | `shim/dist/` | The npm package `@funcd-dev/shim`: the `context` types (`.`) and `buildContract` (`./build`). Built, never committed |
 | `vite-plugin/` | The npm package `@funcd-dev/vite-plugin` (funcd ADR-0144): one Vite environment per function, each built into one self-contained `<name>.mjs`. Its `dist/` is built, never committed |
-| `examples/*` | Example functions. Each builds with the Vite plugin and commits its `.mjs`; the contract lives only in its `funcdctl.yaml` |
+| `examples/*` | Example functions. Each builds with the Vite plugin and commits its `.mjs`; the contract lives only in its `<name>.contract.yaml` (funcd ADR-0247), the rest in its Function resource file |
 | `go.mod` | This repo is also a Go module. funcd pins it by git tag |
 
 ## Toolchain

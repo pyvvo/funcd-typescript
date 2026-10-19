@@ -1,0 +1,17 @@
+runtime: nodejs22
+input:
+  type: "null"
+output:
+  type: object
+  additionalProperties: false
+  properties:
+    config:
+      type: string
+    secret:
+      type: string
+    shared:
+      type: string
+  required:
+    - config
+    - secret
+    - shared

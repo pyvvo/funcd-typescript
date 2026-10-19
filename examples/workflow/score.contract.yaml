@@ -1,0 +1,20 @@
+runtime: nodejs22
+input:
+  type: object
+  additionalProperties: false
+  properties:
+    amount:
+      type: number
+  required:
+    - amount
+output:
+  type: object
+  additionalProperties: false
+  properties:
+    amount:
+      type: number
+    score:
+      type: number
+  required:
+    - amount
+    - score

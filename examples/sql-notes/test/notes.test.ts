@@ -7,7 +7,7 @@ import { test } from 'node:test';
 import type { CloudEvent, FunctionContext, SQLExecResult, SQLParams, SQLStatement, SQLValues } from '@funcd-dev/shim';
 
 import { applyMigrations } from '../src/db/migrator.ts';
-import { type FuncInput, handle } from '../src/notes.ts';
+import { type FuncInput, handle } from '../src/notes/main.ts';
 
 // fakeSQL is context.sql over an in-memory SQLite: an execute of several statements runs in one transaction, as
 // rqlite runs it, so a failure applies none of them.

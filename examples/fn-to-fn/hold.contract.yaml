@@ -1,0 +1,17 @@
+runtime: nodejs22
+input:
+  type: object
+  additionalProperties: false
+  properties:
+    ms:
+      type: integer
+  required:
+    - ms
+output:
+  type: object
+  additionalProperties: false
+  properties:
+    held:
+      type: integer
+  required:
+    - held

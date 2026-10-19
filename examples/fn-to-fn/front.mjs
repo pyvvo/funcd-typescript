@@ -1,6 +1,6 @@
 import { createRequire as __funcdCreateRequire } from "node:module";
 __funcdCreateRequire(import.meta.url);
-//#region src/front.ts
+//#region src/front/main.ts
 /**
 * front — the CALLER. It declares a link to greeter on its Function resource:
 *   spec: { links: [{ alias: greeter, target: greeter }] }

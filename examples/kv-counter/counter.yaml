@@ -12,7 +12,7 @@ metadata:
 spec:
   runtime: nodejs22
   handler: handle
-  image: oci-layout:///mnt/funcd-deps/registry:counter   # funcdctl push counter.mjs (built from src/counter.ts)
+  image: oci-layout:///mnt/funcd-deps/registry:counter   # funcdctl push counter.mjs (built from src/main.ts)
   replicas: 1
   scaling:
     minReplicas: 1

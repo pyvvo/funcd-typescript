@@ -1,6 +1,6 @@
 import { createRequire as __funcdCreateRequire } from "node:module";
 __funcdCreateRequire(import.meta.url);
-//#region src/report.ts
+//#region src/report/main.ts
 var handle = (context, event) => {
 	const branch = event.data.hi ?? event.data.lo;
 	context.log("report", branch?.tier);

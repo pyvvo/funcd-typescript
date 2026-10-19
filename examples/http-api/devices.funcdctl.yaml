@@ -1,5 +1,0 @@
-# devices.funcdctl.yaml (funcd ADR-0122/ADR-0243): the client push/dev config of the devices API, not a deploy
-# manifest. protocol: http marks a Function that exports http(app): `funcdctl push` bakes no I/O contract for it.
-runtime: nodejs22
-handler: handle
-protocol: http

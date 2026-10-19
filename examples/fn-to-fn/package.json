@@ -2,7 +2,7 @@
   "name": "@funcd-dev/example-fn-to-fn",
   "private": true,
   "type": "module",
-  "description": "A two-function funcd example (ADR-0064): `front` calls `greeter` via context.invoke over a declared link. Authored in TypeScript against @funcd-dev/shim; vite build (@funcd-dev/vite-plugin) bundles BOTH src entry points to self-contained greeter.mjs + front.mjs in one build; each function's I/O contract lives in its <name>.funcdctl.yaml.",
+  "description": "A two-function funcd example (ADR-0064): `front` calls `greeter` via context.invoke over a declared link. Authored in TypeScript against @funcd-dev/shim; vite build (@funcd-dev/vite-plugin) bundles BOTH src entry points to self-contained greeter.mjs + front.mjs in one build; each function's I/O contract lives in its <name>.contract.yaml.",
   "scripts": {
     "typecheck": "tsc --noEmit",
     "test": "node --test --experimental-strip-types test/*.test.ts",

@@ -6,13 +6,13 @@ contract** of a handler.
 
 ## The handler + its I/O contract
 
-[`src/handler.ts`](src/handler.ts) exports `handle`, typed as `Handler<FuncInput, FuncOutput>`
+[`src/main.ts`](src/main.ts) exports `handle`, typed as `Handler<FuncInput, FuncOutput>`
 imported from `@funcd-dev/shim` — so `context`, the CloudEvent `event`, and the return value
 are checked at compile time against the same contract the shim enforces at runtime (ADR-0037).
 
 The two exported interfaces **`FuncInput`** and **`FuncOutput`** are the TypeScript side of the I/O
 contract (ADR-0058). You write them as ordinary TypeScript types; the matching JSON Schema lives in
-[`funcdctl.yaml`](funcdctl.yaml) (`contract.input` / `contract.output`):
+[`hello-world.contract.yaml`](hello-world.contract.yaml) (`input` / `output`):
 
 ```ts
 import type { Handler } from '@funcd-dev/shim';
@@ -37,11 +37,11 @@ export const handle: Handler<FuncInput, FuncOutput> = (context, event) => {
 You supply a *schema*, never a validator. The build (`yarn build`) only bundles the handler; it
 derives no schema from the types. Instead:
 
-1. `funcdctl.yaml` declares the closed **JSON Schema** for the input and output
+1. `hello-world.contract.yaml` declares the closed **JSON Schema** for the input and output
    (`additionalProperties: false`), within the supported **profile** (the bounded subset — closed
    records, scalars, enums, arrays, string-keyed maps, discriminated unions, `Json`; no open
    records, no recursion);
-2. `funcdctl push handler.mjs <ref>` reads the contract and runtime from the manifest beside the
+2. `funcdctl push hello-world.mjs <ref>` reads the contract and runtime from the manifest beside the
    file and ships them with the artifact;
 3. at worker start the shim compiles a validator from the pushed contract (ADR-0123).
 
@@ -74,16 +74,16 @@ and validated end-to-end.
 
 ## Run it locally (`funcdctl dev`)
 
-`funcdctl dev` runs the function from source — no hand-written CRDs — printing a colored services
+`funcdctl dev` runs the function from its resource and contract files (funcd ADR-0247) — printing a colored services
 banner + live logs (it builds the `-tags dev` funcdctl for you):
 
 ```bash
 just dev-example js/hello-world      # gateway :3005 · S3 :3006 — override: just dev-example js/hello-world 4000 4001
 ```
 
-Invoke the gateway the banner prints (default `http://127.0.0.1:3005`). The single generic
-`funcdctl.yaml` names the function after its directory (`hello-world`); the invoke is a **CloudEvent
-envelope** — `{"data": <input>}`, where `<input>` matches the manifest's `contract.input`
+Invoke the gateway the banner prints (default `http://127.0.0.1:3005`). Dev runs the
+Function its resource file names (`hello-world`), from the build beside `hello-world.contract.yaml`; the invoke is a **CloudEvent
+envelope** — `{"data": <input>}`, where `<input>` matches the contract file's `input`
 (`{name: string, excited?: boolean}`):
 
 ```bash
@@ -98,16 +98,16 @@ curl -sS -XPOST http://127.0.0.1:3005/function/hello-world \
 yarn install
 yarn typecheck   # tsc --noEmit — proves the handler conforms to Handler<FuncInput, FuncOutput>
 yarn test        # node --test — exercises the handler's behavior
-yarn build       # vite build → handler.mjs (the single self-contained artifact to deploy)
+yarn build       # vite build → hello-world.mjs (the single self-contained artifact to deploy)
 ```
 
-`yarn build` bundles `src/handler.ts` (plus any npm libraries you import) into one
-`handler.mjs` with `@funcd-dev/vite-plugin` (see [`vite.config.ts`](vite.config.ts), ADR-0144).
+`yarn build` bundles `src/main.ts` (plus any npm libraries you import) into one
+`hello-world.mjs` with `@funcd-dev/vite-plugin` (see [`vite.config.ts`](vite.config.ts), ADR-0144).
 That file is the OCI artifact:
 
 ```bash
 funcd --config ../../funcdconfig.yaml &           # start the daemon (zero-infra dev config, ADR-0061)
-funcdctl push handler.mjs oci-layout:///tmp/funcd-demo/layout:v1
+funcdctl push hello-world.mjs oci-layout:///tmp/funcd-demo/layout:v1
 funcdctl apply -f function.yaml      # no digest — the platform pins it (ADR-0035)
 # then invoke it with the CloudEvent envelope — see "Run it locally (funcdctl dev)" above
 ```
@@ -121,7 +121,7 @@ if omitted. `just demo` runs this whole journey end to end.
 - The typed contract is **path-mapped** to the in-repo shim types (`tsconfig.json` →
   `shim/src/types.ts`). When `@funcd-dev/shim` is published, this becomes a plain
   `yarn add -D @funcd-dev/shim` (ADR-0037 open question).
-- `import type { Handler }` is erased at build time, so `handler.mjs` carries **no** shim
+- `import type { Handler }` is erased at build time, so `hello-world.mjs` carries **no** shim
   dependency — your function bundles only the libraries it actually uses at runtime. The
   validators are not in the bundle at all: the shim compiles them from the pushed contract at
   worker start (ADR-0123).

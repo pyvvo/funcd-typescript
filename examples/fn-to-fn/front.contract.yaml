@@ -1,0 +1,18 @@
+runtime: nodejs22
+input:
+  type: object
+  additionalProperties: false
+  properties:
+    name:
+      type: string
+output:
+  type: object
+  additionalProperties: false
+  properties:
+    via:
+      type: string
+    greeting:
+      type: string
+  required:
+    - via
+    - greeting
