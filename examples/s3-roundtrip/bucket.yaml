@@ -9,7 +9,10 @@
 #              purely by the RolesAssignment (rolesassignment.yaml) granting it Blob Data Writer @ this
 #              prefix (ADR-0136). The `other` vs `shared` contrast is the whole point: same unowned class,
 #              opposite outcome, decided by a role grant. This is the prod mirror of `funcdctl dev`'s
-#              auto-provisioned dev writer grant.
+#              auto-provisioned dev writer grant;
+#   * bi, docs — NO owner: the prefixes the two Sites serve. A Site binds a shared Bucket by `ref` and never
+#              edits it (funcd ADR-0248), so the Bucket declares them.
+# The Bucket is shared (the function, two Sites and a role grant), so it is its own file, bound by `ref`.
 apiVersion: funcd.io/v1alpha1
 kind: Bucket
 metadata:
@@ -22,4 +25,6 @@ spec:
       owner: s3-roundtrip
     - name: other           # an unowned, unbound prefix — s3-roundtrip must be DENIED here
     - name: shared          # unowned + unbound — writable by s3-roundtrip ONLY via the RolesAssignment grant
+    - name: bi              # served by the bi Site (site.yaml) — no owner, nothing on the S3 wire writes it
+    - name: docs            # served by the docs Site (site-docs.yaml) — no owner
   maxObjectBytes: 1073741824   # per-object cap (1 GiB)

@@ -3,8 +3,11 @@
 A minimal funcd example proving that a Function receives **both** its bound configuration sources as
 environment at runtime:
 
-- **`spec.config: [app-config]`** — a **ConfigMap** (ADR-0093), non-sensitive `Data` (plain string map).
-- **`spec.secrets: [app-secret]`** — a **Secret** (ADR-0057), sensitive `Data` (base64-encoded `[]byte`).
+- **`spec.bindings.config: [app-config]`** — a **ConfigMap** (ADR-0093), non-sensitive `Data` (plain string map).
+- **`spec.bindings.secret: [app-secret]`** — a **Secret** (ADR-0057), sensitive `Data` (base64-encoded `[]byte`).
+
+The Function declares both at its root (funcd ADR-0248): `configMaps` names the ConfigMap by `ref`, and
+`secrets` declares the Secret with the keys it must hold (`API_KEY`, `SHARED`); the Function waits until it does.
 
 The handler ([`src/handler.ts`](src/handler.ts)) takes **no input** (`FuncInput = void` → the ADR-0090
 void-input contract `{"type":"null"}`) and echoes three env vars back:

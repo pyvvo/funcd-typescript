@@ -12,6 +12,7 @@ spec:
   replicas: 1
   scaling:
     minReplicas: 1
-  links:
-    - alias: peer
-      target: hold
+  bindings:
+    links:
+      - alias: peer
+        target: hold

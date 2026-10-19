@@ -42,7 +42,7 @@ export interface CloudEvent<T = unknown> {
 export interface FunctionContext {
   /** Structured log line → stdout (collected by the platform, ADR-0010). */
   log(...args: unknown[]): void;
-  /** Synchronously invoke a linked function by its spec.links alias (ADR-0064). The input is
+  /** Synchronously invoke a linked function by its spec.bindings.links alias (ADR-0064). The input is
    *  validated against the target's contract by the target's shim; its result is returned. Fails
    *  closed (rejects) if the caller declares no such link.
    *
@@ -51,7 +51,7 @@ export interface FunctionContext {
    *  `data`, and the other keys are dropped. To send an object that has its own `data` key, wrap it in an
    *  envelope: `{ specversion: '1.0', data: { data: [1], page: 2 } }`. */
   invoke<I = unknown, O = unknown>(alias: string, input: I): Promise<O>;
-  /** Send an HTTP request to a linked Function that serves HTTP (spec.protocol: http) by its spec.links alias
+  /** Send an HTTP request to a linked Function that serves HTTP (spec.protocol: http) by its spec.bindings.links alias
    *  (funcd ADR-0243). `path` starts with "/" and may carry a query. The reply comes back whole, at most 1 MiB, with
    *  its status and headers; funcd answers an error status, and calls nothing, for an undeclared link or a target
    *  that does not serve HTTP (call it with invoke). */
@@ -68,7 +68,7 @@ export interface FunctionContext {
   config: ConfigClient;
   /** The keys of the Secrets a function binds (funcd ADR-0245). */
   secret: SecretClient;
-  /** A bound catalog's proxy URL and this function's token, by spec.catalogs alias (funcd ADR-0245). */
+  /** A bound catalog's proxy URL and this function's token, by spec.bindings.catalog alias (funcd ADR-0245). */
   catalog: CatalogClient;
   /** Milliseconds left before the call's deadline (X-Funcd-Timeout-Ms), floored at 0; null without one (ADR-0226). */
   remainingMs(): number | null;

@@ -1,5 +1,5 @@
-// env-echo — a function that echoes the environment injected by its bindings (ADR-0093 spec.config +
-// ADR-0057 spec.secrets). It takes NO input (`FuncInput = void` → the ADR-0090 void-input contract
+// env-echo — a function that echoes the environment injected by its bindings (ADR-0093 spec.bindings.config +
+// ADR-0057 spec.bindings.secret). It takes NO input (`FuncInput = void` → the ADR-0090 void-input contract
 // `{"type":"null"}`, so an invocation with `data: null` / absent data is accepted) and returns the three
 // env vars the platform is expected to inject: APP_MODE (from the ConfigMap), API_KEY (from the Secret),
 // and SHARED (present in BOTH — the Secret must win, config-then-secrets merge order). This is the

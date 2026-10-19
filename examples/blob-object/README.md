@@ -17,13 +17,14 @@ await ctx.blob.put('other', 'x.txt', bytes);   // UNBOUND alias → 403 (bind-as
 (HTTP-over-UDS, `FUNCD_INVOKE_SOCKET`) — the same channel as `context.kv`/`context.invoke`. The platform
 routes `/blob/…` to a **binding-gated Facade** that:
 
-1. resolves the alias → `(bucket, prefix)` from the function's `spec.blob` (**bind-as-grant**, default-deny);
+1. resolves the alias → `(bucket, prefix)` from the function's `spec.bindings.blob` (**bind-as-grant**, default-deny);
 2. authorizes the **`S3Capability`** `s3::read`/`s3::write` on the bound `BlobPrefix` — the *same* PDP the
-   S3 frontend (ADR-0080) uses, with the function as the principal (its `spec.blob` are its `blobBindings`);
+   S3 frontend (ADR-0080) uses, with the function as the principal (its `spec.bindings.blob` are its `blobBindings`);
 3. acts on the *same* substrate view under the *same* `blobKey` keyspace — so an object written here is the
    object `aws s3 ls s3://lakehouse/gold/` sees.
 
-The binding grants **read**; owning the prefix (`bucket.yaml` `owner: blob-object`) grants **write**. The
+The binding grants **read**; owning the prefix grants **write**: `function.yaml` declares the `lakehouse` Bucket at its root (funcd
+ADR-0248), so the function owns `gold`. The
 function does **not** declare the `other` alias, so a write there is `Forbidden` — proving default-deny.
 
 ## The resources
@@ -32,8 +33,7 @@ function does **not** declare the `other` alias, so a write there is `Forbidden`
 |---|---|
 | [`src/object.ts`](src/object.ts) | the handler (typed against `@funcd-dev/shim`) |
 | [`funcdctl.yaml`](funcdctl.yaml) | the client push/dev config (runtime · handler · blob binding · contract) |
-| [`function.yaml`](function.yaml) | the deploy `Function` CRD (`spec.blob` = the capability) |
-| [`bucket.yaml`](bucket.yaml) | the `lakehouse` Bucket — `gold` (owned) + `other` (unowned) |
+| [`function.yaml`](function.yaml) | the deploy `Function` CRD: its own `lakehouse` Bucket (`buckets`) and the capability (`spec.bindings.blob`) |
 
 ## Build
 
@@ -42,5 +42,5 @@ yarn install && yarn build   # → object.mjs (self-contained; the contract stay
 ```
 
 The in-process end-to-end lane lives at `pkg/funcd/blob_e2e_test.go` (`just test-e2e`): it builds this
-handler, applies the Bucket + Function, invokes, and asserts `{put, get, list, denied}` — the native
+handler, applies the Function (which creates its Bucket), invokes, and asserts `{put, get, list, denied}` — the native
 `context.blob` path end to end, with no keypair.

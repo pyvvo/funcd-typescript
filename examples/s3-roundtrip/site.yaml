@@ -1,8 +1,9 @@
-# bi Site (ADR-0139, F103) — the lakehouse's prebuilt BI app as ONE declared, versioned resource. It ADOPTS
-# the existing `lakehouse` Bucket (bucket.yaml — its gold/other/shared entries stay byte-identical) and adds
-# its own ownerless `bi` prefix, materializes the pushed bundle under bi/<digest-slug>/, and owns a Route
-# serving the app at `/` for bi.example.com with the gold layer mounted at `/data` (a miss there is a 404,
-# never the SPA shell). Ready only once the bundle is servable; a redeploy is a new spec.image tag.
+# bi Site (ADR-0139, F103) — the lakehouse's prebuilt BI app as ONE declared, versioned resource. It binds
+# the shared `lakehouse` Bucket by `ref` and serves its ownerless `bi` prefix (spec.bindings.blob); bucket.yaml
+# declares that prefix, because a Site never edits a referenced Bucket (funcd ADR-0248). It materializes the
+# pushed bundle under bi/<digest-slug>/, and owns a Route serving the app at `/` for bi.example.com with the
+# gold layer mounted at `/data` (a miss there is a 404, never the SPA shell). Ready only once the bundle is
+# servable; a redeploy is a new spec.image tag.
 apiVersion: funcd.io/v1alpha1
 kind: Site
 metadata:
@@ -11,9 +12,12 @@ metadata:
   resourceGroup: rg1
 spec:
   image: oci-layout:///mnt/funcd-deps/registry:bi
-  bucket:
-    name: lakehouse
-  prefix: bi
+  buckets:
+    - ref: lakehouse      # bucket.yaml declares the ownerless bi prefix this Site serves
+  bindings:
+    blob:
+      - bucket: lakehouse
+        prefix: bi
   spa: true
   ingress:
     host: bi.example.com

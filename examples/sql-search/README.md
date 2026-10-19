@@ -38,7 +38,6 @@ curl -XPOST localhost:<gateway>/function/search -d '{"data":{"op":"search","q":"
 
 ```bash
 funcdctl push search.mjs <registry>:search
-funcdctl apply -f search-db.yaml
 funcdctl apply -f search.yaml
 ```
 

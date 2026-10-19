@@ -4,8 +4,7 @@
 # egress gateway, which authorizes egress::connect against this namespace's EgressPolicy over the
 # forwarder-attested destination — so `ok` is a live read of the enforcement decision.
 #
-# No spec.blob / spec.kv / spec.egress binding: egress is governed by the namespaced EgressPolicy CRD
-# (applied MID-SUITE by the Venom steps to make deny-then-allow observable), not a per-function grant.
+# No binding and no egress field: egress is governed by the namespaced EgressPolicy CRD (applied MID-SUITE by the Venom steps to make deny-then-allow observable), not a per-function grant.
 apiVersion: funcd.io/v1alpha1
 kind: Function
 metadata:

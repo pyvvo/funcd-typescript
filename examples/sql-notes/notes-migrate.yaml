@@ -1,4 +1,4 @@
-# Function notes-migrate: its spec.sql binding is its access to notes-db as alias app (funcd ADR-0233).
+# Function notes-migrate: its spec.bindings.sql binding is its access to notes-db as alias app (funcd ADR-0233).
 apiVersion: funcd.io/v1alpha1
 kind: Function
 metadata:
@@ -10,5 +10,8 @@ spec:
   handler: handle
   image: oci-layout:///mnt/funcd-deps/registry:notes-migrate
   sql:
-    - alias: app
-      database: notes-db
+    - ref: notes-db
+  bindings:
+    sql:
+      - alias: app
+        database: notes-db
