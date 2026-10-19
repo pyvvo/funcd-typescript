@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.19.0](https://github.com/pyvvo/funcd-typescript/compare/v0.18.0...v0.19.0) (2026-10-19)
+
+
+### ⚠ BREAKING CHANGES
+
+* contract files in place of funcdctl.yaml (funcd ADR-0247) ([#79](https://github.com/pyvvo/funcd-typescript/issues/79))
+* **shim:** context.secret reads each secret from funcd's local API (funcd ADR-0249) ([#81](https://github.com/pyvvo/funcd-typescript/issues/81))
+
+### Features
+
+* contract files in place of funcdctl.yaml (funcd ADR-0247) ([#79](https://github.com/pyvvo/funcd-typescript/issues/79)) ([d61c85f](https://github.com/pyvvo/funcd-typescript/commit/d61c85f2f586793385162f1db0d8510067e3df96))
+* **shim:** context.secret reads each secret from funcd's local API (funcd ADR-0249) ([#81](https://github.com/pyvvo/funcd-typescript/issues/81)) ([0531b01](https://github.com/pyvvo/funcd-typescript/commit/0531b01c113c36c0d439d40c87bf6ce2abc8369a))
+
 ## [0.18.0](https://github.com/pyvvo/funcd-typescript/compare/v0.17.0...v0.18.0) (2026-10-19)
 
 
