@@ -11428,6 +11428,42 @@ function makeBlob(member) {
   };
 }
 
+// src/config.ts
+function listedKeys(env, list) {
+  const v = env[list];
+  return v ? v.split(",") : [];
+}
+function listedValue(env, list, key) {
+  return listedKeys(env, list).includes(key) ? env[key] : void 0;
+}
+function makeConfig(env = process.env) {
+  return {
+    get: (key) => listedValue(env, "FUNCD_CONFIG_KEYS", key),
+    list: () => listedKeys(env, "FUNCD_CONFIG_KEYS")
+  };
+}
+
+// src/secret.ts
+function makeSecret(env = process.env) {
+  return {
+    get: async (key) => listedValue(env, "FUNCD_SECRET_KEYS", key),
+    list: async () => listedKeys(env, "FUNCD_SECRET_KEYS")
+  };
+}
+
+// src/catalog.ts
+function makeCatalog(env = process.env) {
+  return {
+    get(alias) {
+      const prefix = `FUNCD_CATALOG_${alias.toUpperCase()}_`;
+      const url = env[`${prefix}URL`];
+      const token = env[`${prefix}TOKEN`];
+      if (!url || !token) throw new Error(`context.catalog.get: catalog "${alias}" is not bound`);
+      return { url, token };
+    }
+  };
+}
+
 // src/dependencies.ts
 import http3 from "node:http";
 var dependencyCheckBudgetMs = 50;
@@ -11536,6 +11572,9 @@ async function workerMain() {
     kv: makeKV(spec.name),
     blob: makeBlob(spec.name),
     sql: makeSQL(spec.name),
+    config: makeConfig(),
+    secret: makeSecret(),
+    catalog: makeCatalog(),
     remainingMs
   };
   port.on("message", (msg) => {

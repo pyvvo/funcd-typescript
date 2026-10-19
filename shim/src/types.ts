@@ -5,6 +5,9 @@
 import type { KVClient } from './kv.ts';
 import type { BlobClient } from './blob.ts';
 import type { SQLClient } from './sql.ts';
+import type { ConfigClient } from './config.ts';
+import type { SecretClient } from './secret.ts';
+import type { CatalogClient } from './catalog.ts';
 
 export type { KVClient } from './kv.ts';
 export type { BlobClient, SignOptions } from './blob.ts';
@@ -17,6 +20,9 @@ export type {
   SQLStatement,
   SQLValues,
 } from './sql.ts';
+export type { ConfigClient } from './config.ts';
+export type { SecretClient } from './secret.ts';
+export type { CatalogClient, CatalogEndpoint } from './catalog.ts';
 
 /** A CloudEvent — the normalized trigger envelope (ADR-0023). */
 export interface CloudEvent<T = unknown> {
@@ -58,6 +64,12 @@ export interface FunctionContext {
   /** The SQL databases a function binds (funcd ADR-0233): query reads, queryValues keeps every column of a join,
    *  execute writes in one transaction. A write needs the database's owner or a writer role. */
   sql: SQLClient;
+  /** The keys of the ConfigMaps a function binds (funcd ADR-0245); a key a bound Secret overrides is a secret. */
+  config: ConfigClient;
+  /** The keys of the Secrets a function binds (funcd ADR-0245). */
+  secret: SecretClient;
+  /** A bound catalog's proxy URL and this function's token, by spec.catalogs alias (funcd ADR-0245). */
+  catalog: CatalogClient;
   /** Milliseconds left before the call's deadline (X-Funcd-Timeout-Ms), floored at 0; null without one (ADR-0226). */
   remainingMs(): number | null;
 }

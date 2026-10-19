@@ -37,6 +37,9 @@ import { makeFetch, makeInvoke } from './invoke.ts';
 import { makeKV } from './kv.ts';
 import { makeSQL } from './sql.ts';
 import { makeBlob } from './blob.ts';
+import { makeConfig } from './config.ts';
+import { makeSecret } from './secret.ts';
+import { makeCatalog } from './catalog.ts';
 import { checkDependencies, dependencyCheckBudgetMs } from './dependencies.ts';
 import { deadlineFrom, remainingMs } from './invcontext.ts';
 import { installConsoleCapture, openChannel, recordBound, type Sink } from './funclog.ts';
@@ -66,6 +69,9 @@ function contextFor(sink: Sink | null, bound?: number): FunctionContext {
     kv: makeKV(),
     blob: makeBlob(),
     sql: makeSQL(),
+    config: makeConfig(),
+    secret: makeSecret(),
+    catalog: makeCatalog(),
     remainingMs,
   };
 }
