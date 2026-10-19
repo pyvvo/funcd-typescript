@@ -55,6 +55,17 @@ function drizzleFiles(): Record<string, string> {
   return files;
 }
 
+// The committed notes-migrate.mjs inlines every migration and the journal: a glob that matches nothing builds a bundle
+// that fails at its first call, and running it here would not show that, since drizzle falls back to drizzle/ on disk.
+test('the notes-migrate bundle carries the journal and every migration', () => {
+  const bundle = readFileSync(new URL('../notes-migrate.mjs', import.meta.url), 'utf8');
+  for (const [name, content] of Object.entries(drizzleFiles())) {
+    // the bundler writes a string as JSON does, except that a tab stays a raw tab
+    const literal = JSON.stringify(content).replaceAll('\\t', '\t');
+    assert.ok(bundle.includes(literal), `notes-migrate.mjs inlines drizzle/${name}`);
+  }
+});
+
 const call = (ctx: FunctionContext, data: FuncInput) =>
   handle(ctx, { id: '1', source: '/test', type: 'test', data } as CloudEvent<FuncInput>);
 

@@ -4,12 +4,15 @@ import type { FunctionContext } from '@funcd-dev/shim';
 
 import { applyMigrations } from '../db/migrator.ts';
 
-const glob: Record<string, string> = import.meta.glob(['../drizzle/*.sql', '../drizzle/meta/_journal.json'], {
+// The paths are relative to this file, src/notes-migrate/, so drizzle/ is two levels up.
+const glob: Record<string, string> = import.meta.glob(['../../drizzle/*.sql', '../../drizzle/meta/_journal.json'], {
   query: '?raw',
   import: 'default',
   eager: true,
 });
-const files = Object.fromEntries(Object.entries(glob).map(([path, text]) => [path.replace('../drizzle/', ''), text]));
+const files = Object.fromEntries(
+  Object.entries(glob).map(([path, text]) => [path.replace('../../drizzle/', ''), text]),
+);
 
 export interface FuncOutput {
   applied: number;
