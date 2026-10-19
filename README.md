@@ -65,11 +65,12 @@ yarn add -D vite @funcd-dev/vite-plugin
 import { funcd } from '@funcd-dev/vite-plugin';
 import { defineConfig } from 'vite';
 
-export default defineConfig({ plugins: [funcd({ functions: { counter: 'src/counter.ts' } })] });
+export default defineConfig({ plugins: [funcd({ functions: { counter: 'src/main.ts' } })] });
 ```
 
-`vite build` writes `dist/counter.mjs` and the function's `funcdctl.yaml` beside it as
-`dist/counter.funcdctl.yaml`, so `funcdctl push dist/counter.mjs <ref>` reads the contract from it.
+`vite build` writes `dist/counter.mjs` and copies the function's contract file, `counter.contract.yaml` at the
+project root, beside it, so `funcdctl push dist/counter.mjs <ref>` reads the runtime and the contract from it (funcd
+ADR-0247). The Function's bindings and stores live in its resource file, `counter.yaml`.
 See [`vite-plugin/README.md`](vite-plugin/README.md).
 
 ## Develop

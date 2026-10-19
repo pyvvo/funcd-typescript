@@ -1,6 +1,6 @@
 import { createRequire as __funcdCreateRequire } from "node:module";
 __funcdCreateRequire(import.meta.url);
-//#region src/search.ts
+//#region src/main.ts
 var db = "app";
 var schema = [
 	`CREATE TABLE IF NOT EXISTS articles (

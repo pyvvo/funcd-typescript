@@ -1,6 +1,6 @@
 import { createRequire as __funcdCreateRequire } from "node:module";
 __funcdCreateRequire(import.meta.url);
-//#region src/handler.ts
+//#region src/main.ts
 var handle = () => {
 	return {
 		config: process.env.APP_MODE ?? "",

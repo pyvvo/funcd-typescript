@@ -16,15 +16,6 @@ var __exportAll = (all, no_symbols) => {
 	return target;
 };
 //#endregion
-//#region drizzle/0000_init.sql?raw
-var _0000_init_default = "CREATE TABLE `notebooks` (\n	`id` integer PRIMARY KEY AUTOINCREMENT NOT NULL,\n	`name` text NOT NULL\n);\n--> statement-breakpoint\nCREATE UNIQUE INDEX `notebooks_name_unique` ON `notebooks` (`name`);--> statement-breakpoint\nCREATE TABLE `notes` (\n	`id` integer PRIMARY KEY AUTOINCREMENT NOT NULL,\n	`notebook_id` integer NOT NULL,\n	`title` text NOT NULL,\n	`done` integer DEFAULT false NOT NULL,\n	`created_at` text DEFAULT (CURRENT_TIMESTAMP) NOT NULL,\n	FOREIGN KEY (`notebook_id`) REFERENCES `notebooks`(`id`) ON UPDATE no action ON DELETE no action\n);\n";
-//#endregion
-//#region drizzle/0001_note_priority.sql?raw
-var _0001_note_priority_default = "ALTER TABLE `notes` ADD `priority` integer DEFAULT 0 NOT NULL;";
-//#endregion
-//#region drizzle/meta/_journal.json?raw
-var _journal_default = "{\n  \"version\": \"7\",\n  \"dialect\": \"sqlite\",\n  \"entries\": [\n    {\n      \"idx\": 0,\n      \"version\": \"6\",\n      \"when\": 1791828379916,\n      \"tag\": \"0000_init\",\n      \"breakpoints\": true\n    },\n    {\n      \"idx\": 1,\n      \"version\": \"6\",\n      \"when\": 1791828444796,\n      \"tag\": \"0001_note_priority\",\n      \"breakpoints\": true\n    }\n  ]\n}";
-//#endregion
 //#region ../../node_modules/drizzle-orm/migrator.js
 function readMigrationFiles(config) {
 	const migrationFolderTo = config.migrationsFolder;
@@ -4254,12 +4245,8 @@ async function applyMigrations(ctx, files, alias = "app") {
 	}
 }
 //#endregion
-//#region src/migrate.ts
-var files = Object.fromEntries(Object.entries(/* @__PURE__ */ Object.assign({
-	"../drizzle/0000_init.sql": _0000_init_default,
-	"../drizzle/0001_note_priority.sql": _0001_note_priority_default,
-	"../drizzle/meta/_journal.json": _journal_default
-})).map(([path, text]) => [path.replace("../drizzle/", ""), text]));
+//#region src/notes-migrate/main.ts
+var files = Object.fromEntries(Object.entries(/* @__PURE__ */ Object.assign({})).map(([path, text]) => [path.replace("../drizzle/", ""), text]));
 async function handle(ctx) {
 	const applied = await applyMigrations(ctx, files);
 	ctx.log("applied", applied, "migrations");

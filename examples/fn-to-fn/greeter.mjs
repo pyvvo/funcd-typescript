@@ -1,6 +1,6 @@
 import { createRequire as __funcdCreateRequire } from "node:module";
 __funcdCreateRequire(import.meta.url);
-//#region src/greeter.ts
+//#region src/greeter/main.ts
 /**
 * greeter — the CALLEE in the fn-to-fn link example (ADR-0064). An ordinary function; another
 * function reaches it only through a declared link (see front.ts). The shim already validated
