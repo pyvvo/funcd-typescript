@@ -4,7 +4,7 @@ A **TypeScript** function that, on invoke, uses **only its funcd-INJECTED keypai
 against the gateway — proving the whole live path: **keypair-injection → SigV4 over TCP → the Cedar
 PEP → `blob.Bucket`**, on real containerd.
 
-For a function that declares `spec.blob`, the daemon injects (ADR-0085 `addS3Env`):
+For a function that declares `spec.bindings.blob`, the daemon injects (ADR-0085 `addS3Env`):
 
 | env var | value |
 |---|---|
@@ -47,26 +47,28 @@ the SDK adds a streaming-CRC trailer the gateway rejects.
 
 ## Fixtures and the apply order — any order (ADR-0121)
 
-The Bucket's `gold.owner` references the Function and the Function's `spec.blob` references the Bucket:
-a create-time cycle that used to need a two-phase workaround (a binding-less `function-base.yaml`
-first, then the Bucket, then the Function with its binding). **ADR-0121 removed that** — owner/binding
-existence is reconcile-time, so both apply in **any order**:
+The Bucket's `gold.owner` references the Function and the Function references the Bucket (`buckets: - ref:
+lakehouse` and `spec.bindings.blob`): a create-time cycle that used to need a two-phase workaround (a
+binding-less `function-base.yaml` first, then the Bucket, then the Function with its binding). **ADR-0121
+removed that** — owner/binding existence is reconcile-time, so both apply in **any order**:
 
-1. `function.yaml` — Function `s3-roundtrip` **with** `spec.blob[gold]` and `minReplicas: 1`;
-2. `bucket.yaml` — Bucket `lakehouse`, prefixes `gold` (owner `s3-roundtrip`) + `other` (no owner).
+1. `function.yaml` — Function `s3-roundtrip` **with** `spec.bindings.blob[gold]` and `minReplicas: 1`;
+2. `bucket.yaml` — Bucket `lakehouse`, prefixes `gold` (owner `s3-roundtrip`), `other`, `shared`, `bi` and
+   `docs` (no owner). The Bucket is shared by the function, the two Sites and a role grant, so it is its own
+   file, and each of them binds it by `ref` (funcd ADR-0248).
 
 The lane applies the **Function first** (bound to the not-yet-applied Bucket) — it is admitted and held
 `Ready=False/BucketNotFound`, then converges once the Bucket lands. That is the live apply-any-order
-proof of the Bucket↔Function-owner cycle on real containerd. (Because the function carries `spec.blob`
+proof of the Bucket↔Function-owner cycle on real containerd. (Because the function carries `spec.bindings.blob`
 from the start, `addS3Env` injects its `AWS_*` keypair on the first Ready replica — ADR-0085.)
 
 ## The BI Site on top of the lakehouse (ADR-0139, F103)
 
 `site.yaml` deploys the prebuilt BI app in `bi/` as **one declared, versioned resource**. The lane pushes
 the directory with `funcdctl push --site bi oci-layout:///mnt/funcd-deps/registry:bi` (a site artifact:
-one deterministic tar+gzip layer, no contract, no runtime) and applies the `Site` **after** `bucket.yaml`,
-so it **adopts** `lakehouse`: the `gold`/`other`/`shared` entries stay byte-identical and an ownerless
-`bi` prefix is added — nothing on the S3 wire can write it. The reconciler materializes the bundle under
+one deterministic tar+gzip layer, no contract, no runtime) and applies the `Site`, which binds `lakehouse`
+by `ref` and serves its ownerless `bi` prefix (`spec.bindings.blob`). A Site never edits a referenced Bucket
+(funcd ADR-0248), so `bucket.yaml` declares `bi` — nothing on the S3 wire can write it. The reconciler materializes the bundle under
 `bi/<digest-slug>/` (index written last), then owns a Route serving the app at `/` for
 `bi.example.com` with the gold layer mounted at `/data` (a miss there is a `404`, never the SPA shell).
 `bi-v2/` is the second build the suite redeploys to by re-pointing `spec.image` at the `bi-v2` tag: the
@@ -77,7 +79,7 @@ swap is atomic and the previous digest's objects are kept, so rolling back is re
 `funcdctl dev` runs the function from source — no hand-written CRDs — printing a colored services
 banner + live logs (it builds the `-tags dev` funcdctl for you) and boots the in-process S3 endpoint
 alongside the gateway. It loads every manifest in the dir, so the `lakehouse` Bucket and its
-`spec.blob` binding are wired automatically:
+`spec.bindings.blob` binding are wired automatically:
 
 ```bash
 just dev-example js/s3-roundtrip      # gateway :3005 · S3 :3006 — override: just dev-example js/s3-roundtrip 4000 4001

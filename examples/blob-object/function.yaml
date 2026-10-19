@@ -1,8 +1,8 @@
-# blob-object — reads+writes objects NATIVELY via context.blob (ADR-0127). The spec.blob binding (ADR-0073)
-# IS the capability: it maps the alias "gold" to the lakehouse Bucket's "gold" prefix. Default-deny — without
-# it, context.blob on "gold" is Forbidden; and the function does NOT bind "other", so a put there is denied.
-# The function OWNS the gold prefix (bucket.yaml), so it may write it (single writer). No S3 keypair injected
-# for the native path — the binding alone grants read; the ownership grants write.
+# blob-object — reads+writes objects NATIVELY via context.blob (ADR-0127). The function owns its Bucket:
+# the root `buckets` entry creates lakehouse with the gold prefix, whose owner defaults to the function
+# (funcd ADR-0248), so it may write it (single writer). The spec.bindings.blob entry (ADR-0073) IS the read
+# capability: it maps the alias "gold" to that prefix. Default-deny — the function does NOT bind "other",
+# so a put there is denied. No S3 keypair injected for the native path.
 apiVersion: funcd.io/v1alpha1
 kind: Function
 metadata:
@@ -16,8 +16,13 @@ spec:
   replicas: 1
   scaling:
     minReplicas: 1
+  buckets:
+    - name: lakehouse            # the Bucket (domain) this function owns
+      prefixes:
+        - name: gold             # serving layer — written by blob-object (its owner → single writer)
+      maxObjectBytes: 1073741824   # per-object cap (1 GiB)
   bindings:
     blob:
       - alias: gold           # the in-code handle: ctx.blob.*('gold', …)
-        bucket: lakehouse     # the Bucket (domain)
-        prefix: gold          # the sub-domain it owns → reads AND writes (single writer)
+        bucket: lakehouse
+        prefix: gold

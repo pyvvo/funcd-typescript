@@ -3,7 +3,7 @@
 //   (a) put   gold/roundtrip-<inv>.txt          — the fn is bound to (and owns) the gold prefix → allowed
 //   (b) get   it back                            — body must match
 //   (c) list  gold/ under roundtrip-            — the key must be present
-//   (d) put   to the UNBOUND alias "other"       — no spec.blob entry → bind-as-grant default-deny → 403
+//   (d) put   to the UNBOUND alias "other"       — no spec.bindings.blob entry → bind-as-grant default-deny → 403
 // and returns {put, get, list, denied} (denied=true means step (d) was correctly rejected by the PDP).
 // Proves the function-facing blob path: context.blob → worker-node local API (UDS) → binding-gated,
 // S3Capability-authorized Facade → the SAME substrate the S3 frontend serves.
@@ -21,7 +21,7 @@ export interface FuncOutput {
 }
 
 const GOLD = 'gold'; // the alias this function is bound to AND owns (reads + writes)
-const OTHER = 'other'; // an alias it did NOT declare in spec.blob → every op must be denied
+const OTHER = 'other'; // an alias it did NOT declare in spec.bindings.blob → every op must be denied
 
 export async function handle(ctx: FunctionContext, event: CloudEvent<FuncInput>): Promise<FuncOutput> {
   const inv = event.data?.inv ?? 'x';

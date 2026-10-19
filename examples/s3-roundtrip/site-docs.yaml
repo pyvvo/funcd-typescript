@@ -1,7 +1,7 @@
 # docs Site (ADR-0140, F104) — the SAME listener as the bi Site, reached by PATH instead of a hostname.
 # It sets neither ingress.host nor ingress.path, so the bundle mounts at the by-name default
 # `/site/docs`: no /etc/hosts, no DNS, and no collision with bi (which is host-qualified at "/").
-# It adopts the same lakehouse Bucket and adds its own ownerless `docs` prefix.
+# It binds the same lakehouse Bucket by `ref` and serves from its ownerless `docs` prefix (bucket.yaml).
 apiVersion: funcd.io/v1alpha1
 kind: Site
 metadata:
@@ -10,9 +10,12 @@ metadata:
   resourceGroup: rg1
 spec:
   image: oci-layout:///mnt/funcd-deps/registry:docs
-  bucket:
-    name: lakehouse
-  prefix: docs
+  buckets:
+    - ref: lakehouse      # bucket.yaml declares the ownerless docs prefix this Site serves
+  bindings:
+    blob:
+      - bucket: lakehouse
+        prefix: docs
   # SPA on, so the lane proves the fallback is scoped to THIS mount (an unknown path under
   # /site/docs serves the shell; anything outside it does not).
   spa: true

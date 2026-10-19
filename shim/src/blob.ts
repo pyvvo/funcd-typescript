@@ -1,7 +1,7 @@
 // context.blob — function-facing blob over the worker-node local API (HTTP-over-UDS, ADR-0127). Dials the
 // same per-sandbox socket as context.kv/context.invoke (FUNCD_INVOKE_SOCKET); the platform routes /blob/…
 // to the binding-gated, PDP-authorized Facade with the sandbox's function identity (bind-as-grant on
-// spec.blob). Reached only through the built-in shim — no @aws-sdk, no keypair. The blob twin of context.kv;
+// spec.bindings.blob). Reached only through the built-in shim — no @aws-sdk, no keypair. The blob twin of context.kv;
 // v1 is bytes-in-memory (streaming is a v2 follow-up).
 import { type Resp, send as sendOn } from './socket.ts';
 

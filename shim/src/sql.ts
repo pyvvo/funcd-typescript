@@ -30,7 +30,7 @@ export interface SQLExecResult {
   values?: unknown[][];
 }
 
-/** A function's view of the SQL databases it binds (spec.sql), by alias. */
+/** A function's view of the SQL databases it binds (spec.bindings.sql), by alias. */
 export interface SQLClient {
   query(alias: string, sql: string, params?: SQLParams): Promise<SQLRow[]>;
   queryValues(alias: string, sql: string, params?: SQLParams): Promise<SQLValues>;

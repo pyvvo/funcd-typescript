@@ -1,5 +1,5 @@
 // s3-roundtrip — a function that exercises the F47 S3-protocol frontend (ADR-0080/0085) end to end
-// using ONLY the funcd-INJECTED keypair. For a function that declares spec.blob, the daemon injects
+// using ONLY the funcd-INJECTED keypair. For a function that declares spec.bindings.blob, the daemon injects
 // AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY (a per-function SigV4 keypair derived from the node master
 // secret — the function never chooses it), AWS_REGION, and AWS_ENDPOINT_URL_S3 (the sandbox-facing
 // gateway address: under containerd the CNI bridge gateway IP). On invoke the handler:

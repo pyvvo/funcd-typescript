@@ -1,4 +1,5 @@
-# Function search: its spec.sql binding is its access to search-db as alias app (funcd ADR-0233).
+# Function search: it owns SQLDatabase search-db (the root `sql` entry; its owner defaults to search, funcd
+# ADR-0248), and its spec.bindings.sql entry is its access to it as alias app (funcd ADR-0233).
 apiVersion: funcd.io/v1alpha1
 kind: Function
 metadata:
@@ -9,6 +10,8 @@ spec:
   runtime: nodejs22
   handler: handle
   image: oci-layout:///mnt/funcd-deps/registry:search
+  sql:
+    - name: search-db
   bindings:
     sql:
       - alias: app
