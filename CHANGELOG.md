@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.19.1](https://github.com/pyvvo/funcd-typescript/compare/v0.19.0...v0.19.1) (2026-10-19)
+
+
+### Bug Fixes
+
+* **examples:** env-echo reads its Secret through ctx.secret (funcd ADR-0249) ([#84](https://github.com/pyvvo/funcd-typescript/issues/84)) ([1633541](https://github.com/pyvvo/funcd-typescript/commit/1633541dbbd5110c03ed60e59554b4c69edd7b15))
+
 ## [0.19.0](https://github.com/pyvvo/funcd-typescript/compare/v0.18.0...v0.19.0) (2026-10-19)
 
 
