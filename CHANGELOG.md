@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.19.2](https://github.com/pyvvo/funcd-typescript/compare/v0.19.1...v0.19.2) (2026-10-19)
+
+
+### Bug Fixes
+
+* **examples:** notes-migrate bundles its migrations again (funcd ADR-0247) ([#86](https://github.com/pyvvo/funcd-typescript/issues/86)) ([d007798](https://github.com/pyvvo/funcd-typescript/commit/d0077988fb8e18b5fe157101517500e68f11cd03))
+
 ## [0.19.1](https://github.com/pyvvo/funcd-typescript/compare/v0.19.0...v0.19.1) (2026-10-19)
 
 
