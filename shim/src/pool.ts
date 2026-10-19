@@ -40,6 +40,9 @@ import { makeFetch, makeInvoke } from './invoke.ts';
 import { makeKV } from './kv.ts';
 import { makeSQL } from './sql.ts';
 import { makeBlob } from './blob.ts';
+import { makeConfig } from './config.ts';
+import { makeSecret } from './secret.ts';
+import { makeCatalog } from './catalog.ts';
 import { checkDependencies, type DependencyReport, dependencyCheckBudgetMs } from './dependencies.ts';
 import { deadlineFrom, nowMs, parseTimeoutMs, remainingMs } from './invcontext.ts';
 import {
@@ -159,6 +162,9 @@ async function workerMain(): Promise<void> {
     kv: makeKV(spec.name),
     blob: makeBlob(spec.name),
     sql: makeSQL(spec.name),
+    config: makeConfig(),
+    secret: makeSecret(),
+    catalog: makeCatalog(),
     remainingMs,
   };
 

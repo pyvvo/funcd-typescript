@@ -21,6 +21,20 @@ yarn add -D @funcd-dev/shim
 `import type { Handler, FunctionContext } from '@funcd-dev/shim'` types a handler, and
 `import { buildContract } from '@funcd-dev/shim/build'` builds its input and output contract.
 
+## Read config, secrets and catalogs
+
+A handler reads its bound values through the context (funcd ADR-0245):
+
+```ts
+const level = context.config.get('LOG_LEVEL');
+const key = await context.secret.get('STRIPE_KEY');
+const { url, token } = context.catalog.get('lake');
+```
+
+`config` holds the keys of the Function's bound ConfigMaps and `secret` those of its Secrets; a key a secret overrides
+reads only through `secret`, and an unbound key reads as `undefined`. `list()` returns the bound keys, sorted.
+`secret`'s methods return Promises. `catalog.get(alias)` throws an Error naming the alias when it is not bound.
+
 ## Serve HTTP from a function
 
 A Function with `spec.protocol: http` exports an HTTP app instead of an event handler (funcd ADR-0243):
