@@ -23,6 +23,7 @@ the health endpoints, the invoke socket, log capture, trace spans) needs a funcd
 | `shim/` | The runtime shim. `src/*.ts` builds to `shim.mjs` and `pool.mjs`, both committed. `embed.go` is the Go package funcd imports (`Shim`, `Pool`) |
 | `shim/dist/` | The npm package `@funcd-dev/shim`: the `context` types (`.`) and `buildContract` (`./build`). Built, never committed |
 | `vite-plugin/` | The npm package `@funcd-dev/vite-plugin` (funcd ADR-0144): one Vite environment per function, each built into one self-contained `<name>.mjs`. Its `dist/` is built, never committed |
+| `drizzle/` | The npm package `@funcd-dev/drizzle` (funcd ADR-0258): Drizzle over `context.sql` and drizzle-kit migrations applied from memory. Its `dist/` is built, never committed; examples resolve its source through the `source` export condition |
 | `examples/*` | Example functions. Each builds with the Vite plugin and commits its `.mjs`; the contract lives only in its `<name>.contract.yaml` (funcd ADR-0247), the rest in its Function resource file |
 | `go.mod` | This repo is also a Go module. funcd pins it by git tag |
 
@@ -38,7 +39,7 @@ For many short commands (agents, scripts), use `scripts/agent/d <cmd>` instead: 
 from a cached `nix print-dev-env` (regenerated when `flake.nix` or `flake.lock` change), about 0.02 s per call
 instead of about 2 s. It caches this repo's flake; funcd and the other language repo ship the same script for their own.
 
-Yarn workspaces cover `shim`, `vite-plugin` and `examples/*`, with `nodeLinker: node-modules`. The
+Yarn workspaces cover `shim`, `vite-plugin`, `drizzle` and `examples/*`, with `nodeLinker: node-modules`. The
 recipes run them in dependency order (`--topological-dev`), so the plugin builds before the examples.
 
 The dev shell also installs the lefthook git hooks. pre-commit formats and lints staged files
@@ -55,10 +56,10 @@ and tests. CI runs the same checks, so never bypass a hook with `--no-verify`.
   nobody can edit the message at merge time. The queue checks that exact message again before it
   lands. `main` takes no direct pushes, and the ruleset has no bypass, not even for admins.
 - **release-please owns versions.** Never edit `version.txt`, `CHANGELOG.md` or the `version` in
-  `shim/package.json` or `vite-plugin/package.json` by hand, and never create tags. The funcd release
+  `shim/package.json`, `vite-plugin/package.json` or `drizzle/package.json` by hand, and never create tags. The funcd release
   GitHub App opens the release PR, which goes through the merge queue like any other PR. Merging it tags `vX.Y.Z`.
   CI skips its `ci` job: the PR only bumps versions on an already checked `main`.
-- **Every release publishes `@funcd-dev/shim` and `@funcd-dev/vite-plugin` to npm** from the release
+- **Every release publishes `@funcd-dev/shim`, `@funcd-dev/vite-plugin` and `@funcd-dev/drizzle` to npm** from the release
   workflow, with npm trusted publishing (no token). Their exports are a public API: removing or
   changing one is a `feat!:`.
 - **Before 1.0, a breaking change (`feat!:`) bumps the minor version.** From v2.0.0 on, Go requires

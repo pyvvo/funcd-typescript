@@ -11,6 +11,7 @@
     "verbatimModuleSyntax": true,
     "types": ["node", "vite/client"],
     "lib": ["ES2022"],
+    "customConditions": ["source"],
     "paths": {
       "@funcd-dev/shim": ["../../shim/src/types.ts"]
     }

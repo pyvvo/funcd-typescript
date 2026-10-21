@@ -5,6 +5,7 @@
   "workspaces": [
     "shim",
     "vite-plugin",
+    "drizzle",
     "examples/*"
   ]
 }

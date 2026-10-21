@@ -24,19 +24,19 @@ A migration only adds to the schema, so the code one version back still runs on 
 
 ## Migrations
 
-`notes-migrate` runs Drizzle's sqlite-proxy migrator over `context.sql` ([`src/db/migrator.ts`](src/db/migrator.ts)). It
-applies every migration that table `_migrations` lacks, with their `_migrations` rows, in one call: rqlite runs the
-call as one transaction, so a failed migration records nothing. Call it after each deploy, or make it an App's
+`notes-migrate` applies them with `applyMigrations` from [`@funcd-dev/drizzle`](../../drizzle) (funcd ADR-0258), which
+reads the folder the bundle carries from memory. It applies every migration that table `_migrations` lacks, with their
+`_migrations` rows, in one call: rqlite runs the call as one transaction, so a failed migration records nothing. Call it after each deploy, or make it an App's
 `preApply` hook, which runs before the new revision serves (funcd ADR-0236).
 
 ## Queries
 
-[`src/db/proxy.ts`](src/db/proxy.ts) gives Drizzle a database whose driver is `context.sql`: reads go to
-`queryValues`, writes to `execute`, and a `batch` is one `execute`, all or nothing. `move` uses that: it creates the
+`funcdDrizzle` from [`@funcd-dev/drizzle`](../../drizzle) gives Drizzle a database whose driver is `context.sql`:
+reads go to `queryValues`, writes to `execute`, and a `batch` is one `execute`, all or nothing. `move` uses that: it creates the
 target notebook and moves the notes in one batch.
 
 ```ts
-const rows = await db(ctx)
+const rows = await funcdDrizzle(ctx, { schema })
   .select({ id: notes.id, notebook: notebooks.name, title: notes.title })
   .from(notes)
   .innerJoin(notebooks, eq(notes.notebookId, notebooks.id));
