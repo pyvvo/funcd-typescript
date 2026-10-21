@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.20.0](https://github.com/pyvvo/funcd-typescript/compare/v0.19.2...v0.20.0) (2026-10-21)
+
+
+### Features
+
+* **drizzle:** ship @funcd-dev/drizzle, Drizzle over context.sql (funcd ADR-0258) ([#88](https://github.com/pyvvo/funcd-typescript/issues/88)) ([11378f5](https://github.com/pyvvo/funcd-typescript/commit/11378f5cdb7003be3c0f67df9a2970f8f9969841))
+
 ## [0.19.2](https://github.com/pyvvo/funcd-typescript/compare/v0.19.1...v0.19.2) (2026-10-19)
 
 
