@@ -4136,6 +4136,24 @@ function drizzle(callback, batchCallback, config) {
 	return db;
 }
 //#endregion
+//#region ../../drizzle/dist/index.js
+var reads = /^\s*(select|with)\b/i;
+async function rows(ctx, alias, query, params, method) {
+	const p = params;
+	const values = reads.test(query) ? (await ctx.sql.queryValues(alias, query, p)).values : (await ctx.sql.execute(alias, query, p)).values ?? [];
+	return method === "get" ? values[0] ?? [] : values;
+}
+/**
+* Drizzle's sqlite-proxy database over context.sql's alias (default app). A batch is one execute, all or nothing, and is
+* for writes: a select inside it gets no rows, as execute returns rows only for RETURNING.
+*/
+function funcdDrizzle(ctx, options = {}) {
+	const alias = options.alias ?? "app";
+	return drizzle(async (query, params, method) => ({ rows: await rows(ctx, alias, query, params, method) }), async (queries) => {
+		return (await ctx.sql.execute(alias, queries.map((q) => [q.sql, q.params]))).map((r, i) => ({ rows: queries[i].method === "get" ? r.values?.[0] ?? [] : r.values ?? [] }));
+	}, { schema: options.schema });
+}
+//#endregion
 //#region src/db/schema.ts
 var schema_exports = /* @__PURE__ */ __exportAll({
 	notebooks: () => notebooks,
@@ -4154,20 +4172,8 @@ var notes = sqliteTable("notes", {
 	createdAt: text("created_at").notNull().default(sql`(CURRENT_TIMESTAMP)`)
 });
 //#endregion
-//#region src/db/proxy.ts
-var reads = /^\s*(select|with)\b/i;
-async function rows(ctx, alias, query, params, method) {
-	const p = params;
-	const values = reads.test(query) ? (await ctx.sql.queryValues(alias, query, p)).values : (await ctx.sql.execute(alias, query, p)).values ?? [];
-	return method === "get" ? values[0] ?? [] : values;
-}
-function db(ctx, alias = "app") {
-	return drizzle(async (query, params, method) => ({ rows: await rows(ctx, alias, query, params, method) }), async (queries) => {
-		return (await ctx.sql.execute(alias, queries.map((q) => [q.sql, q.params]))).map((r, i) => ({ rows: queries[i].method === "get" ? r.values?.[0] ?? [] : r.values ?? [] }));
-	}, { schema: schema_exports });
-}
-//#endregion
 //#region src/notes/main.ts
+var db = (ctx) => funcdDrizzle(ctx, { schema: schema_exports });
 async function notebookId(d, name) {
 	const [row] = await d.insert(notebooks).values({ name }).onConflictDoUpdate({
 		target: notebooks.name,

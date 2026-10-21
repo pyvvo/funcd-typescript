@@ -1,8 +1,9 @@
-// The notes function, the owner of notes-db: Drizzle queries over context.sql (src/db/proxy.ts).
+// The notes function, the owner of notes-db: Drizzle queries over context.sql (@funcd-dev/drizzle).
 import type { CloudEvent, FunctionContext } from '@funcd-dev/shim';
 import { asc, desc, eq, sql } from 'drizzle-orm';
 
-import { db } from '../db/proxy.ts';
+import { funcdDrizzle } from '@funcd-dev/drizzle';
+import * as schema from '../db/schema.ts';
 import { notebooks, notes } from '../db/schema.ts';
 
 export interface FuncInput {
@@ -27,6 +28,8 @@ export interface FuncOutput {
   notes?: Note[];
   changed?: number;
 }
+
+const db = (ctx: FunctionContext) => funcdDrizzle(ctx, { schema });
 
 // notebookId returns the id of notebook name, which an add creates on first use.
 async function notebookId(d: ReturnType<typeof db>, name: string): Promise<number> {
