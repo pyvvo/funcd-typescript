@@ -22,7 +22,8 @@ export const handle = async (ctx: FunctionContext) => ({ applied: await applyMig
 
 - `funcdDrizzle(ctx, { alias = 'app', schema })` is Drizzle's `sqlite-proxy` database. A `SELECT` or `WITH` goes to
   `context.sql.queryValues`, any other statement to `execute`, since Drizzle sends `insert … returning()` as a read.
-  A `batch` is one `execute`, all or nothing, and is for writes: a select inside it gets no rows.
+  A `batch` is one `execute`, all or nothing, and is for writes: a select inside it gets no rows. A `WITH` that writes
+  (`db.with(cte).insert(…)`) takes the read path too, so write without a `WITH`.
 - `applyMigrations(ctx, files, { alias = 'app', table = '_migrations' })` applies the drizzle-kit migrations the table
   lacks, with their rows, in one `execute`, and returns how many it applied. It reads them from `files`, a path to
   content map, and keeps the table as Drizzle's own `sqlite-proxy` migrator keeps it, so either one can take over from

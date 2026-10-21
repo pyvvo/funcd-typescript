@@ -56,7 +56,8 @@ function fakeSQL() {
       (r) => r.name,
     );
   const migrated = () => (db.prepare('SELECT hash, created_at FROM _migrations').all() as unknown[]).length;
-  return { ctx, calls, tables, migrated };
+  const rows = () => db.prepare('SELECT hash, created_at FROM _migrations ORDER BY created_at').all();
+  return { ctx, calls, tables, migrated, rows };
 }
 
 const notes = sqliteTable('notes', {
@@ -94,10 +95,17 @@ test('scenario: drizzle-routes-statements — a read goes to queryValues, any ot
   assert.deepEqual(await db.select().from(notes), [{ id: 1, title: 'buy milk' }]);
   assert.match(calls[0], /^execute insert into "notes"/, 'an insert with returning() goes to execute');
   assert.match(calls[1], /^queryValues select /, 'a select goes to queryValues');
+  calls.length = 0;
+  const titles = db.$with('titles').as(db.select({ title: notes.title }).from(notes));
+  assert.deepEqual(await db.with(titles).select().from(titles), [{ title: 'buy milk' }]);
+  assert.match(calls[0], /^queryValues with /, 'a WITH goes to queryValues');
+  // the fake's execute returns a select's rows, where rqlite returns none: here it shows how a batch maps a get
+  const [, first] = await db.batch([db.insert(notes).values({ title: 'call mom' }), db.query.notes.findFirst()]);
+  assert.deepEqual(first, { id: 1, title: 'buy milk' }, "a batch's get takes the first row");
   await assert.rejects(
     db.batch([db.insert(notes).values({ title: 'a' }), db.insert(notes).values({ title: null as unknown as string })]),
   );
-  assert.deepEqual(await db.select({ n: count() }).from(notes), [{ n: 1 }], 'a failed batch changes nothing');
+  assert.deepEqual(await db.select({ n: count() }).from(notes), [{ n: 2 }], 'a failed batch changes nothing');
 });
 
 test('scenario: drizzle-applies-pending-migrations — each migration applies once, with its row', async () => {
@@ -147,6 +155,7 @@ test("scenario: drizzle-compatible-table — Drizzle's own migrator and applyMig
     assert.equal(await applyMigrations(all.ctx, folder()), 2);
     await drizzleMigrate(all.ctx);
     assert.equal(all.migrated(), 2, "Drizzle's migrator applies nothing after applyMigrations");
+    assert.deepEqual(all.rows(), theirs.rows(), 'both write the same hash and created_at for each migration');
 
     const ours = fakeSQL();
     const first = folder();
