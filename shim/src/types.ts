@@ -7,7 +7,7 @@ import type { BlobClient } from './blob.ts';
 import type { SQLClient } from './sql.ts';
 import type { ConfigClient } from './config.ts';
 import type { SecretClient } from './secret.ts';
-import type { CatalogClient } from './catalog.ts';
+import type { LakeClient } from './lake.ts';
 
 export type { KVClient } from './kv.ts';
 export type { BlobClient, SignOptions } from './blob.ts';
@@ -22,7 +22,7 @@ export type {
 } from './sql.ts';
 export type { ConfigClient } from './config.ts';
 export type { SecretClient } from './secret.ts';
-export type { CatalogClient, CatalogEndpoint } from './catalog.ts';
+export type { LakeClient, LakeEndpoint } from './lake.ts';
 
 /** A CloudEvent — the normalized trigger envelope (ADR-0023). */
 export interface CloudEvent<T = unknown> {
@@ -68,8 +68,8 @@ export interface FunctionContext {
   config: ConfigClient;
   /** The keys and values of the Secrets a function binds, read from funcd on every call (funcd ADR-0249). */
   secret: SecretClient;
-  /** A bound catalog's proxy URL and this function's token, by spec.bindings.catalog alias (funcd ADR-0245). */
-  catalog: CatalogClient;
+  /** A bound lake's proxy URL and this function's token, by spec.bindings.lake alias (funcd ADR-0245). */
+  lake: LakeClient;
   /** Milliseconds left before the call's deadline (X-Funcd-Timeout-Ms), floored at 0; null without one (ADR-0226). */
   remainingMs(): number | null;
 }
