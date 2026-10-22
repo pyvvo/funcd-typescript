@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.21.0](https://github.com/pyvvo/funcd-typescript/compare/v0.20.0...v0.21.0) (2026-10-22)
+
+
+### ⚠ BREAKING CHANGES
+
+* **shim:** ctx.lake replaces ctx.catalog (funcd ADR-0261) ([#90](https://github.com/pyvvo/funcd-typescript/issues/90))
+
+### Features
+
+* **shim:** ctx.lake replaces ctx.catalog (funcd ADR-0261) ([#90](https://github.com/pyvvo/funcd-typescript/issues/90)) ([63b0b61](https://github.com/pyvvo/funcd-typescript/commit/63b0b61fa7a994ea70553bad2d3f6e0bbb3943fb))
+
 ## [0.20.0](https://github.com/pyvvo/funcd-typescript/compare/v0.19.2...v0.20.0) (2026-10-21)
 
 
