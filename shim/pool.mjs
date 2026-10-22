@@ -11470,14 +11470,14 @@ function makeSecret(member) {
   };
 }
 
-// src/catalog.ts
-function makeCatalog(env = process.env) {
+// src/lake.ts
+function makeLake(env = process.env) {
   return {
     get(alias) {
-      const prefix = `FUNCD_CATALOG_${alias.toUpperCase()}_`;
+      const prefix = `FUNCD_LAKE_${alias.toUpperCase()}_`;
       const url = env[`${prefix}URL`];
       const token = env[`${prefix}TOKEN`];
-      if (!url || !token) throw new Error(`context.catalog.get: catalog "${alias}" is not bound`);
+      if (!url || !token) throw new Error(`context.lake.get: lake "${alias}" is not bound`);
       return { url, token };
     }
   };
@@ -11593,7 +11593,7 @@ async function workerMain() {
     sql: makeSQL(spec.name),
     config: makeConfig(),
     secret: makeSecret(spec.name),
-    catalog: makeCatalog(),
+    lake: makeLake(),
     remainingMs
   };
   port.on("message", (msg) => {

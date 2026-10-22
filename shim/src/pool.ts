@@ -42,7 +42,7 @@ import { makeSQL } from './sql.ts';
 import { makeBlob } from './blob.ts';
 import { makeConfig } from './config.ts';
 import { makeSecret } from './secret.ts';
-import { makeCatalog } from './catalog.ts';
+import { makeLake } from './lake.ts';
 import { checkDependencies, type DependencyReport, dependencyCheckBudgetMs } from './dependencies.ts';
 import { deadlineFrom, nowMs, parseTimeoutMs, remainingMs } from './invcontext.ts';
 import {
@@ -164,7 +164,7 @@ async function workerMain(): Promise<void> {
     sql: makeSQL(spec.name),
     config: makeConfig(),
     secret: makeSecret(spec.name),
-    catalog: makeCatalog(),
+    lake: makeLake(),
     remainingMs,
   };
 
