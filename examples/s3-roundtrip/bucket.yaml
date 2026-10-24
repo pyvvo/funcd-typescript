@@ -22,7 +22,9 @@ metadata:
 spec:
   prefixes:
     - name: gold            # serving layer — written by s3-roundtrip (its owner → single writer)
-      owner: s3-roundtrip
+      owner:
+        kind: Function
+        name: s3-roundtrip
     - name: other           # an unowned, unbound prefix — s3-roundtrip must be DENIED here
     - name: shared          # unowned + unbound — writable by s3-roundtrip ONLY via the RolesAssignment grant
     - name: bi              # served by the bi Site (site.yaml) — no owner, nothing on the S3 wire writes it
