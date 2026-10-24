@@ -1,6 +1,6 @@
 {
   "name": "@funcd-dev/drizzle",
-  "version": "0.21.0",
+  "version": "0.22.0",
   "type": "module",
   "description": "Drizzle over funcd's context.sql: the sqlite-proxy database and drizzle-kit migrations applied in one execute",
   "license": "Apache-2.0",
