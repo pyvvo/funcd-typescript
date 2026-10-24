@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.22.0](https://github.com/pyvvo/funcd-typescript/compare/v0.21.0...v0.22.0) (2026-10-24)
+
+
+### ⚠ BREAKING CHANGES
+
+* **examples:** a Bucket prefix's owner names its kind (funcd ADR-0275) ([#92](https://github.com/pyvvo/funcd-typescript/issues/92))
+
+### Features
+
+* **examples:** a Bucket prefix's owner names its kind (funcd ADR-0275) ([#92](https://github.com/pyvvo/funcd-typescript/issues/92)) ([a67eb62](https://github.com/pyvvo/funcd-typescript/commit/a67eb628d4e696d9811b1bf208bd8ebc87985d28))
+
 ## [0.21.0](https://github.com/pyvvo/funcd-typescript/compare/v0.20.0...v0.21.0) (2026-10-22)
 
 
