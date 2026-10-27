@@ -20,7 +20,8 @@ spec:
     - name: lakehouse            # the Bucket (domain) this function owns
       prefixes:
         - name: gold             # serving layer — written by blob-object (its owner → single writer)
-      maxObjectBytes: 1073741824   # per-object cap (1 GiB)
+      quota:
+        maxObjectBytes: 1073741824   # per-object cap (1 GiB)
   bindings:
     blob:
       - alias: gold           # the in-code handle: ctx.blob.*('gold', …)
