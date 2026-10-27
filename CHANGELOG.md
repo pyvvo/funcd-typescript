@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.23.0](https://github.com/pyvvo/funcd-typescript/compare/v0.22.0...v0.23.0) (2026-10-27)
+
+
+### ⚠ BREAKING CHANGES
+
+* **examples:** per-item caps move into a store's quota block (funcd ADR-0292) ([#94](https://github.com/pyvvo/funcd-typescript/issues/94))
+
+### Features
+
+* **examples:** per-item caps move into a store's quota block (funcd ADR-0292) ([#94](https://github.com/pyvvo/funcd-typescript/issues/94)) ([b9b2167](https://github.com/pyvvo/funcd-typescript/commit/b9b2167741ed4c7d5261a9bfe2d7897d06414c81))
+
 ## [0.22.0](https://github.com/pyvvo/funcd-typescript/compare/v0.21.0...v0.22.0) (2026-10-24)
 
 
