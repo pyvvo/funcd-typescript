@@ -29,4 +29,5 @@ spec:
     - name: shared          # unowned + unbound — writable by s3-roundtrip ONLY via the RolesAssignment grant
     - name: bi              # served by the bi Site (site.yaml) — no owner, nothing on the S3 wire writes it
     - name: docs            # served by the docs Site (site-docs.yaml) — no owner
-  maxObjectBytes: 1073741824   # per-object cap (1 GiB)
+  quota:
+    maxObjectBytes: 1073741824   # per-object cap (1 GiB)
