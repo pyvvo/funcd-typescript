@@ -42,9 +42,9 @@ export interface CloudEvent<T = unknown> {
 export interface FunctionContext {
   /** Structured log line → stdout (collected by the platform, ADR-0010). */
   log(...args: unknown[]): void;
-  /** Synchronously invoke a linked function by its spec.bindings.links alias (ADR-0064). The input is
-   *  validated against the target's contract by the target's shim; its result is returned. Fails
-   *  closed (rejects) if the caller declares no such link.
+  /** Synchronously invoke a linked function by its spec.bindings.links alias (ADR-0064). funcd checks the
+   *  input against the target's contract (funcd ADR-0303); its result is returned. Fails closed (rejects) if
+   *  the caller declares no such link.
    *
    *  The target receives `input` as its `event.data`, except that an object with a top-level `data` or
    *  `specversion` key is taken as a full CloudEvent envelope (ADR-0134): the target receives only its
@@ -106,12 +106,3 @@ export function http(app: HttpApp): HttpHandler {
  *  generated contract is the empty schema `{}` (accepts any JSON). Typed as `unknown` so the
  *  handler must narrow before use — deliberately NOT the unsafe `any`. */
 export type Json = unknown;
-
-/** A single error from a precompiled validator. Shape kept loose (AJV vs pydantic differ); the
- *  shim only inspects the array length and echoes the errors as 422/500 details. */
-export type ValidationError = unknown;
-
-/** A precompiled, eval-free validator the push build inlines into the bundle from the author's
- *  FuncInput/FuncOutput type (ADR-0058). Returns [] when `data` is valid. The shim runs it; it
- *  never compiles a schema at runtime. */
-export type Validator = (data: unknown) => ValidationError[];

@@ -1,17 +1,14 @@
 // funcd Node runtime shim (TypeScript + Hono over node:http). Loads the function artifact,
 // resolves the handle(context, event) export (the authoritative materialization shape-gate),
 // and serves the runtime-shim HTTP contract:
-//   POST /                 CloudEvent -> [optional input contract] -> handler -> [optional output contract] -> response
-//                          (object->200 JSON, none/void->204, throw/output-mismatch->500, input-mismatch->422)
+//   POST /                 CloudEvent -> handler -> response (object->200 JSON, none->204, throw->500)
 //   GET  /health/readiness 200 once the handler resolved and funcd passes its dependencies (ADR-0215),
 //                          else 503 with funcd's dependency report
 //   GET  /health/liveness  200 while up; never calls funcd
 // With FUNCD_PROTOCOL=http (funcd ADR-0243) the export is an http(app) handler instead, and every request but
 // /health/* reaches it as the Request the edge received (createHttpApp).
-// If the bundle carries precompiled validators (ADR-0058, generated at push from the author's
-// FuncInput/FuncOutput types), event.data is validated before the handler runs (mismatch -> 422)
-// and the handler's result after (mismatch -> 500). The validators are eval-free (compiled at
-// push); the shim runs no schema compiler. A `void`/`None` output contract -> 204 (non-empty -> 500).
+// funcd checks each call's input and result against the Function's contract (funcd ADR-0303), so the shim checks
+// neither.
 // Env: FUNCD_ARTIFACT (local path), FUNCD_HANDLER (export, default "handle"); FUNCD_PORT
 // (container: bind 0.0.0.0:PORT) else FUNCD_PORTFILE (process: bind 127.0.0.1:0 + write the port).
 // Bundled (Hono inlined) to shim.mjs, so the runtime stays a single self-contained file.
@@ -27,11 +24,9 @@ import {
   protocolFrom,
   resolveHandler,
   resolveHttpHandler,
-  resolveValidators,
   toWire,
 } from './runtime.ts';
-import { ContractError, loadValidators } from './contract.ts';
-import type { CloudEvent, FunctionContext, Handler, HttpHandler, Validator } from './types.ts';
+import type { CloudEvent, FunctionContext, Handler, HttpHandler } from './types.ts';
 import { appRequest, streamed } from './httpapp.ts';
 import { makeFetch, makeInvoke } from './invoke.ts';
 import { makeKV } from './kv.ts';
@@ -45,9 +40,9 @@ import { deadlineFrom, remainingMs } from './invcontext.ts';
 import { installConsoleCapture, openChannel, recordBound, type Sink } from './funclog.ts';
 import { startSpan, parseLinks } from './tracespan.ts';
 
-export type { CloudEvent, FunctionContext, Handler, HttpHandler, Json, Validator } from './types.ts';
+export type { CloudEvent, FunctionContext, Handler, HttpHandler, Json } from './types.ts';
 export { http } from './types.ts';
-export { resolveHandler, resolveHttpHandler, resolveValidators } from './runtime.ts';
+export { resolveHandler, resolveHttpHandler } from './runtime.ts';
 
 interface TraceOptions {
   sink?: Sink | null;
@@ -89,18 +84,9 @@ function addHealth(app: Hono, health: HealthOptions): void {
   });
 }
 
-/** createApp builds the shim's HTTP app (the runtime contract) around a handler. The optional
- *  precompiled validators (ADR-0058) gate the I/O: `input` validates event.data BEFORE the handler
- *  (mismatch -> 422, handler never called); `output` validates the result AFTER (mismatch -> 500, a
- *  bad-shaped result never goes out as 200). A `void`/`None` output contract is just an output
- *  validator that accepts only an empty result, so empty -> 204 and a non-empty return -> 500.
- *  `health.dependencyBudgetMs` bounds the readiness check; unset is funcd's DependencyCheckBudget. */
-export function createApp(
-  handler: Handler,
-  validators: { input?: Validator; output?: Validator } = {},
-  trace: TraceOptions = {},
-  health: HealthOptions = {},
-): Hono {
+/** createApp builds the shim's HTTP app (the runtime contract) around a handler. `health.dependencyBudgetMs` bounds
+ *  the readiness check; unset is funcd's DependencyCheckBudget. */
+export function createApp(handler: Handler, trace: TraceOptions = {}, health: HealthOptions = {}): Hono {
   const app = new Hono();
   const traceSink = trace.sink ?? null; // ADR-0101: per-invocation span emitter (null ⇒ context only)
   const ctx = contextFor(traceSink, trace.bound);
@@ -121,14 +107,6 @@ export function createApp(
       // it cleanly — never let `event.data` throw and crash the worker.
       return c.text('request body must be a JSON object (CloudEvent envelope)', 400);
     }
-    if (validators.input) {
-      // ADR-0090: absent `data` is null, so a void (`{"type":"null"}`) input contract accepts it.
-      const errors = validators.input(event.data ?? null);
-      if (errors.length > 0) {
-        // ADR-0101: an input-mismatch short-circuits BEFORE the handler → no invocation, no span.
-        return c.json({ error: 'event data does not match the input contract', details: errors }, 422);
-      }
-    }
     // ADR-0101: a real invocation begins → open its SERVER span (adopts traceparent or mints a root);
     // the handler runs inside the span's context so its logs correlate. ADR-0105: a workflow step is
     // dispatched with the span-id to USE (X-Funcd-Span-Id) + its fan-in links (X-Funcd-Span-Links).
@@ -144,13 +122,6 @@ export function createApp(
     );
     try {
       const result = toWire(await span.run(() => handler(ctx, event)));
-      if (validators.output) {
-        const errors = validators.output(result);
-        if (errors.length > 0) {
-          span.end('ERROR', 'handler result does not match the output contract');
-          return c.json({ error: 'handler result does not match the output contract', details: errors }, 500);
-        }
-      }
       span.end('OK');
       if (result === null) return c.body(null, 204);
       return c.json(result as Record<string, unknown>);
@@ -229,28 +200,15 @@ async function main(): Promise<void> {
     process.exit(3);
   }
 
-  // ADR-0123: compile the delivered contract BEFORE importing the (untrusted) handler module — the
-  // bounded eval-free reversal (the ajv.compile runs over a contract.Check-gated, digest-pinned
-  // schema, ahead of any handler code). A set-but-broken FUNCD_CONTRACT_PATH fails closed (exit 3).
-  let delivered: { input?: Validator; output?: Validator } | null;
-  try {
-    delivered = loadValidators(process.env);
-  } catch (err) {
-    process.stderr.write(`funcd-shim: contract error: ${err instanceof ContractError ? err.message : err}\n`);
-    process.exit(3);
-  }
-
   const fnName = process.env.FUNCD_FUNCTION ?? 'invoke';
   const appTrace = { sink: channel, fnName, bound: recordBound(process.env) };
   let app: Hono;
   try {
     const mod = (await import(pathToFileURL(artifact).href)) as Record<string, unknown>;
-    // The delivered schema is authoritative when present; else fall back to the module-baked
-    // validators (transition back-compat for bundles still carrying __funcdValidate*).
     app =
       protocol === 'http'
         ? createHttpApp(resolveHttpHandler(mod, handlerName), appTrace)
-        : createApp(resolveHandler(mod, handlerName), delivered ?? resolveValidators(mod), appTrace);
+        : createApp(resolveHandler(mod, handlerName), appTrace);
   } catch (err) {
     process.stderr.write(`funcd-shim: shape error: ${err instanceof Error ? err.message : err}\n`);
     process.exit(3); // materialization shape-gate failure (ADR-0030)

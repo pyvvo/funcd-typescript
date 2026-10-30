@@ -38,8 +38,6 @@
     "build:lib": "tsc -p tsconfig.lib.json"
   },
   "dependencies": {
-    "ajv": "^8.20.0",
-    "ajv-formats": "^3.0.1",
     "ts-json-schema-generator": "^2.9.0"
   },
   "devDependencies": {
