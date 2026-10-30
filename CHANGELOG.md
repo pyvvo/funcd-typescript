@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.24.0](https://github.com/pyvvo/funcd-typescript/compare/v0.23.0...v0.24.0) (2026-10-30)
+
+
+### ⚠ BREAKING CHANGES
+
+* **shim:** the shim checks no contract, since funcd checks every call (funcd ADR-0303) ([#96](https://github.com/pyvvo/funcd-typescript/issues/96))
+
+### Features
+
+* **shim:** the shim checks no contract, since funcd checks every call (funcd ADR-0303) ([#96](https://github.com/pyvvo/funcd-typescript/issues/96)) ([51d376a](https://github.com/pyvvo/funcd-typescript/commit/51d376a68debdfb1edaa0004e4dee0c535d1d72b))
+
 ## [0.23.0](https://github.com/pyvvo/funcd-typescript/compare/v0.22.0...v0.23.0) (2026-10-27)
 
 
