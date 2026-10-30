@@ -17,25 +17,20 @@
 // loop does not answer within 10 s is ended and restarted. GET /health/liveness answers 503 while a worker the host
 // ended has not exited 10 s later, so funcd restarts the replica.
 //
-// Bundled (Hono inlined) to pool.mjs. Env: FUNCD_POOL_MANIFEST (JSON [{name,artifact,handler?,
-// contract?,env?}]), FUNCD_PORT | FUNCD_PORTFILE, FUNCD_POOL_MAX_OLD_MB (64), FUNCD_POOL_MAX_YOUNG_MB
-// (16), FUNCD_POOL_LOAD_TIMEOUT_MS (60000).
+// funcd checks each call's input and result against the member's contract (funcd ADR-0303), so the pool checks
+// neither.
+//
+// Bundled (Hono inlined) to pool.mjs. Env: FUNCD_POOL_MANIFEST (JSON [{name,artifact,handler?,env?}]),
+// FUNCD_PORT | FUNCD_PORTFILE, FUNCD_POOL_MAX_OLD_MB (64), FUNCD_POOL_MAX_YOUNG_MB (16),
+// FUNCD_POOL_LOAD_TIMEOUT_MS (60000).
 import { serve } from '@hono/node-server';
 import { Hono } from 'hono';
 import { readFileSync, realpathSync, writeFileSync } from 'node:fs';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { isMainThread, parentPort, Worker, workerData } from 'node:worker_threads';
 
-import {
-  containStrayFaults,
-  dropBrokenPipes,
-  exitOnSigterm,
-  resolveHandler,
-  resolveValidators,
-  toWire,
-} from './runtime.ts';
-import { ContractError, loadFromPath } from './contract.ts';
-import type { CloudEvent, FunctionContext, Handler, Validator } from './types.ts';
+import { containStrayFaults, dropBrokenPipes, exitOnSigterm, resolveHandler, toWire } from './runtime.ts';
+import type { CloudEvent, FunctionContext, Handler } from './types.ts';
 import { makeFetch, makeInvoke } from './invoke.ts';
 import { makeKV } from './kv.ts';
 import { makeSQL } from './sql.ts';
@@ -60,7 +55,6 @@ interface WorkerSpec {
   name: string;
   artifact: string; // absolute local path, resolved like the single shim's FUNCD_ARTIFACT
   handler?: string; // export name, default "handle"
-  contract?: string; // ADR-0123: delivered contract-blob path; the worker compiles its validator from it
   env?: Record<string, string>; // this member's own env, over the process env; no sibling sees it
 }
 interface WorkerInit extends WorkerSpec {
@@ -85,9 +79,8 @@ interface Res {
   id: number;
   result?: unknown;
   none?: boolean; // handler returned undefined/null → 204
-  status?: number; // 422 (contract) | 500 (throw)
+  status?: number; // 500 (throw) | 503 (unavailable)
   error?: string;
-  details?: unknown;
 }
 
 const maxOldMB = Number(process.env.FUNCD_POOL_MAX_OLD_MB ?? 64);
@@ -115,7 +108,7 @@ export function callTimeoutMs(header: string | undefined): number {
 }
 
 // =====================================================================================
-// Worker side: load one artifact, validate + run its handler on each request message.
+// Worker side: load one artifact, run its handler on each request message.
 // =====================================================================================
 async function workerMain(): Promise<void> {
   const spec = workerData as WorkerInit;
@@ -137,21 +130,10 @@ async function workerMain(): Promise<void> {
     process.exit(3);
   };
 
-  // ADR-0123: compile the delivered contract AHEAD of the handler import (the m3 reorder). A
-  // set-but-broken contract path fails the member closed.
-  let delivered: { input?: Validator; output?: Validator } | null = null;
-  try {
-    delivered = spec.contract ? loadFromPath(spec.contract) : null;
-  } catch (err) {
-    failLoad('contract error', err instanceof ContractError ? err.message : err);
-  }
-
   let handler!: Handler;
-  let validators!: { input?: Validator; output?: Validator };
   try {
     const mod = (await import(pathToFileURL(spec.artifact).href)) as Record<string, unknown>;
     handler = resolveHandler(mod, spec.handler ?? 'handle');
-    validators = delivered ?? resolveValidators(mod);
   } catch (err) {
     failLoad('shape error', err);
   }
@@ -176,20 +158,6 @@ async function workerMain(): Promise<void> {
     const req = msg;
     void (async () => {
       const event = req.event ?? ({} as CloudEvent);
-      if (validators.input) {
-        // ADR-0090: absent `data` is null, so a void (`{"type":"null"}`) input contract accepts it.
-        const errors = validators.input(event.data ?? null);
-        if (errors.length > 0) {
-          // ADR-0101: input-mismatch short-circuits before the handler → no invocation, no span.
-          port.postMessage({
-            id: req.id,
-            status: 422,
-            error: 'event data does not match the input contract',
-            details: errors,
-          });
-          return;
-        }
-      }
       // ADR-0101: a real invocation → its SERVER span (adopts req.traceparent or mints a root),
       // emitted on the worker's channel; the handler runs inside the span's context so logs correlate.
       const span = startSpan(
@@ -204,19 +172,6 @@ async function workerMain(): Promise<void> {
       );
       try {
         const result = toWire(await span.run(() => handler(ctx, event)));
-        if (validators.output) {
-          const errors = validators.output(result);
-          if (errors.length > 0) {
-            span.end('ERROR', 'handler result does not match the output contract');
-            port.postMessage({
-              id: req.id,
-              status: 500,
-              error: 'handler result does not match the output contract',
-              details: errors,
-            });
-            return;
-          }
-        }
         span.end('OK');
         if (result === null) {
           port.postMessage({ id: req.id, none: true });
@@ -540,9 +495,8 @@ export function createPool(
       parseLinks(c.req.header('x-funcd-span-links')),
       deadline,
     );
-    if (res.status === 422) return c.json({ error: res.error, details: res.details }, 422);
     if (res.status === 503) return c.json({ error: res.error }, 503);
-    if (res.status === 500) return c.json({ error: res.error, details: res.details }, 500);
+    if (res.status === 500) return c.json({ error: res.error }, 500);
     if (res.none) return c.body(null, 204);
     return c.json(res.result as Record<string, unknown>);
   });

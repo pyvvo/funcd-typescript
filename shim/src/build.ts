@@ -1,59 +1,23 @@
-// funcd Node contract compiler (BUILD-TIME, ADR-0058/0060). The TS analog of funcd_build.py:
-// for an author module declaring `FuncInput`/`FuncOutput` types it generates the JSON Schema
-// (ts-json-schema-generator — closed records, no $ref) and compiles a precompiled validator
-// (AJV-standalone) baked into the bundle as `__funcdValidateInput`/`__funcdValidateOutput`
-// (`(data) => Error[]`, [] ⇒ valid) — exactly what shim.ts's resolveValidators reads.
+// funcd Node contract build (BUILD-TIME, ADR-0058/0060). The TS analog of funcd_shim.build: for an
+// author module declaring `FuncInput`/`FuncOutput` types it generates the JSON Schema of each side
+// (ts-json-schema-generator — closed records, no $ref). It bakes no validator: funcd checks each call
+// against the contract itself (funcd ADR-0303).
 //
-// Runs on the push box; NOT bundled into shim.mjs. The TS interfaces vanish at compile (esbuild
-// erases types), so unlike Python there is no source-stripping — only the validator is injected.
+// Runs on the push box; NOT bundled into shim.mjs.
 //
 // (ADR-0060 names typia; typia needs a TS *transformer* (ts-patch) that does not compose with the
 //  esbuild bundle. ts-json-schema-generator is the no-transformer equivalent — same "TS type ->
-//  JSON Schema", same MIT licence; the runtime validator is still AJV-standalone as the ADR says.)
-import Ajv from 'ajv';
-import standaloneCode from 'ajv/dist/standalone/index.js';
+//  JSON Schema", same MIT licence.)
 import { createGenerator, type Schema } from 'ts-json-schema-generator';
 
 export interface ContractBuild {
-  /** an ESM module source defining the precompiled __funcdValidate* (null ⇒ no contract). */
-  validatorSource: string | null;
   inputSchema: Schema | null;
   outputSchema: Schema | null;
 }
 
-/** Compile the FuncInput/FuncOutput contract of the TS module at `tsPath`. */
+/** Build the FuncInput/FuncOutput contract of the TS module at `tsPath`; a side it does not declare is null. */
 export function buildContract(tsPath: string): ContractBuild {
-  const inputSchema = schemaFor(tsPath, 'FuncInput');
-  const outputSchema = schemaFor(tsPath, 'FuncOutput');
-  if (!inputSchema && !outputSchema) {
-    return { validatorSource: null, inputSchema: null, outputSchema: null };
-  }
-
-  // Register each schema under an $id, then standalone-code by id (the multi-export API takes
-  // schema ids, not compiled fns). standaloneCode emits `export const _funcdInput = …` — eval-free
-  // (compiled here, at build).
-  // strictSchema:false ⇒ AJV ignores the `discriminator` keyword we add for the gate (it validates
-  // a tagged union via `oneOf` alone; `discriminator` is metadata the Go profile gate requires).
-  const ajv = new Ajv({ code: { source: true, esm: true }, allErrors: true, strictSchema: false });
-  const refs: Record<string, string> = {};
-  if (inputSchema) {
-    ajv.addSchema({ ...(stripMeta(inputSchema) as object), $id: 'funcdInput' });
-    refs._funcdInput = 'funcdInput';
-  }
-  if (outputSchema) {
-    ajv.addSchema({ ...(stripMeta(outputSchema) as object), $id: 'funcdOutput' });
-    refs._funcdOutput = 'funcdOutput';
-  }
-  const base = (standaloneCode as unknown as (a: Ajv, v: Record<string, string>) => string)(ajv, refs);
-  const wrap = (name: string, fn: string): string =>
-    `export function ${name}(d) { return ${fn}(d) ? [] : (${fn}.errors ?? []); }\n`;
-  const validatorSource =
-    base +
-    '\n' +
-    (inputSchema ? wrap('__funcdValidateInput', '_funcdInput') : '') +
-    (outputSchema ? wrap('__funcdValidateOutput', '_funcdOutput') : '');
-
-  return { validatorSource, inputSchema, outputSchema };
+  return { inputSchema: schemaFor(tsPath, 'FuncInput'), outputSchema: schemaFor(tsPath, 'FuncOutput') };
 }
 
 /** Generate the JSON Schema for `type` from `tsPath`, inlined (no $ref) + closed records — the
@@ -122,7 +86,7 @@ function discriminatorTag(branches: unknown[]): string | null {
   return null;
 }
 
-/** Drop JSON-Schema meta keys AJV/the gate don't need (the contract is the type shape). */
+/** Drop JSON-Schema meta keys the gate doesn't need (the contract is the type shape). */
 function stripMeta(schema: Schema): Schema {
   const { $schema, $ref, definitions, ...rest } = schema as Record<string, unknown>;
   void $schema;

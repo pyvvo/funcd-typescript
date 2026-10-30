@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { createApp, type Validator } from '../src/shim.ts';
+import { createApp } from '../src/shim.ts';
 import { installConsoleCapture } from '../src/funclog.ts';
 import { parseTraceparent, startSpan } from '../src/tracespan.ts';
 
@@ -40,12 +40,10 @@ function snapshotConsole(): () => void {
   return () => Object.assign(console, saved);
 }
 
-const failing: Validator = () => [{ path: '', message: 'mismatch' }];
-
 // scenario: invocation-emits-span — one SERVER span, OK, name/start/end, well-formed ids.
 test('invocation-emits-span: POST / emits exactly one SERVER span (OK, name, start≤end, hex ids)', async () => {
   const c = collector();
-  const app = createApp(() => ({ ok: true }), {}, { sink: c.sink, fnName: 'greeter' });
+  const app = createApp(() => ({ ok: true }), { sink: c.sink, fnName: 'greeter' });
   const res = await app.request('/', jsonReq('{}'));
   assert.equal(res.status, 200);
 
@@ -65,7 +63,7 @@ test('invocation-emits-span: POST / emits exactly one SERVER span (OK, name, sta
 // scenario: mint-root-trace — no traceparent ⇒ a root (fresh 32-hex trace, empty parent).
 test('mint-root-trace: no traceparent → root span (32-hex trace, empty parent)', async () => {
   const c = collector();
-  const app = createApp(() => ({ ok: true }), {}, { sink: c.sink, fnName: 'f' });
+  const app = createApp(() => ({ ok: true }), { sink: c.sink, fnName: 'f' });
   await app.request('/', jsonReq('{}'));
   const s = c.spans()[0];
   assert.match(s.trace_id as string, /^[0-9a-f]{32}$/);
@@ -78,7 +76,7 @@ test('adopt-traceparent: span joins the caller trace (trace-id adopted, parent =
   const traceId = 'a'.repeat(32);
   const callerSpan = 'b'.repeat(16);
   const tp = `00-${traceId}-${callerSpan}-01`;
-  const app = createApp(() => ({ ok: true }), {}, { sink: c.sink, fnName: 'f' });
+  const app = createApp(() => ({ ok: true }), { sink: c.sink, fnName: 'f' });
   await app.request('/', jsonReq('{}', { traceparent: tp }));
 
   const s = c.spans()[0];
@@ -88,14 +86,13 @@ test('adopt-traceparent: span joins the caller trace (trace-id adopted, parent =
   assert.notEqual(s.span_id, callerSpan, 'this invocation mints its OWN span-id');
 });
 
-// scenario: error-span-status — throw and output-mismatch → ERROR (+ msg); input-mismatch → no span.
+// scenario: error-span-status — a handler throw → ERROR span (+ msg).
 test('error-span-status: handler throw → ERROR span with message', async () => {
   const c = collector();
   const app = createApp(
     () => {
       throw new Error('kaboom');
     },
-    {},
     { sink: c.sink, fnName: 'f' },
   );
   const res = await app.request('/', jsonReq('{}'));
@@ -103,22 +100,6 @@ test('error-span-status: handler throw → ERROR span with message', async () =>
   const s = c.spans()[0];
   assert.equal(s.status, 'ERROR');
   assert.match(s.status_msg as string, /kaboom/);
-});
-
-test('error-span-status: output-contract mismatch → ERROR span', async () => {
-  const c = collector();
-  const app = createApp(() => ({ bad: true }), { output: failing }, { sink: c.sink, fnName: 'f' });
-  const res = await app.request('/', jsonReq('{}'));
-  assert.equal(res.status, 500);
-  assert.equal(c.spans()[0].status, 'ERROR');
-});
-
-test('error-span-status: input-contract mismatch (422) → NO span (handler never runs)', async () => {
-  const c = collector();
-  const app = createApp(() => ({ ok: true }), { input: failing }, { sink: c.sink, fnName: 'f' });
-  const res = await app.request('/', jsonReq('{}'));
-  assert.equal(res.status, 422);
-  assert.equal(c.spans().length, 0, 'no invocation → no span');
 });
 
 // scenario: logs-correlated-to-span — a log emitted in the handler carries the span's trace/span ids.
@@ -133,7 +114,6 @@ test('logs-correlated-to-span: a console log inside the handler carries the invo
         ctx.log('inside');
         return { ok: true };
       },
-      {},
       { sink: c.sink, fnName: 'f' },
     );
     const res = await app.request('/', jsonReq('{}'));
@@ -165,7 +145,7 @@ test('parseTraceparent: valid header parses; malformed/all-zero → null', () =>
 // X-Funcd-Span-Links are attached as fan-in links.
 test('engine-owns-span-id: a provided X-Funcd-Span-Id is used and X-Funcd-Span-Links are attached', async () => {
   const c = collector();
-  const app = createApp(() => ({ ok: true }), {}, { sink: c.sink, fnName: 'step' });
+  const app = createApp(() => ({ ok: true }), { sink: c.sink, fnName: 'step' });
   const provided = 'abcdef0123456789';
   const res = await app.request(
     '/',
@@ -183,7 +163,7 @@ test('engine-owns-span-id: a provided X-Funcd-Span-Id is used and X-Funcd-Span-L
 // scenario: direct-invoke-unchanged (ADR-0105) — no X-Funcd-Span-Id → the shim mints its own id, no links.
 test('direct-invoke-unchanged: no X-Funcd-Span-Id → the shim mints its span-id (ADR-0101 unchanged)', async () => {
   const c = collector();
-  const app = createApp(() => ({ ok: true }), {}, { sink: c.sink, fnName: 'f' });
+  const app = createApp(() => ({ ok: true }), { sink: c.sink, fnName: 'f' });
   await app.request('/', jsonReq('{}'));
   const s = c.spans()[0];
   assert.match(s.span_id as string, /^[0-9a-f]{16}$/, 'minted span-id');

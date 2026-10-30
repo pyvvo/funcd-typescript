@@ -4,12 +4,13 @@ import { execFileSync } from 'node:child_process';
 import { closeSync, constants, createReadStream, openSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { once } from 'node:events';
 import { createServer } from 'node:http';
-import { dirname, join } from 'node:path';
+import { join } from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
 
 import type { Hono } from 'hono';
 
 import { callTimeoutMs, createPool, loadTimeoutMs, type MemberStatus } from '../src/pool.ts';
+import { startEntrypoint } from './entrypoint.ts';
 import { fakeDependencies } from './localapi.ts';
 import { post, writeHandlers } from './poolapp.ts';
 import { tempDir } from './tempdir.ts';
@@ -83,25 +84,37 @@ test('a handler over its memory quota OOMs its thread, not the pool', async (t) 
   }
 });
 
-// scenario: pool-contract — each pooled handler keeps its ADR-0058 input contract: the precompiled
-// __funcdValidateInput (generated at push from FuncInput) rejects a mismatching event.data with 422
-// before the handler runs.
-test('a pooled handler enforces its embedded input validator (422 on mismatch)', async (t) => {
-  const pool = createPool(
-    writeHandlers(t, {
-      c:
-        'export const __funcdValidateInput = (d) => (d && typeof d.hello === "string" ? [] : [{ message: "hello must be a string" }]);\n' +
-        'export function handle(_, e) { return { echoed: e.data }; }',
-    }),
-  );
-  await pool.ready;
+// funcd ADR-0303: funcd checks each call's input and result, so the pool runs a member's handler whatever the
+// contract its manifest names or a validator the module still exports would say.
+test('the pool checks no contract: a manifest contract and a baked validator are both ignored', async (t) => {
+  const [spec] = writeHandlers(t, {
+    c:
+      'export const __funcdValidateInput = () => [{ message: "rejected" }];\n' +
+      'export function handle(_, e) { return { echoed: e.data }; }',
+  });
+  const dir = tempDir(t, 'funcd-pool-contract-');
+  const contract = join(dir, 'contract.json');
+  writeFileSync(contract, JSON.stringify({ input: { type: 'null' }, output: { type: 'null' } }));
+  const manifest = join(dir, 'manifest.json');
+  writeFileSync(manifest, JSON.stringify([{ ...spec, contract }]));
+  const pool = await startEntrypoint('pool', { FUNCD_POOL_MANIFEST: manifest });
   try {
-    assert.equal((await post(pool.app, 'c', { hello: 'world' })).status, 200);
-    const bad = await post(pool.app, 'c', { hello: 123 });
-    assert.equal(bad.status, 422);
-    assert.match(((await bad.json()) as { error: string }).error, /input contract/);
+    const call = () =>
+      fetch(`http://127.0.0.1:${pool.port}/function/c`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ data: { hello: 123 } }),
+      });
+    let res = await call();
+    // The host answers 503 until the member has loaded.
+    for (let i = 0; res.status === 503 && i < 250; i++) {
+      await sleep(20);
+      res = await call();
+    }
+    assert.equal(res.status, 200);
+    assert.deepEqual(await res.json(), { echoed: { hello: 123 } });
   } finally {
-    await pool.close();
+    pool.child.kill();
   }
 });
 
@@ -153,46 +166,16 @@ test('issue 81: pooled functions logging concurrently on one fd 3 pipe keep ever
   assert.deepEqual(bodies, { a: lines, b: lines, unreadable: 0 }, 'one whole NDJSON record per console call');
 });
 
-// ADR-0090 Decision 2: a pooled null-typed input accepts absent or null `data`; non-null data → 422.
-test('issue 185: a pooled void input contract accepts absent or null data', async (t) => {
-  const [spec] = writeHandlers(t, { v: 'export function handle() {}' });
-  const contract = join(dirname(spec.artifact), 'contract.json');
-  writeFileSync(contract, JSON.stringify({ input: { type: 'null' }, output: { type: 'null' } }));
-  const pool = createPool([{ ...spec, contract }]);
-  await pool.ready;
-  try {
-    assert.equal((await post(pool.app, 'v', undefined)).status, 204, 'absent data → 204');
-    assert.equal((await post(pool.app, 'v', null)).status, 204, 'null data → 204');
-    assert.equal((await post(pool.app, 'v', { x: 1 })).status, 422, 'non-null data → 422');
-  } finally {
-    await pool.close();
-  }
-});
-
-// issue 186: a pooled handler's output contract checks the JSON the host sends, not the worker's JS
-// value (NaN is sent as null; an undefined key is not sent at all).
-test('issue 186: a pooled output contract checks the JSON that is sent', async (t) => {
-  const [spec] = writeHandlers(t, {
-    w: 'export function handle(_, e) { return e.data.nan ? { a: "x", n: NaN } : { a: "x", n: 1, extra: undefined }; }',
-  });
-  const contract = join(dirname(spec.artifact), 'contract.json');
-  writeFileSync(
-    contract,
-    JSON.stringify({
-      input: {},
-      output: {
-        type: 'object',
-        properties: { a: { type: 'string' }, n: { type: 'number' } },
-        required: ['a', 'n'],
-        additionalProperties: false,
-      },
+// issue 186: a pooled handler's result goes out as its JSON form (NaN is sent as null; an undefined key is not sent).
+test('issue 186: a pooled handler sends the JSON form of its result', async (t) => {
+  const pool = createPool(
+    writeHandlers(t, {
+      w: 'export function handle(_, e) { return e.data.nan ? { a: "x", n: NaN } : { a: "x", n: 1, extra: undefined }; }',
     }),
   );
-  const pool = createPool([{ ...spec, contract }]);
   await pool.ready;
   try {
-    const nan = await post(pool.app, 'w', { nan: true });
-    assert.equal(nan.status, 500, `NaN: sent as ${await nan.text()}`);
+    assert.equal(await (await post(pool.app, 'w', { nan: true })).text(), '{"a":"x","n":null}');
     const dropped = await post(pool.app, 'w', {});
     assert.equal(dropped.status, 200, 'an undefined key is not sent');
     assert.equal(await dropped.text(), '{"a":"x","n":1}');

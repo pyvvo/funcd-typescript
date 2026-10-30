@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
-import { createApp, resolveHandler, resolveValidators, type Validator } from '../src/shim.ts';
+import { createApp, resolveHandler } from '../src/shim.ts';
 import { startEntrypoint } from './entrypoint.ts';
 import { type Answer, fakeDependencies } from './localapi.ts';
 import { tempDir } from './tempdir.ts';
@@ -113,99 +113,40 @@ test('scenario handler-reads-deadline: ctx.remainingMs() counts down from x-func
   }
 });
 
-// The I/O contract (ADR-0058): precompiled, eval-free validators generated at push from the
-// author's FuncInput/FuncOutput types. The tests supply fakes standing in for the generated fns.
-const ce = (data: unknown) => jsonReq(JSON.stringify({ id: '1', source: 's', type: 't', data }));
-
-// requires event.data.hello to be a string (a stand-in for a generated FuncInput validator).
-const helloInput: Validator = (data) => {
-  const d = data as { hello?: unknown } | null;
-  return d != null && typeof d.hello === 'string' ? [] : [{ message: 'hello must be a string' }];
-};
-// requires the result to be { ok: boolean } (a stand-in for a generated FuncOutput validator).
-const okOutput: Validator = (r) => {
-  const o = r as { ok?: unknown } | null;
-  return o != null && typeof o.ok === 'boolean' ? [] : [{ message: 'ok must be a boolean' }];
-};
-// a `void`/`None` output contract: only an empty result is valid.
-const voidOutput: Validator = (r) => (r === null || r === undefined ? [] : [{ message: 'expected no body' }]);
-
-// scenario: generated-input-contract (valid) → handler runs (200).
-test('input validator + matching event.data runs the handler', async () => {
-  const app = createApp((_ctx, event) => ({ echoed: event.data }), { input: helloInput });
-  const res = await app.request('/', ce({ hello: 'funcd' }));
-  assert.equal(res.status, 200);
-  assert.deepEqual(await res.json(), { echoed: { hello: 'funcd' } });
+// issue 186: the shim sends the JSON form of the result: JSON.stringify drops an undefined key and writes a Date as a
+// string, and a result with no JSON form goes out as no body (204), not an empty 200.
+test('issue 186: the shim sends the JSON form of the result', async () => {
+  const send = (result: unknown) => createApp(() => result).request('/', jsonReq('{"data":{}}'));
+  const dropped = await send({ a: 'x', n: 1, extra: undefined });
+  assert.equal(dropped.status, 200);
+  assert.equal(await dropped.text(), '{"a":"x","n":1}');
+  assert.deepEqual(await (await send({ a: new Date(0), n: Number.NaN })).json(), {
+    a: '1970-01-01T00:00:00.000Z',
+    n: null,
+  });
+  assert.equal((await send(Symbol('s'))).status, 204);
 });
 
-// scenario: generated-input-contract (mismatch) → 422, handler never runs.
-test('input validator + mismatching event.data → 422 (handler not called)', async () => {
-  let called = false;
-  const app = createApp(
-    () => {
-      called = true;
-      return { ok: true };
-    },
-    { input: helloInput },
+// funcd ADR-0303: funcd checks each call's input and result, so the shim runs the handler whatever a delivered
+// contract or a validator the module still exports would say.
+test('the shim checks no contract: a delivered contract and a baked validator are both ignored', async (t) => {
+  const dir = tempDir(t, 'funcd-shim-test-');
+  const artifact = join(dir, 'handler.mjs');
+  writeFileSync(
+    artifact,
+    'export const __funcdValidateInput = () => [{ message: "rejected" }];\n' +
+      'export function handle(_ctx, event) { return { echoed: event.data }; }\n',
   );
-  const res = await app.request('/', ce({ hello: 123 }));
-  assert.equal(res.status, 422);
-  const body = (await res.json()) as { error: string; details: unknown[] };
-  assert.match(body.error, /input contract/);
-  assert.ok(body.details.length > 0, 'carries the validation errors');
-  assert.equal(called, false, 'a bad-shaped event never reaches user code');
-});
-
-// scenario: generated-output-contract → 500 on a bad result (never emitted as 200).
-test('output validator + bad result → 500 (result not emitted)', async () => {
-  const app = createApp(() => ({ wrong: true }), { output: okOutput });
-  const res = await app.request('/', ce({}));
-  assert.equal(res.status, 500);
-  const body = (await res.json()) as { error: string; details: unknown[] };
-  assert.match(body.error, /output contract/);
-  assert.ok(body.details.length > 0);
-});
-
-test('output validator + good result → 200', async () => {
-  const app = createApp(() => ({ ok: true }), { output: okOutput });
-  const res = await app.request('/', ce({}));
-  assert.equal(res.status, 200);
-  assert.deepEqual(await res.json(), { ok: true });
-});
-
-// scenario: returns-nothing-void → empty → 204, non-empty → 500.
-test('void output contract: empty return → 204, non-empty return → 500', async () => {
-  const empty = createApp(() => undefined, { output: voidOutput });
-  assert.equal((await empty.request('/', ce({}))).status, 204);
-  const nonEmpty = createApp(() => ({ surprise: true }), { output: voidOutput });
-  assert.equal((await nonEmpty.request('/', ce({}))).status, 500);
-});
-
-// scenario: json-input-accepts-anything → the `Json` validator ({}) passes any event.data.
-test('a Json input validator accepts any event.data → 200', async () => {
-  const jsonInput: Validator = () => []; // generated from `FuncInput = Json` → schema {} → accepts all
-  const app = createApp((_ctx, event) => ({ echoed: event.data }), { input: jsonInput });
-  const res = await app.request('/', ce({ literally: ['anything', 1, true] }));
-  assert.equal(res.status, 200);
-});
-
-// scenario: no-types-no-validation → no validators, nothing is validated (V1 behavior).
-test('no validators → unvalidated (backward compatible)', async () => {
-  const app = createApp((_ctx, event) => ({ echoed: event.data }));
-  const res = await app.request('/', ce({ anything: [1, 2, 3] }));
-  assert.equal(res.status, 200);
-});
-
-// resolveValidators reads the precompiled __funcdValidateInput/Output exports; undefined when absent.
-test('resolveValidators reads __funcdValidateInput/Output, undefined when absent', () => {
-  const v = resolveValidators({ __funcdValidateInput: helloInput, __funcdValidateOutput: okOutput });
-  assert.equal(typeof v.input, 'function');
-  assert.equal(typeof v.output, 'function');
-  const none = resolveValidators({});
-  assert.equal(none.input, undefined);
-  assert.equal(none.output, undefined);
-  // a non-function export is ignored (treated as absent), not trusted.
-  assert.equal(resolveValidators({ __funcdValidateInput: 'nope' }).input, undefined);
+  const contract = join(dir, 'contract.json');
+  writeFileSync(contract, JSON.stringify({ input: { type: 'null' }, output: { type: 'null' } }));
+  const shim = await startEntrypoint('shim', { FUNCD_ARTIFACT: artifact, FUNCD_CONTRACT_PATH: contract });
+  try {
+    const res = await fetch(`http://127.0.0.1:${shim.port}/`, jsonReq(JSON.stringify({ data: { hello: 123 } })));
+    assert.equal(res.status, 200);
+    assert.deepEqual(await res.json(), { echoed: { hello: 123 } });
+  } finally {
+    shim.child.kill();
+  }
 });
 
 // A handler for the stray-fault tests. A 'wait' call blocks until a fault call has fired its stray
@@ -283,7 +224,7 @@ const auditForbidden = {
 };
 
 // A wide budget, so only the test of the bound depends on timing.
-const appWide = () => createApp(() => ({}), {}, {}, { dependencyBudgetMs: 5_000 });
+const appWide = () => createApp(() => ({}), {}, { dependencyBudgetMs: 5_000 });
 
 async function readiness(t: TestContext, answer: Answer, app = appWide()) {
   const api = await fakeDependencies(t, () => answer);
