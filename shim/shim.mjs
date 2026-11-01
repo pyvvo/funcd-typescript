@@ -4490,10 +4490,6 @@ async function main() {
 `);
     process.exit(2);
   }
-  if (protocol === "http" && process.env.FUNCD_CONTRACT_PATH) {
-    process.stderr.write("funcd-shim: contract error: a Function with spec.protocol: http has no I/O contract\n");
-    process.exit(3);
-  }
   const fnName = process.env.FUNCD_FUNCTION ?? "invoke";
   const appTrace = { sink: channel, fnName, bound: recordBound(process.env) };
   let app;

@@ -234,13 +234,12 @@ test('scenario http-rest: the shim serves an http(app) export under FUNCD_PROTOC
   }
 });
 
-test('scenario http-mismatch: a protocol and an export that disagree, or a delivered contract, stop the shim with exit 3', {
+test('scenario http-mismatch: a protocol and an export that disagree stop the shim with exit 3', {
   timeout: 15_000,
 }, async (t) => {
   const cases: Record<string, string>[] = [
     { FUNCD_ARTIFACT: artifact(t, eventArtifact), FUNCD_PROTOCOL: 'http' },
     { FUNCD_ARTIFACT: artifact(t, httpArtifact) },
-    { FUNCD_ARTIFACT: artifact(t, httpArtifact), FUNCD_PROTOCOL: 'http', FUNCD_CONTRACT_PATH: '/absent/contract.json' },
   ];
   for (const env of cases) {
     await assert.rejects(startEntrypoint('shim', env), /exited 3 before listening/);
