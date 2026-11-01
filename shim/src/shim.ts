@@ -194,11 +194,6 @@ async function main(): Promise<void> {
     process.stderr.write(`funcd-shim: ${err instanceof Error ? err.message : err}\n`);
     process.exit(2);
   }
-  // funcd ADR-0243: an HTTP Function has no I/O contract, so a delivered one is a mismatch, not something to ignore.
-  if (protocol === 'http' && process.env.FUNCD_CONTRACT_PATH) {
-    process.stderr.write('funcd-shim: contract error: a Function with spec.protocol: http has no I/O contract\n');
-    process.exit(3);
-  }
 
   const fnName = process.env.FUNCD_FUNCTION ?? 'invoke';
   const appTrace = { sink: channel, fnName, bound: recordBound(process.env) };
