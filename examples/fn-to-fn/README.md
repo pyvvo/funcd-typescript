@@ -30,8 +30,8 @@ tsconfig.json    # @funcd-dev/shim → ../../shim/src/types.ts (so context.invok
 Each handler declares a typed **`FuncInput`/`FuncOutput`** (ADR-0058). `yarn build` only bundles: it
 writes one self-contained `.mjs` per handler (dependencies inlined) and derives no schema from the
 types. The I/O contract lives in each function's **`<fn>.contract.yaml`** (`input` /
-`output`): `funcdctl push <fn>.mjs <ref>` reads it from the contract file beside the file, and the
-shim compiles a validator from the pushed contract at worker start (ADR-0123) and runs it — bad input →
+`output`): `funcdctl push <fn>.mjs <ref>` reads it from the contract file beside the file, and funcd
+checks each call against it (funcd ADR-0303) — bad input →
 **422**, before the handler. So the typed contracts are *enforced*, not decoration — and a fn-to-fn
 invoke with a bad payload gets the target's 422 **propagated back** (see the e2e). `greeter` requires
 `name`; `front` makes it optional so it can forward a payload greeter rejects.

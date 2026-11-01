@@ -2,8 +2,8 @@ import type { Handler } from '@funcd-dev/shim';
 
 /**
  * What greeter accepts — the CloudEvent `data` (ADR-0058 I/O contract). The matching closed JSON
- * Schema lives in greeter.contract.yaml (`input`); the shim compiles a validator from the
- * pushed contract at worker start and runs it BEFORE the handler: a wrong-shaped input
+ * Schema lives in greeter.contract.yaml (`input`); funcd checks each call against it BEFORE the
+ * handler (funcd ADR-0303): a wrong-shaped input
  * (missing/!string `name`) is rejected with **422** and never reaches `handle`. `name` is required.
  */
 export interface FuncInput {
@@ -17,7 +17,7 @@ export interface FuncOutput {
 
 /**
  * greeter — the CALLEE in the fn-to-fn link example (ADR-0064). An ordinary function; another
- * function reaches it only through a declared link (see front.ts). The shim already validated
+ * function reaches it only through a declared link (see front.ts). funcd already checked
  * `event.data` against FuncInput, so `name` is present and a string here.
  */
 export const handle: Handler<FuncInput, FuncOutput> = (context, event) => {

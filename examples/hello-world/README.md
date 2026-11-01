@@ -8,7 +8,7 @@ contract** of a handler.
 
 [`src/main.ts`](src/main.ts) exports `handle`, typed as `Handler<FuncInput, FuncOutput>`
 imported from `@funcd-dev/shim` — so `context`, the CloudEvent `event`, and the return value
-are checked at compile time against the same contract the shim enforces at runtime (ADR-0037).
+are checked at compile time against the same contract the platform enforces at runtime (ADR-0037).
 
 The two exported interfaces **`FuncInput`** and **`FuncOutput`** are the TypeScript side of the I/O
 contract (ADR-0058). You write them as ordinary TypeScript types; the matching JSON Schema lives in
@@ -32,7 +32,7 @@ export const handle: Handler<FuncInput, FuncOutput> = (context, event) => {
 };
 ```
 
-### How the contract is enforced (ADR-0058 / ADR-0060)
+### How the contract is enforced (ADR-0058 / ADR-0303)
 
 You supply a *schema*, never a validator. The build (`yarn build`) only bundles the handler; it
 derives no schema from the types. Instead:
@@ -42,17 +42,16 @@ derives no schema from the types. Instead:
    records, scalars, enums, arrays, string-keyed maps, discriminated unions, `Json`; no open
    records, no recursion);
 2. `funcdctl push hello-world.mjs <ref>` reads the contract and runtime from the manifest beside the
-   file and ships them with the artifact;
-3. at worker start the shim compiles a validator from the pushed contract (ADR-0123).
+   file and ships them with the artifact.
 
-At runtime the shim runs those validators around your handler:
+At call time funcd checks each call against the contract around your handler (funcd ADR-0303):
 
 | Situation | Result |
 |---|---|
 | `event.data` doesn't match `FuncInput` | **422** — `handle` is never called |
 | return value doesn't match `FuncOutput` | **500** — the bug is server-side |
 | handler returns nothing (`void`/`undefined`) | **204** |
-| no `FuncInput`/`FuncOutput` declared | unvalidated (the pre-contract V1 behavior) |
+| the artifact carries no contract | the Function fails with `ContractMissing` (funcd ADR-0090: every function has a contract, a void side as `{"type":"null"}`) |
 
 So inside `handle` the input is already valid — narrow with `!` (the envelope's `data?:` is
 optional only so a contract-less function may omit it).
@@ -122,6 +121,6 @@ if omitted. `just demo` runs this whole journey end to end.
   `shim/src/types.ts`). When `@funcd-dev/shim` is published, this becomes a plain
   `yarn add -D @funcd-dev/shim` (ADR-0037 open question).
 - `import type { Handler }` is erased at build time, so `hello-world.mjs` carries **no** shim
-  dependency — your function bundles only the libraries it actually uses at runtime. The
-  validators are not in the bundle at all: the shim compiles them from the pushed contract at
-  worker start (ADR-0123).
+  dependency — your function bundles only the libraries it actually uses at runtime. No
+  validator is in the bundle or the shim: funcd checks each call against the pushed contract
+  (funcd ADR-0303).
