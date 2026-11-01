@@ -5,7 +5,7 @@ import type { CloudEvent, FunctionContext } from '@funcd-dev/shim';
 import { handle, type FuncInput } from '../src/main.ts';
 
 // The author's unit tests exercise the handler directly — the platform owns input/output
-// *validation* (the shim compiles the validators from the contract in hello-world.contract.yaml and runs them),
+// *validation* (funcd checks each call against the contract in hello-world.contract.yaml),
 // so these tests assert behavior on already-valid input.
 
 test('handle greets by name and echoes the trigger', () => {

@@ -5,9 +5,9 @@ import type { Handler } from '@funcd-dev/shim';
  *
  * This is a *closed record* in the supported profile: scalar fields, one optional. The matching
  * JSON Schema lives in `hello-world.contract.yaml` (`input`); `funcdctl push` ships it with the
- * bundle, and the shim compiles a validator from it at worker start. The shim runs that
- * validator on every `event.data` **before** `handle` is called — a bad-shaped event is rejected
- * with **422** and never reaches this code, so inside the handler the input is already valid.
+ * bundle, and funcd checks every `event.data` against it **before** `handle` is called (funcd
+ * ADR-0303) — a bad-shaped event is rejected with **422** and never reaches this code, so inside
+ * the handler the input is already valid.
  */
 export interface FuncInput {
   /** Who to greet. */
@@ -34,7 +34,7 @@ export interface FuncOutput {
  * `FUNCD_HANDLER` resolves.
  */
 export const handle: Handler<FuncInput, FuncOutput> = (context, event) => {
-  // The shim already validated `event.data` against FuncInput (422 otherwise), so it is present
+  // funcd already checked `event.data` against FuncInput (422 otherwise), so it is present
   // and well-shaped here. `!` tells the compiler what the runtime guarantees (`data?:` is optional
   // on the envelope only because a contract-less function may omit it).
   const { name, excited } = event.data!;

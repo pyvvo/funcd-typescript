@@ -14,8 +14,8 @@ ingest ── score ──┬── hi  (when score > 30) ──┐
 - **report** — `join: any` merges whichever branch survived; its output is the run output.
 
 Each step is an ordinary contract-bearing function (`src/<step>.ts`, `FuncInput`/`FuncOutput`): the
-dispatcher delivers the flowing input as a CloudEvent `data`, the shim validates it against the
-step's contract (declared in `<step>.contract.yaml`, compiled at worker start), and the return value
+dispatcher delivers the flowing input as a CloudEvent `data`, funcd checks it against the
+step's contract (declared in `<step>.contract.yaml`), and the return value
 flows on. `funcdctl push` records each step's runtime (`nodejs22`, the `dev.funcd.runtime.v1`
 annotation) from that manifest, so the materializer resolves each step's runtime from the
 manifest alone.

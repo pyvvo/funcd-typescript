@@ -25,13 +25,13 @@ await ctx.kv.del('counters', name);                  // DELETE
 const keys = await ctx.kv.list('counters', 'a');     // GET  /kv/counters?prefix=a  (string[])
 ```
 
-## Contract (ADR-0058/0060)
+## Contract (ADR-0058/0303)
 
 The closed JSON Schema for the handler's `FuncInput` / `FuncOutput` lives in
 [`counter.contract.yaml`](counter.contract.yaml) (`input` / `output`), like `examples/fn-to-fn`.
 `yarn build` only bundles `counter.mjs`; `funcdctl push counter.mjs <ref>` reads the contract from the
-contract file beside the file and pushes it as OCI metadata, and the shim compiles a validator from it at
-worker start (ADR-0123), so a malformed call is rejected (422) before the handler runs — KV functions
+contract file beside the file and pushes it as OCI metadata, and funcd checks each call against it
+(funcd ADR-0303), so a malformed call is rejected (422) before the handler runs — KV functions
 are contract-validated, not just KV-enabled.
 
 ## Run it locally (`funcdctl dev`)
