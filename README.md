@@ -49,9 +49,10 @@ export const handle = http(app);
 ```
 
 Every request but the shim's own `/health/*` reaches the app with its method, path, query and headers, and the app's
-`Response` goes back as is, streamed. Only funcd's edge calls such a Function; another Function reaches it with
-`context.fetch(alias, path, init)` over a link, which resolves with the app's reply, whatever its status, and rejects
-when funcd refuses the call (no link, or a target that does not serve HTTP). See
+`Response` goes back as is, streamed. funcd's edge answers a path under `/health/` itself with 404 (funcd ADR-0316), so
+keep the app's routes outside that prefix; `/health` itself reaches the app. Only funcd's edge calls such a Function;
+another Function reaches it with `context.fetch(alias, path, init)` over a link, which resolves with the app's reply,
+whatever its status, and rejects when funcd refuses the call (no link, or a target that does not serve HTTP). See
 [`examples/http-api`](examples/http-api).
 
 ## Bundle your functions
