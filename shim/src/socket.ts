@@ -7,9 +7,11 @@ import { MEMBER_HEADER } from './invoke.ts';
 export interface Resp {
   status: number;
   body: Buffer;
+  /** The reply's ETag, when it has one: a KV key's version. */
+  etag?: string;
 }
 
-/** send makes one request; `client` names the context client in its errors ("context.kv"). */
+/** send makes one request with `extra` headers; `client` names the context client in its errors ("context.kv"). */
 export function send(
   client: string,
   method: string,
@@ -17,6 +19,7 @@ export function send(
   body: Buffer | undefined,
   member: string | undefined,
   contentType?: string,
+  extra?: Record<string, string>,
 ): Promise<Resp> {
   return new Promise<Resp>((resolve, reject) => {
     const socketPath = process.env.FUNCD_INVOKE_SOCKET;
@@ -28,6 +31,7 @@ export function send(
     if (body) headers['content-length'] = body.byteLength;
     if (contentType) headers['content-type'] = contentType;
     if (member) headers[MEMBER_HEADER] = member;
+    Object.assign(headers, extra);
     const req = http.request({ socketPath, path, method, headers }, (res) => {
       const chunks: Buffer[] = [];
       // A connection that drops mid-body errors the response, not the request, and never ends it.
@@ -37,7 +41,9 @@ export function send(
         ),
       );
       res.on('data', (c: Buffer) => chunks.push(c));
-      res.on('end', () => resolve({ status: res.statusCode ?? 0, body: Buffer.concat(chunks) }));
+      res.on('end', () =>
+        resolve({ status: res.statusCode ?? 0, body: Buffer.concat(chunks), etag: res.headers.etag }),
+      );
     });
     req.on('error', (err) => reject(new Error(`${client} ${method} ${path} failed: ${err.message}`, { cause: err })));
     if (body) req.end(body);
