@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.25.0](https://github.com/pyvvo/funcd-typescript/compare/v0.24.0...v0.25.0) (2026-11-09)
+
+
+### Features
+
+* **shim:** context.kv writes that hold only while a condition holds, and keys that expire ([#101](https://github.com/pyvvo/funcd-typescript/issues/101)) ([256b588](https://github.com/pyvvo/funcd-typescript/commit/256b5880743b8d4124c72a6937fa0e79514e8238))
+
 ## [0.24.0](https://github.com/pyvvo/funcd-typescript/compare/v0.23.0...v0.24.0) (2026-10-30)
 
 
