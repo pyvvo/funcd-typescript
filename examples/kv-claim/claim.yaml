@@ -1,0 +1,25 @@
+# kv-claim — races for a claim on a key in the KV binding "claims" with context.kv's conditional writes.
+# The function owns its KVStore: the root `kv` entry creates claims-kv with the claims table, whose owner defaults to
+# the function (funcd ADR-0248). The Python sibling pyclaim writes the same table through a writer role.
+apiVersion: funcd.io/v1alpha1
+kind: Function
+metadata:
+  name: claim
+  namespace: default
+  resourceGroup: rg1
+spec:
+  runtime: nodejs22
+  handler: handle
+  image: oci-layout:///mnt/funcd-deps/registry:claim   # funcdctl push claim.mjs (built from src/main.ts)
+  replicas: 1
+  scaling:
+    minReplicas: 1
+  kv:
+    - name: claims-kv
+      tables:
+        - name: claims
+  bindings:
+    kv:
+      - alias: claims
+        store: claims-kv
+        table: claims

@@ -884,6 +884,17 @@ __metadata:
   languageName: unknown
   linkType: soft
 
+"@funcd-dev/example-kv-claim@workspace:examples/kv-claim":
+  version: 0.0.0-use.local
+  resolution: "@funcd-dev/example-kv-claim@workspace:examples/kv-claim"
+  dependencies:
+    "@funcd-dev/vite-plugin": "workspace:*"
+    "@types/node": "npm:^22.0.0"
+    typescript: "npm:^5.7.0"
+    vite: "npm:^8.3.2"
+  languageName: unknown
+  linkType: soft
+
 "@funcd-dev/example-kv-counter@workspace:examples/kv-counter":
   version: 0.0.0-use.local
   resolution: "@funcd-dev/example-kv-counter@workspace:examples/kv-counter"

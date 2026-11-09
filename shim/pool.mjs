@@ -3610,8 +3610,8 @@ function walk(value, key, path2, b, out) {
       out.push(fitText(b, "}"));
     } else if (o instanceof DataView || o instanceof ArrayBuffer || o instanceof SharedArrayBuffer) {
       const buf = o instanceof DataView ? o.buffer : o;
-      const bytes = buf.byteLength === 0 ? new Uint8Array(0) : o instanceof DataView ? new Uint8Array(buf, o.byteOffset, o.byteLength) : new Uint8Array(buf);
-      elements(bytes.length, (i) => out.push(fitText(b, String(bytes[i]))), b, out);
+      const bytes2 = buf.byteLength === 0 ? new Uint8Array(0) : o instanceof DataView ? new Uint8Array(buf, o.byteOffset, o.byteLength) : new Uint8Array(buf);
+      elements(bytes2.length, (i) => out.push(fitText(b, String(bytes2[i]))), b, out);
     } else if (ArrayBuffer.isView(o)) {
       const view = o;
       elements(view.length, (i) => walk(view[i], String(i), path2, b, out), b, out);
@@ -3782,8 +3782,8 @@ function parseTraceparent(tp) {
   if (!tp) return null;
   const parts = tp.trim().split("-");
   if (parts.length < 4) return null;
-  const [version, traceId, parentId] = parts;
-  if (!/^[0-9a-f]{2}$/.test(version) || version === "ff") return null;
+  const [version2, traceId, parentId] = parts;
+  if (!/^[0-9a-f]{2}$/.test(version2) || version2 === "ff") return null;
   if (!/^[0-9a-f]{32}$/.test(traceId) || traceId === ZERO_TRACE) return null;
   if (!/^[0-9a-f]{16}$/.test(parentId) || parentId === ZERO_SPAN) return null;
   return { traceId, parentId };
@@ -4019,7 +4019,7 @@ function makeFetch(opts = {}) {
 
 // src/socket.ts
 import http2 from "node:http";
-function send(client, method, path2, body, member, contentType2) {
+function send(client, method, path2, body, member, contentType2, extra) {
   return new Promise((resolve, reject) => {
     const socketPath = process.env.FUNCD_INVOKE_SOCKET;
     if (!socketPath) {
@@ -4030,6 +4030,7 @@ function send(client, method, path2, body, member, contentType2) {
     if (body) headers["content-length"] = body.byteLength;
     if (contentType2) headers["content-type"] = contentType2;
     if (member) headers[MEMBER_HEADER] = member;
+    Object.assign(headers, extra);
     const req = http2.request({ socketPath, path: path2, method, headers }, (res) => {
       const chunks = [];
       res.on(
@@ -4039,7 +4040,10 @@ function send(client, method, path2, body, member, contentType2) {
         )
       );
       res.on("data", (c) => chunks.push(c));
-      res.on("end", () => resolve({ status: res.statusCode ?? 0, body: Buffer.concat(chunks) }));
+      res.on(
+        "end",
+        () => resolve({ status: res.statusCode ?? 0, body: Buffer.concat(chunks), etag: res.headers.etag })
+      );
     });
     req.on("error", (err) => reject(new Error(`${client} ${method} ${path2} failed: ${err.message}`, { cause: err })));
     if (body) req.end(body);
@@ -4048,7 +4052,7 @@ function send(client, method, path2, body, member, contentType2) {
 }
 
 // src/kv.ts
-var send2 = (method, path2, body, member) => send("context.kv", method, path2, body, member);
+var send2 = (method, path2, body, member, headers) => send("context.kv", method, path2, body, member, void 0, headers);
 var enc = encodeURIComponent;
 var keyPath = (binding, key) => `/kv/${enc(binding)}/${key.split("/").map(enc).join("/")}`;
 var fail = (verb, r) => new Error(`context.kv.${verb} failed: ${r.status} ${r.body.toString("utf8")}`);
@@ -4062,14 +4066,35 @@ var json2 = (verb, r, text) => {
     });
   }
 };
+var version = (r) => (r.etag ?? "").replace(/^"|"$/g, "");
+var withTTL = (path2, opts) => {
+  if (opts?.ttl === void 0) return path2;
+  if (!Number.isSafeInteger(opts.ttl) || opts.ttl < 1) {
+    throw new RangeError(`context.kv: ttl must be a whole number of seconds from 1, not ${opts.ttl}`);
+  }
+  return `${path2}?ttl=${opts.ttl}`;
+};
+var bytes = (value) => typeof value === "string" ? Buffer.from(value, "utf8") : Buffer.from(value);
 function makeKV(member) {
-  const request = (method, path2, body) => send2(method, path2, body, member);
+  const request = (method, path2, body, headers) => send2(method, path2, body, member, headers);
+  const conditionalPut = async (verb, binding, key, value, opts, headers) => {
+    const r = await request("PUT", withTTL(keyPath(binding, key), opts), bytes(value), headers);
+    if (r.status === 412) return null;
+    if (!ok(r)) throw fail(verb, r);
+    return version(r);
+  };
   return {
     async get(binding, key) {
       const r = await request("GET", keyPath(binding, key));
       if (r.status === 404) return null;
       if (!ok(r)) throw fail("get", r);
       return new Uint8Array(r.body);
+    },
+    async getEntry(binding, key) {
+      const r = await request("GET", keyPath(binding, key));
+      if (r.status === 404) return null;
+      if (!ok(r)) throw fail("getEntry", r);
+      return { value: new Uint8Array(r.body), version: version(r) };
     },
     async getText(binding, key) {
       const r = await request("GET", keyPath(binding, key));
@@ -4083,14 +4108,25 @@ function makeKV(member) {
       if (!ok(r)) throw fail("get", r);
       return json2("getJSON", r, r.body.toString("utf8"));
     },
-    async put(binding, key, value) {
-      const buf = typeof value === "string" ? Buffer.from(value, "utf8") : Buffer.from(value);
-      const r = await request("PUT", keyPath(binding, key), buf);
+    async put(binding, key, value, opts) {
+      const r = await request("PUT", withTTL(keyPath(binding, key), opts), bytes(value));
       if (!ok(r)) throw fail("put", r);
+    },
+    putIfAbsent(binding, key, value, opts) {
+      return conditionalPut("putIfAbsent", binding, key, value, opts, { "if-none-match": "*" });
+    },
+    compareAndSet(binding, key, value, v, opts) {
+      return conditionalPut("compareAndSet", binding, key, value, opts, { "if-match": `"${v}"` });
     },
     async del(binding, key) {
       const r = await request("DELETE", keyPath(binding, key));
       if (!ok(r)) throw fail("del", r);
+    },
+    async delIf(binding, key, v) {
+      const r = await request("DELETE", keyPath(binding, key), void 0, { "if-match": `"${v}"` });
+      if (r.status === 412) return false;
+      if (!ok(r)) throw fail("delIf", r);
+      return true;
     },
     async list(binding, prefix) {
       const q = prefix ? `?prefix=${enc(prefix)}` : "";

@@ -9,7 +9,7 @@ import type { ConfigClient } from './config.ts';
 import type { SecretClient } from './secret.ts';
 import type { LakeClient } from './lake.ts';
 
-export type { KVClient } from './kv.ts';
+export type { KVClient, KVEntry, PutOptions } from './kv.ts';
 export type { BlobClient, SignOptions } from './blob.ts';
 export type {
   SQLClient,

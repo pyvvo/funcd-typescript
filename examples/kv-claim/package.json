@@ -1,0 +1,16 @@
+{
+  "name": "@funcd-dev/example-kv-claim",
+  "private": true,
+  "type": "module",
+  "description": "A funcd KV example: a function that races for a claim on a key with context.kv's conditional writes (putIfAbsent, compareAndSet, delIf) and expiring keys. Authored in TypeScript against @funcd-dev/shim; vite build (@funcd-dev/vite-plugin) bundles it to a self-contained claim.mjs; the I/O contract lives in claim.contract.yaml.",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "build": "vite build"
+  },
+  "devDependencies": {
+    "@funcd-dev/vite-plugin": "workspace:*",
+    "@types/node": "^22.0.0",
+    "typescript": "^5.7.0",
+    "vite": "^8.3.2"
+  }
+}
