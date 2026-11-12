@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.26.0](https://github.com/pyvvo/funcd-typescript/compare/v0.25.0...v0.26.0) (2026-11-12)
+
+
+### Features
+
+* **examples:** the KV examples mark the regions that funcd's guide includes ([#103](https://github.com/pyvvo/funcd-typescript/issues/103)) ([4e35953](https://github.com/pyvvo/funcd-typescript/commit/4e3595303c5da12e517f415d7029ccbf3a709816))
+
 ## [0.25.0](https://github.com/pyvvo/funcd-typescript/compare/v0.24.0...v0.25.0) (2026-11-09)
 
 
