@@ -24,11 +24,13 @@ export async function handle(ctx: FunctionContext, event: CloudEvent<FuncInput>)
   if (op === 'release') {
     if (await ctx.kv.delIf('claims', key, version)) return { key, won: true, version: '', holder: '' };
   } else {
+    // #region claim
     const v =
       op === 'renew'
         ? await ctx.kv.compareAndSet('claims', key, holder, version, opts)
         : await ctx.kv.putIfAbsent('claims', key, holder, opts);
     if (v !== null) return { key, won: true, version: v, holder };
+    // #endregion claim
   }
   const now = await ctx.kv.getEntry('claims', key);
   return { key, won: false, version: now?.version ?? '', holder: now ? Buffer.from(now.value).toString('utf8') : '' };

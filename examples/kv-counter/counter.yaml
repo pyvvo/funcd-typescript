@@ -3,6 +3,7 @@
 # whose owner defaults to the function (funcd ADR-0248), so it may write it. The spec.bindings.kv entry
 # (ADR-0073) IS the read capability: it maps the alias "counters" to that table. Default-deny — without
 # it, context.kv on "counters" is Forbidden.
+# region manifest
 apiVersion: funcd.io/v1alpha1
 kind: Function
 metadata:
@@ -12,16 +13,17 @@ metadata:
 spec:
   runtime: nodejs22
   handler: handle
-  image: oci-layout:///mnt/funcd-deps/registry:counter   # funcdctl push counter.mjs (built from src/main.ts)
+  image: oci-layout:///mnt/funcd-deps/registry:counter   # what funcdctl push wrote from counter.mjs
   replicas: 1
   scaling:
     minReplicas: 1
   kv:
-    - name: counters-kv         # the KVStore (domain) this function owns
+    - name: counters-kv         # the KVStore that this Function owns
       tables:
-        - name: table-counters  # the sub-domain counter owns (single writer)
+        - name: table-counters  # its table, which this Function alone writes
   bindings:
     kv:
-      - alias: counters         # the in-code handle: ctx.kv.*('counters', …)
+      - alias: counters         # the name that the handler passes to ctx.kv
         store: counters-kv
         table: table-counters
+# endregion manifest
