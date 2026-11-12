@@ -1,6 +1,7 @@
 // kv-counter — a function that uses durable KV (ADR-0069). Each invoke reads a per-name counter from
 // the KV binding "counters" via context.kv, increments it, writes it back, and returns it. Proves the
 // function-facing KV path: context.kv → worker-node local API (UDS) → PDP Facade → durable driver.
+// #region handler
 import type { CloudEvent, FunctionContext } from '@funcd-dev/shim';
 
 export interface FuncInput {
@@ -19,3 +20,4 @@ export async function handle(ctx: FunctionContext, event: CloudEvent<FuncInput>)
   ctx.log(`kv-counter: ${name} → ${count}`);
   return { name, count };
 }
+// #endregion handler
