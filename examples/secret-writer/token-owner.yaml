@@ -1,0 +1,23 @@
+# token-owner: the owner of the Secret demo-token, which it declares and binds. Each call writes or deletes the key
+# TOKEN.
+# region function
+apiVersion: funcd.io/v1alpha1
+kind: Function
+metadata:
+  name: token-owner
+  namespace: default
+  resourceGroup: rg1
+spec:
+  runtime: nodejs22
+  handler: handle
+  image: oci-layout:///mnt/funcd-deps/registry:token-owner   # funcdctl push token-owner.mjs
+  scaling:
+    minReplicas: 1
+  secrets:
+    - name: demo-token
+      keys:
+        - TOKEN
+  bindings:
+    secret:
+      - demo-token
+# endregion function

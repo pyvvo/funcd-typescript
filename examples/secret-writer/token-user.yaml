@@ -1,0 +1,23 @@
+# token-user: a Function that declares and binds the Secret demo-token but does not own it. Each call reads the key
+# TOKEN and tries to write it, which funcd refuses until a role allows it.
+# region function
+apiVersion: funcd.io/v1alpha1
+kind: Function
+metadata:
+  name: token-user
+  namespace: default
+  resourceGroup: rg1
+spec:
+  runtime: nodejs22
+  handler: handle
+  image: oci-layout:///mnt/funcd-deps/registry:token-user   # funcdctl push token-user.mjs
+  scaling:
+    minReplicas: 1
+  secrets:
+    - name: demo-token
+      keys:
+        - TOKEN
+  bindings:
+    secret:
+      - demo-token
+# endregion function

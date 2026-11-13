@@ -1,0 +1,17 @@
+{
+  "name": "@funcd-dev/example-secret-writer",
+  "private": true,
+  "type": "module",
+  "description": "A funcd example of Secret writes: token-owner, the owner of the Secret demo-token, writes and deletes its key TOKEN through context.secret; token-user binds the same Secret and writes it only once a RolesAssignment gives it the role Secret Data Writer. vite build bundles token-owner.mjs and token-user.mjs; each function's I/O contract lives in its <name>.contract.yaml.",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "node --test --experimental-strip-types test/*.test.ts",
+    "build": "vite build"
+  },
+  "devDependencies": {
+    "@funcd-dev/vite-plugin": "workspace:*",
+    "@types/node": "^22.0.0",
+    "typescript": "^5.7.0",
+    "vite": "^8.3.2"
+  }
+}
