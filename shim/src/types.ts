@@ -40,37 +40,41 @@ export interface CloudEvent<T = unknown> {
 
 /** The per-invocation context the shim passes to the handler. */
 export interface FunctionContext {
-  /** Structured log line → stdout (collected by the platform, ADR-0010). */
+  /** Writes the arguments as one log line at level INFO, as console.log does. */
   log(...args: unknown[]): void;
-  /** Synchronously invoke a linked function by its spec.bindings.links alias (ADR-0064). funcd checks the
-   *  input against the target's contract (funcd ADR-0303); its result is returned. Fails closed (rejects) if
-   *  the caller declares no such link.
-   *
-   *  The target receives `input` as its `event.data`, except that an object with a top-level `data` or
-   *  `specversion` key is taken as a full CloudEvent envelope (ADR-0134): the target receives only its
-   *  `data`, and the other keys are dropped. To send an object that has its own `data` key, wrap it in an
-   *  envelope: `{ specversion: '1.0', data: { data: [1], page: 2 } }`. */
+  /** Calls the function that the link named alias targets, and returns its result parsed from JSON, or null when it
+   *  returns nothing. The target's event.data is input, except that an object with a top-level `data` or
+   *  `specversion` key is taken as the whole CloudEvent, so event.data is only its `data`: send such an object inside
+   *  an envelope, as `{ specversion: '1.0', data: { data: [1], page: 2 } }`. The link's timeout, 30 seconds by
+   *  default, bounds the call. Fails with the HTTP status 403 when the function declares no link named alias, 409 when
+   *  the target serves HTTP, 422 when input does not match the target's contract, and the target's status when its
+   *  handler fails, such as 500. */
   invoke<I = unknown, O = unknown>(alias: string, input: I): Promise<O>;
-  /** Send an HTTP request to a linked Function that serves HTTP (spec.protocol: http) by its spec.bindings.links alias
-   *  (funcd ADR-0243). `path` starts with "/" and may carry a query. The reply comes back whole, at most 1 MiB, with
-   *  its status and headers; funcd answers an error status, and calls nothing, for an undeclared link or a target
-   *  that does not serve HTTP (call it with invoke). */
+  /** Sends an HTTP request to the function that the link named alias targets, which serves HTTP, and returns its reply
+   *  as a Response, whatever its status. path starts with "/" and may carry a query; init sets the method, the headers
+   *  and the body, as for the global fetch. The request body and the reply are each at most 1 MiB, and the link's
+   *  timeout, 30 seconds by default, bounds the call. Fails with the HTTP status 403 when the function declares no
+   *  link named alias, and 409 when the target does not serve HTTP. */
   fetch(alias: string, path: string, init?: RequestInit): Promise<Response>;
   /** The key-value tables that the function binds, by alias: read, write and list their keys. */
   kv: KVClient;
-  /** Binding-scoped blob storage (ADR-0127): get/put/del/list a bound prefix's objects, or mint a
-   *  presigned URL — the blob twin of kv. */
+  /** The Bucket prefixes that the function binds, by alias: read, write, delete and list their objects, whose keys are
+   *  relative to the binding's prefix. */
   blob: BlobClient;
-  /** The SQL databases a function binds (funcd ADR-0233): query reads, queryValues keeps every column of a join,
-   *  execute writes in one transaction. A write needs the database's owner or a writer role. */
+  /** The SQL databases that the function binds, by alias: query reads rows, queryValues keeps every column of a join,
+   *  and execute writes in one transaction. A call fails with the HTTP status 503 while the database's engine is not
+   *  Ready, or when a statement runs past funcd's SQL call timeout, 30 seconds by default. */
   sql: SQLClient;
-  /** The keys of the ConfigMaps a function binds (funcd ADR-0245); a key a bound Secret overrides is a secret. */
+  /** The keys of the ConfigMaps that the function binds, with the values that the worker got when it started. A key
+   *  that starts with FUNCD_, or that a bound Secret also holds, is left out: ctx.secret reads the Secret's value. */
   config: ConfigClient;
-  /** The keys and values of the Secrets a function binds, read from funcd on every call (funcd ADR-0249). */
+  /** The keys and values of the Secrets that the function binds, which funcd reads at each get or list, with no cache,
+   *  so a changed Secret shows at the next read. */
   secret: SecretClient;
-  /** A bound lake's proxy URL and this function's token, by spec.bindings.lake alias (funcd ADR-0245). */
+  /** The Lakes that the function binds, by alias: the address of each Lake's gateway, and the token that the gateway
+   *  accepts from the function. */
   lake: LakeClient;
-  /** Milliseconds left before the call's deadline (X-Funcd-Timeout-Ms), floored at 0; null without one (ADR-0226). */
+  /** The whole milliseconds left before the call's deadline, 0 once it has passed, or null when the call has none. */
   remainingMs(): number | null;
 }
 

@@ -10,9 +10,12 @@ function listedValue(env: NodeJS.ProcessEnv, list: string, key: string): string 
   return listedKeys(env, list).includes(key) ? env[key] : undefined;
 }
 
-/** A function's bound config (funcd ADR-0245): a key a secret overrides, or any unbound variable, reads as undefined. */
+/** A function's bound config: the keys of the ConfigMaps in spec.bindings.config, with the values that the worker got
+ *  when it started. A key that a bound Secret also holds, or any other variable, reads as undefined. */
 export interface ConfigClient {
+  /** The key's value, or undefined when list() does not include the key. */
   get(key: string): string | undefined;
+  /** The keys of the bound ConfigMaps, sorted, without the keys left out. */
   list(): string[];
 }
 
