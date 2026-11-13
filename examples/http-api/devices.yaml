@@ -1,4 +1,4 @@
-# devices-api: a Function that serves HTTP (funcd ADR-0243). Every request reaches its Hono app; only the edge calls it.
+# devices-api: a Function that serves HTTP. Each request reaches its Hono app.
 apiVersion: funcd.io/v1alpha1
 kind: Function
 metadata:

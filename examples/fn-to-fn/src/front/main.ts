@@ -8,7 +8,7 @@ import type { FuncInput as GreeterInput, FuncOutput as GreeterOutput } from '../
 /**
  * What front accepts. `name` is OPTIONAL here (front is permissive) — so front can forward a payload
  * to greeter that greeter's stricter contract rejects, demonstrating that a target's 422 propagates
- * back through context.invoke (ADR-0064).
+ * back through context.invoke.
  */
 export interface FuncInput {
   name?: string;
@@ -21,12 +21,10 @@ export interface FuncOutput {
 }
 
 /**
- * front — the CALLER. It declares a link to greeter on its Function resource:
- *   spec: { links: [{ alias: greeter, target: greeter }] }
- * and invokes it. The platform brokers the synchronous call over the per-sandbox worker-node local
- * API; the link IS the capability (no link ⇒ invoke fails closed). It FORWARDS the caller's `name`
- * verbatim — so a missing `name` reaches greeter, whose contract rejects it (422), and that 422
- * propagates back here (the awaited invoke throws).
+ * front: the caller. Its Function declares a link under spec.bindings.links, with the alias greeter and
+ * the target greeter, and the handler calls it with context.invoke. The link is the grant: without it,
+ * context.invoke fails with 403. front forwards the caller's name as it is, so a missing name reaches
+ * greeter, whose contract refuses it with 422, and the awaited invoke throws.
  */
 export const handle: Handler<FuncInput, FuncOutput> = async (context, event) => {
   const reply = await context.invoke<{ data: GreeterInput }, GreeterOutput>('greeter', {

@@ -1,4 +1,4 @@
-# The devices API at /api: the edge strips the prefix and tells the app with X-Forwarded-Prefix (funcd ADR-0243).
+# The devices API at /api: the edge strips the prefix and tells the app with X-Forwarded-Prefix.
 apiVersion: funcd.io/v1alpha1
 kind: Route
 metadata:

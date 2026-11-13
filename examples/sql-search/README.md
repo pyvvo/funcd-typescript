@@ -31,8 +31,8 @@ curl -XPOST localhost:<gateway>/function/search -d '{"data":{"op":"add","title":
 curl -XPOST localhost:<gateway>/function/search -d '{"data":{"op":"search","q":"raft"}}'
 ```
 
-`funcdctl dev` runs `search-db` on a local rqlite engine (funcd ADR-0237); a funcdctl built with the engine
-(`just build-sql-engine` in funcd) is needed.
+`funcdctl dev` runs `search-db` on a local rqlite engine. The dev build of funcdctl, which funcd's install script
+installs, includes that engine.
 
 ## Deploy it
 

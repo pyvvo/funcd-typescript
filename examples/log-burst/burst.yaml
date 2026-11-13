@@ -1,7 +1,5 @@
-# log-burst — a function that emits a burst of ≥100 console.* logs per invocation (ADR-0081, Path B).
-# The runtime-shim patches the function's console.* onto the Path B side channel (fd 3 / UDS) and the
-# host captures them as structured records into the funcd-system log store — channel-only (no double
-# capture on stdout). No KV / contract binding needed: the logs ARE the point of this example.
+# log-burst: a Function whose handler writes more than 100 log lines at each call.
+# funcd keeps each console call as a log record, which funcdctl logs prints.
 apiVersion: funcd.io/v1alpha1
 kind: Function
 metadata:

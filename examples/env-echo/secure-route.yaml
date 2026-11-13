@@ -1,7 +1,7 @@
-# A Route (ADR-0113, F77) exposing env-echo at /secure with an `authenticated` stance. With
-# server.auth.edge enabled, a request to /secure requires a valid bearer (401 without one); a
-# namespace-scoped token (the dev token, scoped to `default`) is authorized. The default namespace
-# stays `open`, so /function/env-echo + /echo remain anonymous — no cascade.
+# secure-echo: a Route that serves env-echo at /secure and asks its callers to authenticate. A request needs a
+# bearer token or an X-Api-Key header of an identity that may get Functions in the namespace: 401 without a valid
+# one, 403 when that identity may not. While server.auth.edge is off, every caller gets 401. The mode covers the
+# rules of this Route only.
 apiVersion: funcd.io/v1alpha1
 kind: Route
 metadata:

@@ -1,11 +1,4 @@
-# gold-drops — a blob EventSource (ADR-0119, F83): the REACTIVE-ingestion producer. A poll watcher lists
-# the `lakehouse` Bucket's `gold/` prefix on the platform poll interval (eventing.blobPollInterval, set to
-# 3s for this lane) and fires a named CloudEvent `arrived` per NEW object — detected over the SAME
-# blob.Bucket substrate the S3 frontend writes into, so an EXTERNAL SigV4 PUT (the s3-roundtrip function's
-# PutObject into gold/) is what trips it. Writer-agnostic: detection rides `List`, not any write path.
-#
-# NB: `on:` is QUOTED — YAML 1.1 parses a bare `on:` key as the boolean true (dropped on YAML→JSON);
-# `"on":` keeps it the string the schema expects (same rule as the timer Sensor manifests).
+# gold-drops fires arrived for each new or rewritten object under gold/ of the Bucket lakehouse.
 apiVersion: funcd.io/v1alpha1
 kind: EventSource
 metadata:
@@ -14,8 +7,9 @@ metadata:
   resourceGroup: rg1
 spec:
   blob:
-    bucket: lakehouse       # the ADR-0080 Bucket the S3 frontend writes into
+    bucket: lakehouse       # the Bucket of bucket.yaml
     events:
       - name: arrived       # the CloudEvent `type`
-        prefix: gold/       # only objects under gold/ fire (the served layer s3-roundtrip owns)
-        "on": [Created]     # V1: object-created only
+        prefix: gold/       # only objects under gold/, the prefix s3-roundtrip owns, fire
+        on:
+          - Created
