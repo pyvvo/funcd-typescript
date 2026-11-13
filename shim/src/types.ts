@@ -66,10 +66,13 @@ export interface FunctionContext {
    *  Ready, or when a statement runs past funcd's SQL call timeout, 30 seconds by default. */
   sql: SQLClient;
   /** The keys of the ConfigMaps that the function binds, with the values that the worker got when it started. A key
-   *  that starts with FUNCD_, or that a bound Secret also holds, is left out: ctx.secret reads the Secret's value. */
+   *  that starts with FUNCD_ is left out, since funcd reserves that prefix. A key that a bound Secret also holds is
+   *  left out too, and ctx.secret reads the Secret's value. While funcd's S3 gateway runs, a function that binds a
+   *  Bucket reads the AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY that funcd issues it, in place of a ConfigMap's. */
   config: ConfigClient;
   /** The keys and values of the Secrets that the function binds, which funcd reads at each get or list, with no cache,
-   *  so a changed Secret shows at the next read. */
+   *  so a changed Secret shows at the next read. A key that starts with FUNCD_ is never read: get returns undefined
+   *  for it, and list leaves it out. */
   secret: SecretClient;
   /** The Lakes that the function binds, by alias: the address of each Lake's gateway, and the token that the gateway
    *  accepts from the function. */

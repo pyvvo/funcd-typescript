@@ -3,15 +3,15 @@
 // the worker's environment.
 import { type Resp, send } from './socket.ts';
 
-/** A function's bound Secrets, which funcd reads at each get or list: a key that no bound Secret holds reads as
- *  undefined. */
+/** A function's bound Secrets, which funcd reads at each get or list: a key that no bound Secret holds, or that starts
+ *  with FUNCD_, reads as undefined. */
 export interface SecretClient {
-  /** The key's value, or undefined when no bound Secret holds the key or a bound Secret does not exist. When two
-   *  Secrets hold the key, the later one in spec.bindings.secret wins. Fails with the HTTP status 403 when a Policy
-   *  forbids the function to read a bound Secret. */
+  /** The key's value, or undefined when no bound Secret holds the key, the key starts with FUNCD_, or a bound Secret
+   *  does not exist. When two Secrets hold the key, the later one in spec.bindings.secret wins. Fails with the HTTP
+   *  status 403 when a Policy forbids the function to read a bound Secret. */
   get(key: string): Promise<string | undefined>;
-  /** The keys that the bound Secrets hold, sorted. Fails with the HTTP status 403 when a Policy forbids the function to
-   *  read a bound Secret, and 404 when a bound Secret does not exist. */
+  /** The keys that the bound Secrets hold, sorted, except a key that starts with FUNCD_. Fails with the HTTP status
+   *  403 when a Policy forbids the function to read a bound Secret, and 404 when a bound Secret does not exist. */
   list(): Promise<string[]>;
 }
 

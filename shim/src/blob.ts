@@ -32,9 +32,10 @@ export interface BlobClient {
   list(binding: string, prefix?: string): Promise<string[]>;
   /** A presigned URL that lets its holder send an opts.method request, GET by default, for the object until
    *  opts.expiry passes: a duration such as "10m" or "1h30m", in whole seconds from 1s to 168h, or 15 minutes when
-   *  unset. Any other expiry, "" included, fails with the HTTP status 400, and a PUT or DELETE URL needs permission to
-   *  write the prefix. No blob store that funcd opens signs URLs, so a call that passes these checks fails with the
-   *  HTTP status 503. */
+   *  unset. Any other expiry, "" included, fails with the HTTP status 400. A PUT or DELETE URL needs permission to
+   *  write the prefix, and a PUT URL fails with the HTTP status 403 when the Bucket sets maxObjectBytes or a size
+   *  quota applies to the Bucket or the prefix, since funcd could not enforce it on the upload. No blob store that
+   *  funcd opens signs URLs, so a call that passes these checks fails with the HTTP status 503. */
   signedUrl(binding: string, key: string, opts?: SignOptions): Promise<string>;
 }
 

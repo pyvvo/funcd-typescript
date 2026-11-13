@@ -11,7 +11,9 @@ function listedValue(env: NodeJS.ProcessEnv, list: string, key: string): string 
 }
 
 /** A function's bound config: the keys of the ConfigMaps in spec.bindings.config, with the values that the worker got
- *  when it started. A key that a bound Secret also holds, or any other variable, reads as undefined. */
+ *  when it started. A key that starts with FUNCD_, a key that a bound Secret also holds, and any other variable read
+ *  as undefined. While funcd's S3 gateway runs, the AWS key pair that funcd issues replaces a ConfigMap's values for
+ *  AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY. */
 export interface ConfigClient {
   /** The key's value, or undefined when list() does not include the key. */
   get(key: string): string | undefined;
