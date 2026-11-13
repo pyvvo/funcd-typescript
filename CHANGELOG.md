@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.28.0](https://github.com/pyvvo/funcd-typescript/compare/v0.27.0...v0.28.0) (2026-11-13)
+
+
+### Features
+
+* **shim:** context.secret.put and del write one key of a bound Secret ([#108](https://github.com/pyvvo/funcd-typescript/issues/108)) ([edef317](https://github.com/pyvvo/funcd-typescript/commit/edef3176ea53ec93e495788fd5dbeb98b927019b))
+
 ## [0.27.0](https://github.com/pyvvo/funcd-typescript/compare/v0.26.0...v0.27.0) (2026-11-13)
 
 
