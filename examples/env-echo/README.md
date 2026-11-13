@@ -1,28 +1,28 @@
-# env-echo — config + secret env injection on real containerd
+# env-echo — a ConfigMap in the environment, a Secret through ctx.secret
 
-A minimal funcd example proving that a Function receives **both** its bound configuration sources as
-environment at runtime:
+A minimal funcd example: a Function reads a setting of its bound ConfigMap from its environment, and two values of
+its bound Secret through `ctx.secret`.
 
-- **`spec.bindings.config: [app-config]`** — a **ConfigMap** (ADR-0093), non-sensitive `Data` (plain string map).
-- **`spec.bindings.secret: [app-secret]`** — a **Secret** (ADR-0057), sensitive `Data` (base64-encoded `[]byte`).
+- **`spec.bindings.config: [app-config]`** binds a **ConfigMap**, whose values are plain text. Each worker gets its
+  keys as environment variables when it starts, except a key that starts with `FUNCD_` and a key that a bound Secret
+  also holds.
+- **`spec.bindings.secret: [app-secret]`** binds a **Secret**, whose values are written in base64. No Secret value is
+  in the environment: the handler reads each one through `ctx.secret`, which asks funcd on each call.
 
-The Function declares both at its root (funcd ADR-0248): `configMaps` names the ConfigMap by `ref`, and
-`secrets` declares the Secret with the keys it must hold (`API_KEY`, `SHARED`); the Function waits until it does.
+The Function declares both at its root: `configMaps` names the ConfigMap by `ref`, and `secrets` declares the Secret
+with the keys it must hold (`API_KEY`, `SHARED`); the Function waits until it does.
 
-The handler ([`src/main.ts`](src/main.ts)) takes **no input** (`FuncInput = void` → the ADR-0090
-void-input contract `{"type":"null"}`) and echoes three values back: `APP_MODE` from its environment, and
-`API_KEY` and `SHARED` through `ctx.secret`, since a bound Secret is not in the worker environment (funcd
-ADR-0249):
+The handler ([`src/main.ts`](src/main.ts)) takes **no input** (its contract's input is `{"type":"null"}`) and
+returns three values: `APP_MODE` from its environment, and `API_KEY` and `SHARED` through `ctx.secret`:
 
 ```json
-{ "config": "$APP_MODE", "secret": "<API_KEY>", "shared": "<SHARED>" }
+{ "config": "<APP_MODE>", "secret": "<API_KEY>", "shared": "<SHARED>" }
 ```
 
-`APP_MODE` comes only from the ConfigMap, `API_KEY` only from the Secret, and `SHARED` is present in
-**both** — so the response proves the **config-then-secrets merge order** (ADR-0092/0093): the Secret wins
-the shared key.
+`APP_MODE` comes only from the ConfigMap and `API_KEY` only from the Secret. `SHARED` is a key of **both**: funcd
+leaves it out of the environment, so the handler reads the Secret's value.
 
-Expected invoke body:
+Expected response:
 
 ```json
 { "config": "prod", "secret": "s3cr3t", "shared": "from-secret" }
@@ -30,22 +30,18 @@ Expected invoke body:
 
 ## Run it locally (`funcdctl dev`)
 
-`funcdctl dev` runs the function from its resource and contract files (funcd ADR-0247) — printing a colored services
-banner + live logs (it builds the `-tags dev` funcdctl for you). It loads every manifest in the dir,
-so the `app-config` ConfigMap and `app-secret` Secret are injected as env:
+`funcdctl dev` runs the folder's resource files on a local platform and runs the Function from its build,
+`env-echo.mjs`. Start it from the repository's root folder:
 
 ```bash
-just dev-example js/env-echo      # gateway :3005 · S3 :3006 — override: just dev-example js/env-echo 4000 4001
+funcdctl dev examples/env-echo --gport 8080
 ```
 
-Invoke the gateway the banner prints (default `http://127.0.0.1:3005`). Dev runs the
-Function its resource file names (`env-echo`), from the build beside `env-echo.contract.yaml`; its input is **void**
-(`input: {type: "null"}`), so the **CloudEvent envelope** carries `null` data:
+In another terminal, call the Function. It takes no input, so the call sends no body:
 
 ```bash
-curl -sS -XPOST http://127.0.0.1:3005/function/env-echo \
-  -H 'Content-Type: application/json' -d '{"data":null}'
-# → {"config":"prod","secret":"s3cr3t","shared":"from-secret"}   (the Secret wins the shared key)
+curl -s -X POST http://127.0.0.1:8080/function/env-echo
+# → {"config":"prod","secret":"s3cr3t","shared":"from-secret"}
 ```
 
 ## Run it on containerd (Lima)
@@ -59,18 +55,19 @@ nix develop -c just lima-example env-echo
 ```
 
 Run it in [pyvvo/funcd](https://github.com/pyvvo/funcd). The recipe stages this example's committed
-`env-echo.mjs` with the four manifests into the VM bundle, boots the generic lane
+`env-echo.mjs` with its manifests into the VM bundle, boots the generic lane
 VM (which pushes the artifact and applies configmap → secret → function, then probes the Function to
 `Ready` — both bindings resolved), and runs `e2e/env-echo.venom.yml`.
 
 ## Files
 
-- `src/main.ts` — the typed void-input handler that echoes the injected env.
+- `src/main.ts` — the handler, which takes no input and returns the three values.
 - `vite.config.ts`, `package.json`, `tsconfig.json` — the build (`yarn build` bundles
   `src/main.ts` into the self-contained `env-echo.mjs`, committed beside the manifests).
-- `env-echo.contract.yaml` — the client push/dev config: runtime, handler, bindings and the I/O contract
-  (`funcdctl push env-echo.mjs <ref>` reads it from beside the file).
+- `env-echo.contract.yaml` — the runtime and the input and output contract, which `funcdctl push env-echo.mjs <ref>`
+  reads from beside the file.
 - `configmap.yaml` — the `app-config` ConfigMap (`APP_MODE=prod`, `SHARED=from-config`).
 - `secret.yaml` — the `app-secret` Secret (`API_KEY=s3cr3t`, `SHARED=from-secret`, base64-encoded).
 - `function.yaml` — the `env-echo` Function binding both.
-- `funcdconfig.yaml` — the daemon config for the containerd lane.
+- `funcdconfig.yaml` — a funcd server configuration for this example on containerd; the lane runs a variant of it,
+  with credentials in place of the token, from funcd's e2e fixtures.
