@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.27.0](https://github.com/pyvvo/funcd-typescript/compare/v0.26.0...v0.27.0) (2026-11-13)
+
+
+### Features
+
+* **shim:** api.json describes each ctx client's methods for funcd's guide ([#105](https://github.com/pyvvo/funcd-typescript/issues/105)) ([eb8329e](https://github.com/pyvvo/funcd-typescript/commit/eb8329e79c67cefb3f82c5e84eef33623b4771fd))
+
 ## [0.26.0](https://github.com/pyvvo/funcd-typescript/compare/v0.25.0...v0.26.0) (2026-11-12)
 
 
