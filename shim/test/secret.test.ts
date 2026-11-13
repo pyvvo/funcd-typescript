@@ -1,4 +1,4 @@
-// Scenario tests for context.secret on funcd's local API (funcd ADR-0249): GET /secret and GET /secret/{key}, over a
+// Scenario tests for context.secret on funcd's local API (funcd ADR-0249, ADR-0327): its reads and writes, over a
 // fake funcd that binds Secret api-keys (STRIPE_KEY sk, MODE prod) and ConfigMap app-settings (MODE dev, so funcd
 // lists no MODE in FUNCD_CONFIG_KEYS).
 import assert from 'node:assert/strict';
@@ -51,4 +51,27 @@ test('a pool member names itself on every read, and a key is path-encoded', asyn
   const api = await secretAPI(t, { 'a/b': 'v' });
   assert.equal(await makeSecret('member-a').get('a/b'), 'v');
   assert.deepEqual(api.calls, ['GET /secret/a%2Fb member-a']);
+});
+
+test('scenario secret-owner-writes: put sends the value of one key of a named Secret, and del removes it', async (t) => {
+  const api = await fakeDependencies(t, (_member, _url, method) => ({
+    status: method === 'GET' ? 200 : 204,
+    body: '',
+  }));
+  const secret = makeSecret('member-a');
+  await secret.put('oauth', 'TOKEN', 't2');
+  await secret.del('oauth', 'TOKEN');
+  await secret.put('o/auth', 'A/B', 'v');
+  assert.deepEqual(api.calls, [
+    'PUT /secret/oauth/TOKEN member-a',
+    'DELETE /secret/oauth/TOKEN member-a',
+    'PUT /secret/o%2Fauth/A%2FB member-a',
+  ]);
+  assert.deepEqual(api.bodies, ['{"value":"t2"}', '', '{"value":"v"}']);
+});
+
+test('a refused write rejects, naming the call and its status', async (t) => {
+  await fakeDependencies(t, () => ({ status: 403, body: '{"title":"Forbidden"}' }));
+  await assert.rejects(makeSecret().put('oauth', 'TOKEN', 't2'), /context\.secret\.put failed: 403/);
+  await assert.rejects(makeSecret().del('oauth', 'TOKEN'), /context\.secret\.del failed: 403/);
 });
