@@ -56,7 +56,7 @@ export interface FunctionContext {
    *  its status and headers; funcd answers an error status, and calls nothing, for an undeclared link or a target
    *  that does not serve HTTP (call it with invoke). */
   fetch(alias: string, path: string, init?: RequestInit): Promise<Response>;
-  /** Namespace-scoped key-value storage (ADR-0069): get/put/del a binding's key, or list keys. */
+  /** The key-value tables that the function binds, by alias: read, write and list their keys. */
   kv: KVClient;
   /** Binding-scoped blob storage (ADR-0127): get/put/del/list a bound prefix's objects, or mint a
    *  presigned URL — the blob twin of kv. */
