@@ -4326,6 +4326,8 @@ var json4 = (verb, r) => {
     });
   }
 };
+var keyPath3 = (binding, key) => `/secret/${encodeURIComponent(binding)}/${encodeURIComponent(key)}`;
+var written = (r) => r.status >= 200 && r.status < 300;
 function makeSecret(member) {
   return {
     async get(key) {
@@ -4338,6 +4340,15 @@ function makeSecret(member) {
       const r = await send("context.secret", "GET", "/secret", void 0, member);
       if (r.status !== 200) throw fail3("list", r);
       return json4("list", r).keys;
+    },
+    async put(binding, key, value) {
+      const body = Buffer.from(JSON.stringify({ value }), "utf8");
+      const r = await send("context.secret", "PUT", keyPath3(binding, key), body, member, "application/json");
+      if (!written(r)) throw fail3("put", r);
+    },
+    async del(binding, key) {
+      const r = await send("context.secret", "DELETE", keyPath3(binding, key), void 0, member);
+      if (!written(r)) throw fail3("del", r);
     }
   };
 }

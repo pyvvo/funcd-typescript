@@ -15,20 +15,26 @@ export interface FakeAPI {
   socket: string;
   /** One `<method> <path> <member or ->` line per request. */
   calls: string[];
+  /** Each request's body, in the order of calls. */
+  bodies: string[];
 }
 
 /** fakeDependencies serves `answer(member, url)` on a unix socket and points FUNCD_INVOKE_SOCKET at it for the
  *  rest of the test. */
 export async function fakeDependencies(
   t: TestContext,
-  answer: (member: string | undefined, url: string) => Answer,
+  answer: (member: string | undefined, url: string, method: string) => Answer,
 ): Promise<FakeAPI> {
   const socket = join(tempDir(t, 'funcd-deps-'), 'api.sock');
   const calls: string[] = [];
-  const server = http.createServer((req, res) => {
+  const bodies: string[] = [];
+  const server = http.createServer(async (req, res) => {
     const member = req.headers['x-funcd-member'] as string | undefined;
     calls.push(`${req.method} ${req.url} ${member ?? '-'}`);
-    const a = answer(member, req.url ?? '');
+    const chunks: Buffer[] = [];
+    for await (const chunk of req) chunks.push(chunk as Buffer);
+    bodies.push(Buffer.concat(chunks).toString('utf8'));
+    const a = answer(member, req.url ?? '', req.method ?? '');
     if (a === 'hold') return;
     if (a === 'drop') {
       req.socket.destroy();
@@ -47,5 +53,5 @@ export async function fakeDependencies(
     server.closeAllConnections();
     server.close();
   });
-  return { socket, calls };
+  return { socket, calls, bodies };
 }
