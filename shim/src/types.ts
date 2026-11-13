@@ -70,9 +70,10 @@ export interface FunctionContext {
    *  left out too, and ctx.secret reads the Secret's value. While funcd's S3 gateway runs, a function that binds a
    *  Bucket reads the AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY that funcd issues it, in place of a ConfigMap's. */
   config: ConfigClient;
-  /** The keys and values of the Secrets that the function binds, which funcd reads at each get or list, with no cache,
-   *  so a changed Secret shows at the next read. A key that starts with FUNCD_ is never read: get returns undefined
-   *  for it, and list leaves it out. */
+  /** The Secrets that the function binds. get and list read their keys and values at each call, with no cache, so a
+   *  changed Secret shows at the next read; a key that starts with FUNCD_ is never read: get returns undefined for
+   *  it, and list leaves it out. put and del change one key of a bound Secret that the function may write, as the
+   *  Secret's owner or through a writer role such as Secret Data Writer. */
   secret: SecretClient;
   /** The Lakes that the function binds, by alias: the address of each Lake's gateway, and the token that the gateway
    *  accepts from the function. */
