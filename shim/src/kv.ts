@@ -24,23 +24,25 @@ export interface PutOptions {
   ttl?: number;
 }
 
-/** A function's view of its namespace-scoped KV (ADR-0069): get/put/del a binding's key, or list keys.
- *  putIfAbsent, compareAndSet and delIf write only while their condition holds and say who won: of racing writers
- *  exactly one gets the new version, the others null (false for a delete). */
+/** The key-value tables that a function binds, each by its alias in spec.bindings.kv. putIfAbsent, compareAndSet and
+ *  delIf write only while their condition holds and say who won: of racing writers, exactly one gets the new version,
+ *  and the others get null (false for delIf). */
 export interface KVClient {
+  /** The key's value as bytes, or null when the key does not exist. */
   get(binding: string, key: string): Promise<Uint8Array | null>;
-  /** get() with the key's version (a missing key is null). */
+  /** The key's value with its version, or null when the key does not exist. */
   getEntry(binding: string, key: string): Promise<KVEntry | null>;
-  /** get() decoded as UTF-8 text — the common case (a missing key is null). Saves the caller a
-   * TextDecoder dance; put() already accepts a string. */
+  /** The key's value decoded as UTF-8 text, or null when the key does not exist. */
   getText(binding: string, key: string): Promise<string | null>;
-  /** get() decoded as UTF-8 text then JSON-parsed (a missing key is null). The structured-value
-   * counterpart of getText; write with put(binding, key, JSON.stringify(value)). */
+  /** The key's value parsed as JSON, or null when the key does not exist. Write it with
+   *  put(binding, key, JSON.stringify(value)). */
   getJSON<T = unknown>(binding: string, key: string): Promise<T | null>;
+  /** Writes the value. opts.ttl, in whole seconds, sets the key's expiry; a put without it leaves the key with none.
+   *  Only the table's owner can write. */
   put(binding: string, key: string, value: Uint8Array | string, opts?: PutOptions): Promise<void>;
-  /** Create the key: its new version, or null when it exists (an expired key does not). */
+  /** Creates the key: its new version, or null when it exists (an expired key does not). */
   putIfAbsent(binding: string, key: string, value: Uint8Array | string, opts?: PutOptions): Promise<string | null>;
-  /** Replace the key while it is at version: its new version, or null when it is not. */
+  /** Replaces the key while it is at version: its new version, or null when it is not. */
   compareAndSet(
     binding: string,
     key: string,
@@ -48,9 +50,11 @@ export interface KVClient {
     version: string,
     opts?: PutOptions,
   ): Promise<string | null>;
+  /** Deletes the key. */
   del(binding: string, key: string): Promise<void>;
-  /** Delete the key while it is at version, as a lease holder releases what it holds. */
+  /** Deletes the key while it is at version, as a lease holder releases what it holds: true when it did. */
   delIf(binding: string, key: string, version: string): Promise<boolean>;
+  /** The keys that start with prefix; without a prefix, every key of the table. */
   list(binding: string, prefix?: string): Promise<string[]>;
 }
 

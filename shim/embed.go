@@ -15,3 +15,9 @@ var Shim []byte
 //
 //go:embed pool.mjs
 var Pool []byte
+
+// API is api.json, the handler API that funcd's guide shows: each client of FunctionContext with its methods'
+// signatures and doc comments, which `yarn build:api` writes from src/types.ts.
+//
+//go:embed api.json
+var API []byte
