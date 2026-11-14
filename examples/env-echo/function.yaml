@@ -1,7 +1,7 @@
-# env-echo — a void-input function that echoes the env injected by its bindings. spec.bindings.config binds the
-# app-config ConfigMap (ADR-0093) and spec.bindings.secret binds the app-secret Secret (ADR-0057); both sets of
-# Data are materialized as worker env. Ready requires BOTH bindings to resolve (fail-closed otherwise), so
-# Ready already proves resolution — the invoke then proves the values reach the running handler.
+# env-echo: a Function that takes no input and returns one setting of the ConfigMap app-config and two values of
+# the Secret app-secret. funcd puts the ConfigMap's keys in each worker's environment, except SHARED, a key of both;
+# no Secret value is in the environment, so the handler reads the Secret through ctx.secret. No worker starts while
+# the ConfigMap or the Secret is missing.
 apiVersion: funcd.io/v1alpha1
 kind: Function
 metadata:
@@ -24,6 +24,6 @@ spec:
         - SHARED
   bindings:
     config:
-      - app-config    # ConfigMap → non-sensitive env (APP_MODE, SHARED)
+      - app-config    # its keys become environment variables, except SHARED, which app-secret also holds
     secret:
-      - app-secret    # Secret → sensitive env (API_KEY, SHARED — wins the shared key)
+      - app-secret    # the handler reads its keys through ctx.secret, never from the environment

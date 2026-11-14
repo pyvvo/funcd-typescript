@@ -20,10 +20,11 @@ function docOf(iface: string, member: string): string {
 }
 
 // The fn-to-fn broker applies the ADR-0134 passthrough rule to the invoke input, so an author must
-// learn from the invoke docs that an object with its own top-level data key is unwrapped.
+// learn from the invoke docs that an object with its own top-level data key is unwrapped. funcd's guide
+// shows the doc to its readers, so the doc states the rule without naming the ADR.
 test('issue r18: the context.invoke docs state the ADR-0134 envelope rule and its workaround', () => {
   const doc = docOf('FunctionContext', 'invoke');
-  assert.match(doc, /ADR-0134/);
+  assert.doesNotMatch(doc, /\bADR-\d{4}\b/);
   assert.match(doc, /top-level `data` or `specversion` key/);
   assert.match(doc, /only its `data`/);
   assert.match(doc, /\{ specversion: '1\.0', data: \{ data: /);

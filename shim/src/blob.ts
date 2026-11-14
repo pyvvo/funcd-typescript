@@ -8,22 +8,34 @@ import { type Resp, send as sendOn } from './socket.ts';
 const send = (method: string, path: string, body: Buffer | undefined, member: string | undefined) =>
   sendOn('context.blob', method, path, body, member);
 
-/** Options for a presigned URL: the HTTP method it grants (default GET) and its lifetime, a duration string
- * such as "10m" or "1h30m" (funcd ADR-0198: units h, m, s, ms in that order, whole seconds from 1s to 168h). The
- * server checks it and answers 400 for a bad value, "" included; only an absent expiry gets the driver's default.
- * A PUT/DELETE URL requires s3::write. */
+/** Options for a presigned URL: the HTTP method it allows, GET by default, and its lifetime, a duration such as "10m"
+ * or "1h30m" in whole seconds from 1s to 168h. funcd refuses another value, "" included, with the HTTP status 400;
+ * without an expiry, the URL lasts 15 minutes. A PUT or DELETE URL needs permission to write the prefix. */
 export interface SignOptions {
   method?: 'GET' | 'PUT' | 'DELETE';
   expiry?: string;
 }
 
-/** A function's binding-scoped blob storage (ADR-0127): get/put/delete a bound prefix's objects, list
- * keys, or mint a presigned URL — the blob twin of KVClient. */
+/** The Bucket prefixes that a function binds, each by its alias in spec.bindings.blob: read, write, delete and list
+ * their objects, whose keys are relative to the binding's prefix. */
 export interface BlobClient {
+  /** The object's content as bytes, or null when the object does not exist. */
   get(binding: string, key: string): Promise<Uint8Array | null>;
+  /** Writes the object, replacing any object with that key. The value is at most 64 MiB, and at most the Bucket's
+   *  spec.quota.maxObjectBytes when that is set: a larger one fails with the HTTP status 413. Only the prefix's owner
+   *  and the writers that a RolesAssignment names can write. */
   put(binding: string, key: string, value: Uint8Array): Promise<void>;
+  /** Deletes the object, and fails with the HTTP status 404 when it does not exist. Only the prefix's owner and the
+   *  writers that a RolesAssignment names can delete. */
   del(binding: string, key: string): Promise<void>;
+  /** The keys that start with prefix; without a prefix, every key under the binding's prefix. */
   list(binding: string, prefix?: string): Promise<string[]>;
+  /** A presigned URL that lets its holder send an opts.method request, GET by default, for the object until
+   *  opts.expiry passes: a duration such as "10m" or "1h30m", in whole seconds from 1s to 168h, or 15 minutes when
+   *  unset. Any other expiry, "" included, fails with the HTTP status 400. A PUT or DELETE URL needs permission to
+   *  write the prefix, and a PUT URL fails with the HTTP status 403 when the Bucket sets maxObjectBytes or a size
+   *  quota applies to the Bucket or the prefix, since funcd could not enforce it on the upload. No blob store that
+   *  funcd opens signs URLs, so a call that passes these checks fails with the HTTP status 503. */
   signedUrl(binding: string, key: string, opts?: SignOptions): Promise<string>;
 }
 

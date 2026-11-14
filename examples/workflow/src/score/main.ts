@@ -1,11 +1,11 @@
 import type { Handler } from '@funcd-dev/shim';
 
-/** score — the second step. Its input is ingest's output verbatim ({ amount }). */
+/** The input: an amount. */
 export interface FuncInput {
   amount: number;
 }
 
-/** score adds a derived `score` the branch conditions gate on (score = amount * 10). */
+/** The output: the amount and its score, amount * 10, which the when conditions of orders test. */
 export interface FuncOutput {
   amount: number;
   score: number;

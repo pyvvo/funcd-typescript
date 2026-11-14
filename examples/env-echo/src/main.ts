@@ -1,25 +1,20 @@
-// env-echo — a function that echoes the environment injected by its bindings (ADR-0093 spec.bindings.config +
-// ADR-0057 spec.bindings.secret). It takes NO input (`FuncInput = void` → the ADR-0090 void-input contract
-// `{"type":"null"}`, so an invocation with `data: null` / absent data is accepted) and returns three values:
-// APP_MODE (from the ConfigMap, in the environment), API_KEY (from the Secret) and SHARED (present in BOTH — the
-// Secret must win, config-then-secrets merge order), the last two read through ctx.secret. This is the
-// containerd-lane counterpart to the in-process scenario pkg/funcd/config_secret_e2e_test.go: it proves
-// the full path reconcile → resolve → materialize → process shim → running handler on real containerd.
+// env-echo: a handler that takes no input and returns three values: APP_MODE from its environment, where funcd puts
+// the keys of the bound ConfigMap, and API_KEY and SHARED from the bound Secret, through ctx.secret.
 import type { Handler } from '@funcd-dev/shim';
 
-/** This function takes no event payload — the void-input contract (ADR-0090). */
+/** The function takes no input, so a call needs no body. */
 export type FuncInput = void;
 
-/** The three injected env vars echoed back: config from the ConfigMap, secret from the Secret, and the
- *  key present in both (the Secret wins). */
+/** What the handler returns: config is APP_MODE from the ConfigMap; secret and shared are API_KEY and SHARED from
+ *  the Secret. */
 export interface FuncOutput {
   config: string;
   secret: string;
   shared: string;
 }
 
-// A bound Secret is not in the worker environment: its keys are read through ctx.secret, each read checked by funcd
-// (ADR-0249). The ConfigMap's keys stay in the environment, and SHARED, which the Secret shadows, reads from the Secret.
+// No Secret value is in the worker's environment: ctx.secret asks funcd for each value on each call. The ConfigMap's
+// keys are in the environment, except SHARED, which the Secret also holds.
 export const handle: Handler<FuncInput, FuncOutput> = async (ctx) => {
   return {
     config: process.env.APP_MODE ?? '',

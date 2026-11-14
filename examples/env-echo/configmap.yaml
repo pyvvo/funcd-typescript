@@ -1,7 +1,6 @@
-# The non-sensitive configuration env-echo binds via spec.bindings.config (ADR-0093). ConfigMap Data is a plain
-# string map (unlike a Secret, whose Data is base64-encoded []byte). APP_MODE proves a config-only value
-# reaches the handler; SHARED is deliberately ALSO present in the Secret — the Secret must win it
-# (config-then-secrets merge order, ADR-0092/0093).
+# app-config: settings that are not secret, which env-echo binds under spec.bindings.config. Each worker gets its
+# keys as environment variables when it starts; unlike a Secret's values, these are plain text. SHARED is also a key
+# of the Secret app-secret, so funcd leaves it out of the environment, and the handler reads the Secret's value.
 apiVersion: funcd.io/v1alpha1
 kind: ConfigMap
 metadata:

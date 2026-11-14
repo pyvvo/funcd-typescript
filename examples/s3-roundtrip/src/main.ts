@@ -1,20 +1,11 @@
-// s3-roundtrip — a function that exercises the F47 S3-protocol frontend (ADR-0080/0085) end to end
-// using ONLY the funcd-INJECTED keypair. For a function that declares spec.bindings.blob, the daemon injects
-// AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY (a per-function SigV4 keypair derived from the node master
-// secret — the function never chooses it), AWS_REGION, and AWS_ENDPOINT_URL_S3 (the sandbox-facing
-// gateway address: under containerd the CNI bridge gateway IP). On invoke the handler:
-//   (a) PutObject  lakehouse/gold/roundtrip-<inv>.txt   — the fn OWNS the gold prefix → allowed
-//   (b) GetObject  it back                              — body must match
+// s3-roundtrip: an S3 client built from the AWS_* variables that funcd gives the worker. On each call the handler:
+//   (a) PutObject  lakehouse/gold/roundtrip-<inv>.txt   — gold is the prefix it owns → allowed
+//   (b) GetObject  it back                              — the body must match
 //   (c) ListObjectsV2 prefix lakehouse/gold/            — the key must be present
-//   (d) PutObject  lakehouse/other/x.txt               — NOT bound / not owner → 403 AccessDenied
-// and returns {"put","get","list","denied"} (denied=true means step (d) was correctly rejected by the
-// Cedar PEP on the live daemon). This proves: keypair-injection → SigV4 over TCP → the Cedar PEP →
-// blob.Bucket, on real containerd.
-//
-// AWS SDK v3 config note: forcePathStyle:true + region/endpoint/credentials from env, AND
-// requestChecksumCalculation/responseChecksumValidation = "WHEN_REQUIRED" — the SDK's default
-// streaming-CRC trailer breaks against the gateway (exactly as the Go scenario tests set
-// RequestChecksumCalculation=WhenRequired / ResponseChecksumValidation=WhenRequired).
+//   (d) PutObject  lakehouse/other/x.txt                — refused with 403 on a platform; funcdctl dev allows it
+//   (e) PutObject + GetObject  lakehouse/shared/granted-<inv>.txt — allowed by the role in rolesassignment.yaml
+// It returns one field per step: put, get, list (the number of keys under gold/, or 0 without the new key), denied
+// (true when (d) was refused) and granted (true when (e) read back what it wrote).
 import type { CloudEvent, FunctionContext } from '@funcd-dev/shim';
 
 import { S3Client, PutObjectCommand, GetObjectCommand, ListObjectsV2Command } from '@aws-sdk/client-s3';
@@ -28,16 +19,15 @@ export interface FuncOutput {
   get: boolean;
   list: number;
   denied: boolean;
-  /** A PutObject+GetObject into `shared` — a prefix the fn neither owns nor binds — authorized ONLY by
-   *  the RolesAssignment granting Blob Data Writer @ lakehouse/shared (ADR-0136). true ⇒ the role-assigned
-   *  writer path works on real containerd (the prod mirror of funcdctl dev's grant). */
+  /** true when the object written into shared, a prefix it neither owns nor binds, reads back unchanged: the role in
+   *  rolesassignment.yaml allows the write and the read. */
   granted: boolean;
 }
 
 const BUCKET = 'lakehouse';
-const GOLD = 'gold'; // the prefix this function OWNS
-const OTHER = 'other'; // a prefix it is NOT bound to → must be denied
-const SHARED = 'shared'; // NOT owned, NOT bound — writable ONLY via the ADR-0136 RolesAssignment grant
+const GOLD = 'gold'; // the prefix this function owns
+const OTHER = 'other'; // not owned, not bound: a platform refuses the write
+const SHARED = 'shared'; // not owned, not bound: written through the role in rolesassignment.yaml
 
 function newClient(): S3Client {
   return new S3Client({
@@ -48,8 +38,8 @@ function newClient(): S3Client {
       accessKeyId: process.env.AWS_ACCESS_KEY_ID ?? '',
       secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY ?? '',
     },
-    // CRITICAL: the gateway rejects the SDK's default streaming-CRC trailer; require checksums only
-    // when the operation explicitly needs them (parity with the Go scenario tests).
+    // The gateway refuses the SDK's default streaming checksum trailer, so the client sends and checks a checksum
+    // only when an operation requires one.
     requestChecksumCalculation: 'WHEN_REQUIRED',
     responseChecksumValidation: 'WHEN_REQUIRED',
   });
@@ -70,7 +60,7 @@ export async function handle(ctx: FunctionContext, event: CloudEvent<FuncInput>)
   const want = `roundtrip-${inv}`;
   const s3 = newClient();
 
-  // (a) PutObject into the OWNED gold prefix → allowed.
+  // (a) PutObject into gold, the prefix it owns → allowed.
   await s3.send(new PutObjectCommand({ Bucket: BUCKET, Key: key, Body: want }));
   ctx.log(`s3-roundtrip: PUT ${BUCKET}/${key} ok`);
   const put = true;
@@ -87,11 +77,11 @@ export async function handle(ctx: FunctionContext, event: CloudEvent<FuncInput>)
   const list = keys.includes(key) ? keys.length : 0;
   ctx.log(`s3-roundtrip: LIST ${GOLD}/ → ${keys.length} object(s), present=${keys.includes(key)}`);
 
-  // (d) PutObject into a prefix it is NOT bound to / does not own → must be DENIED (403) by the PEP.
+  // (d) PutObject into other, which it neither owns nor binds → 403 on a platform; funcdctl dev allows it.
   let denied = false;
   try {
     await s3.send(new PutObjectCommand({ Bucket: BUCKET, Key: `${OTHER}/x.txt`, Body: 'nope' }));
-    ctx.log(`s3-roundtrip: PUT ${OTHER}/x.txt UNEXPECTEDLY allowed — PEP did not deny`);
+    ctx.log(`s3-roundtrip: PUT ${OTHER}/x.txt allowed (denied=false)`);
   } catch (err) {
     const e = err as { $metadata?: { httpStatusCode?: number }; name?: string };
     const code = e?.$metadata?.httpStatusCode;
@@ -99,11 +89,8 @@ export async function handle(ctx: FunctionContext, event: CloudEvent<FuncInput>)
     ctx.log(`s3-roundtrip: PUT ${OTHER}/x.txt denied=${denied} (status=${code}, name=${e?.name})`);
   }
 
-  // (e) PutObject + GetObject into `shared` — a prefix this fn NEITHER owns NOR binds. This is the SAME
-  //     unowned class as `other` (step d, denied), but here a RolesAssignment grants Blob Data Writer @
-  //     lakehouse/shared (ADR-0136), so the write passes the REAL single-writer forbid via the `writers`
-  //     set. granted=true proves the role-assigned-writer path on real containerd (the prod mirror of
-  //     funcdctl dev's auto-provisioned grant), distinct from the owner path (step a).
+  // (e) PutObject + GetObject into shared, which it neither owns nor binds → allowed by the role in
+  //     rolesassignment.yaml.
   let granted = false;
   try {
     const gkey = `${SHARED}/granted-${inv}.txt`;

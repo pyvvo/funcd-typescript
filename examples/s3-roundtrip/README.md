@@ -4,7 +4,7 @@ A **TypeScript** function that, on invoke, uses **only its funcd-INJECTED keypai
 against the gateway — proving the whole live path: **keypair-injection → SigV4 over TCP → the Cedar
 PEP → `blob.Bucket`**, on real containerd.
 
-For a function that declares `spec.bindings.blob`, the daemon injects (ADR-0085 `addS3Env`):
+While the S3 gateway runs, funcd gives each worker of a function that declares `spec.bindings.blob` these variables:
 
 | env var | value |
 |---|---|
@@ -15,15 +15,17 @@ For a function that declares `spec.bindings.blob`, the daemon injects (ADR-0085 
 ## What the handler does
 
 ```
-(a) PutObject  lakehouse/gold/roundtrip-<inv>.txt   (s3-roundtrip OWNS gold)  → ok        put=true
+(a) PutObject  lakehouse/gold/roundtrip-<inv>.txt   (s3-roundtrip owns gold)  → ok        put=true
 (b) GetObject  it back                              body must match          → ok        get=true
 (c) ListObjectsV2 prefix lakehouse/gold/            the key must be present  → n>=1      list=n
-(d) PutObject  lakehouse/other/x.txt                NOT bound / not owner    → 403 deny  denied=true
+(d) PutObject  lakehouse/other/x.txt                not bound, not owner     → 403       denied=true
+(e) PutObject + GetObject lakehouse/shared/granted-<inv>.txt   through the role → ok    granted=true
 ```
 
-It returns `{"put":true,"get":true,"list":<n>,"denied":true}`. `denied=true` means step (d) was
-correctly rejected by the Cedar PEP on the live daemon (the single-writer `forbid` — `s3-roundtrip`
-is not `other`'s owner and binds no read for it).
+On a platform it returns `{"put":true,"get":true,"list":<n>,"denied":true,"granted":true}`. The gateway
+refuses (d) with 403: `other` has no owner, and no role lets `s3-roundtrip` write it. The role in
+`rolesassignment.yaml` lets (e) write `shared` and read it back. Under `funcdctl dev`, which gives each
+Function a role that writes every prefix of the namespace, (d) succeeds and `denied` is `false`.
 
 ## The AWS SDK v3 (JS) config that works against the gateway
 
@@ -76,27 +78,25 @@ swap is atomic and the previous digest's objects are kept, so rolling back is re
 
 ## Run it locally (`funcdctl dev`)
 
-`funcdctl dev` runs the function from its resource and contract files (funcd ADR-0247) — printing a colored services
-banner + live logs (it builds the `-tags dev` funcdctl for you) and boots the in-process S3 endpoint
-alongside the gateway. It loads every manifest in the dir, so the `lakehouse` Bucket and its
-`spec.bindings.blob` binding are wired automatically:
+`funcdctl dev` runs the folder's resource files on a local platform, with its S3 gateway, and runs the Function
+from its build, `s3-roundtrip.mjs`. It applies every manifest in the folder, so the `lakehouse` Bucket, the
+binding and the role are in place. Start it from the repository's root folder:
 
 ```bash
-just dev-example js/s3-roundtrip      # gateway :3005 · S3 :3006 — override: just dev-example js/s3-roundtrip 4000 4001
+funcdctl dev examples/s3-roundtrip --gport 8080 --s3port 3006
 ```
 
-Invoke the gateway the banner prints (default `http://127.0.0.1:3005`). The single generic
-`s3-roundtrip.contract.yaml` names the function after its directory (`s3-roundtrip`); the invoke is a **CloudEvent
-envelope** — `{"data": <input>}` matching the contract file's `input` (`{inv?: string}`):
+In another terminal, call the Function with a tag; the body is its input, as the contract file's `input`
+(`{inv?: string}`) describes:
 
 ```bash
-curl -sS -XPOST http://127.0.0.1:3005/function/s3-roundtrip \
-  -H 'Content-Type: application/json' -d '{"data":{"inv":"001"}}'
-# → {"put":true,"get":true,"list":1,"denied":true}
+curl -s -X POST -H 'content-type: application/json' -d '{"inv":"001"}' http://127.0.0.1:8080/function/s3-roundtrip
+# → {"put":true,"get":true,"list":1,"denied":false,"granted":true}
 ```
 
-The handler writes to `s3://lakehouse/gold/`; inspect it with the S3 creds the banner prints, against
-the dev S3 endpoint on `:3006`:
+`denied` is `false` here because `funcdctl dev` gives each Function a role that writes every prefix of the
+namespace. The handler writes to `s3://lakehouse/gold/`; inspect it with the S3 credentials the banner prints,
+against the dev S3 endpoint on `:3006`:
 
 ```bash
 aws s3 ls s3://lakehouse/gold/ --endpoint-url http://127.0.0.1:3006
@@ -116,4 +116,4 @@ nix develop -c just lima-example s3
 ```
 
 Boots a fresh containerd VM, deploys the function, and runs `e2e/s3.venom.yml` — one invoke asserts
-`put/get/list/denied`, proving the round-trip and the PEP deny on the live daemon.
+`put/get/list/denied/granted`: the round-trip, the refused write into `other` and the write through the role.

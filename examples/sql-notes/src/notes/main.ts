@@ -45,6 +45,7 @@ export async function handle(ctx: FunctionContext, event: CloudEvent<FuncInput>)
   const d = db(ctx);
   const input = event.data ?? { op: 'list' };
   switch (input.op) {
+    // #region add
     case 'add': {
       const id = await notebookId(d, input.notebook ?? 'inbox');
       const [note] = await d
@@ -53,6 +54,7 @@ export async function handle(ctx: FunctionContext, event: CloudEvent<FuncInput>)
         .returning({ id: notes.id, title: notes.title });
       return { note };
     }
+    // #endregion add
     case 'done': {
       const res = await d
         .update(notes)
@@ -85,6 +87,7 @@ export async function handle(ctx: FunctionContext, event: CloudEvent<FuncInput>)
       ]);
       return { changed: 1 };
     }
+    // #region list
     default: {
       const rows = await d
         .select({
@@ -100,5 +103,6 @@ export async function handle(ctx: FunctionContext, event: CloudEvent<FuncInput>)
         .orderBy(desc(notes.priority), asc(notes.id));
       return { notes: rows };
     }
+    // #endregion list
   }
 }

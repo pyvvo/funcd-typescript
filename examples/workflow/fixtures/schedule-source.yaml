@@ -1,7 +1,5 @@
-# nightly-timer — a timer EventSource (ADR-0108, v2 named events). One named event `tick` fires on its
-# own interval onto the in-process Fanout; the `nightly` Sensor (schedule-sensor.yaml) subscribes to it and
-# starts an `orders` run per tick — the F68 scheduled-workflow path (a timer event + a Sensor `workflow:`
-# action, no new mechanism). The interval is a duration string (funcd ADR-0194), such as 5s or 1h30m.
+# nightly-timer: a timer EventSource whose event tick fires every 5 seconds; the Sensor nightly of
+# schedule-sensor.yaml starts a run of orders at each tick. An interval is a duration, such as 5s or 1h30m.
 apiVersion: funcd.io/v1alpha1
 kind: EventSource
 metadata:

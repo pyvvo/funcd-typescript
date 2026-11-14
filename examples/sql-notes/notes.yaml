@@ -1,4 +1,4 @@
-# Function notes: its spec.bindings.sql binding is its access to notes-db as alias app (funcd ADR-0233).
+# Function notes, the owner of notes-db: spec.bindings.sql binds it as the alias app.
 apiVersion: funcd.io/v1alpha1
 kind: Function
 metadata:

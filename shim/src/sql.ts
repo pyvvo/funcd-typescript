@@ -32,8 +32,17 @@ export interface SQLExecResult {
 
 /** A function's view of the SQL databases it binds (spec.bindings.sql), by alias. */
 export interface SQLClient {
+  /** Runs one statement that reads, and returns its rows as objects keyed by column name; with a duplicate column name,
+   *  the last one wins. params fill the statement's ? placeholders in order, or its :name placeholders from one object.
+   *  A statement that writes, or that the database refuses, fails with the HTTP status 400. */
   query(alias: string, sql: string, params?: SQLParams): Promise<SQLRow[]>;
+  /** Runs one statement that reads, and returns its column names and its rows as arrays of values in column order, so
+   *  every column of a join is kept. params and failures are as for query. */
   queryValues(alias: string, sql: string, params?: SQLParams): Promise<SQLValues>;
+  /** Runs one statement, or a list of up to 500 statements, in one transaction that applies all or none of them.
+   *  Returns the statement's result, or one result for each statement of a list: rowsAffected and lastInsertId, with
+   *  columns and values for a RETURNING statement. A statement that the database refuses fails the call with the HTTP
+   *  status 400. Only the database's owner and the writers that a RolesAssignment names can execute. */
   execute(alias: string, sql: string, params?: SQLParams): Promise<SQLExecResult>;
   execute(alias: string, statements: SQLStatement[]): Promise<SQLExecResult[]>;
 }

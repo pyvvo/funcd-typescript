@@ -6,9 +6,10 @@ export interface LakeEndpoint {
   token: string;
 }
 
-/** A function's lake bindings by alias (funcd ADR-0245). */
+/** A function's Lake bindings, each by its alias in spec.bindings.lake. */
 export interface LakeClient {
-  /** Throws an Error naming the alias when it is not bound. */
+  /** The gateway of the Lake bound as alias: url, its address as host:port, and token, the token that it accepts from
+   *  the function. Throws an Error naming the alias when the function binds no Lake with that alias. */
   get(alias: string): LakeEndpoint;
 }
 

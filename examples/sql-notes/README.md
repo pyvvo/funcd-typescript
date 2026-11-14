@@ -44,8 +44,8 @@ const rows = await funcdDrizzle(ctx, { schema })
 
 ## Run it locally
 
-`funcdctl dev` runs both functions from source with `notes-db` on a local rqlite engine (funcd ADR-0237); a funcdctl
-built with the engine (`just build-sql-engine` in funcd) is needed.
+`funcdctl dev` runs both functions from source with `notes-db` on a local rqlite engine. The dev build of funcdctl,
+which funcd's install script installs, includes that engine.
 
 ```bash
 yarn build

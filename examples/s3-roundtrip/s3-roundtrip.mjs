@@ -23161,7 +23161,7 @@ async function handle(ctx, event) {
 			Key: `${OTHER}/x.txt`,
 			Body: "nope"
 		}));
-		ctx.log(`s3-roundtrip: PUT ${OTHER}/x.txt UNEXPECTEDLY allowed — PEP did not deny`);
+		ctx.log(`s3-roundtrip: PUT ${OTHER}/x.txt allowed (denied=false)`);
 	} catch (err) {
 		const e = err;
 		const code = e?.$metadata?.httpStatusCode;

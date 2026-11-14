@@ -1,6 +1,5 @@
-# scorer — a small CHILD workflow used as a sub-workflow step by pipeline.yaml (F70/ADR-0099). It has one
-# function step (the `score` image) so its derived contract is {amount} → {amount, score}. A parent runs
-# it as a `workflow:` step and receives its run output across the boundary.
+# scorer: a Workflow with one step, s, which runs the score image: its input is {amount} and its output
+# {amount, score}. The Workflow pipeline of parent.yaml runs it as a child run and gets its output.
 apiVersion: funcd.io/v1alpha1
 kind: Workflow
 metadata:

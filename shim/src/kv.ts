@@ -38,7 +38,7 @@ export interface KVClient {
    *  put(binding, key, JSON.stringify(value)). */
   getJSON<T = unknown>(binding: string, key: string): Promise<T | null>;
   /** Writes the value. opts.ttl, in whole seconds, sets the key's expiry; a put without it leaves the key with none.
-   *  Only the table's owner can write. */
+   *  Only the table's owner and the writers that a RolesAssignment names can write. */
   put(binding: string, key: string, value: Uint8Array | string, opts?: PutOptions): Promise<void>;
   /** Creates the key: its new version, or null when it exists (an expired key does not). */
   putIfAbsent(binding: string, key: string, value: Uint8Array | string, opts?: PutOptions): Promise<string | null>;

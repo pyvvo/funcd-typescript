@@ -1,16 +1,13 @@
-# orders — a Workflow mixing dispatched functions with engine-native built-ins (ADR-0094 + ADR-0096).
-# The engine materializes each `function.image` step into an owned Function (orders-<step>) that pulls
-# + serves on containerd, and runs the built-in `wait`/`pass` steps in-process (no container):
+# orders: a Workflow that mixes steps that call Functions with steps that funcd runs itself. Each function step
+# with an image gets a Function of its own, orders-<step>, which funcd creates and deletes with the Workflow; the
+# built-in wait and pass steps run in funcd, with no Function:
 #
 #   ingest ── score ──┬── hi  (when score > 30) ──┐
 #                     └── lo  (when score <= 30) ──┴── report (join: any) ── settle (wait) ── summary (pass)
 #
-# A `function` step is sourced from an `image:` (materialized) or a `ref:` to an existing Function.
-# All dispatch knobs (retry/timeout/kv/pooling) live under `function`. A `builtin` step is engine-native:
-# `wait` blocks in the engine for its duration, then passes its input through (ADR-0096); `pass` transforms
-# data via a goja Select expression. Chaining passes a parent's output verbatim; the fan-out branches are
-# exclusive via `when` (ADR-0095); `report` joins whichever branch survived. Owned Functions cascade with
-# the Workflow (delete-owner); they are per-workflow, kept warm (minReplicas: 1).
+# A step's input is its parent's output. The when conditions make hi and lo exclusive, and report, with join: any,
+# runs on the output of whichever of them succeeded. settle waits, then passes report's output on, and summary
+# reshapes it with a ${{ }} expression into the run's output.
 apiVersion: funcd.io/v1alpha1
 kind: Workflow
 metadata:
@@ -19,8 +16,8 @@ metadata:
   resourceGroup: rg1
 spec:
   pooling:
-    mode: isolated        # one solo container per step (no shared pool worker on this lane)
-    minReplicas: 1        # keep each materialized step warm — no cold-start race in the e2e
+    mode: isolated        # each step's Function gets a worker of its own
+    minReplicas: 1        # each step's Function keeps one worker warm
   steps:
     - name: ingest
       function:
@@ -28,33 +25,39 @@ spec:
     - name: score
       function:
         image: oci-layout:///mnt/funcd-deps/registry:score
-      dependsOn: [ingest]
+      dependsOn:
+        - ingest
     - name: hi
       function:
         image: oci-layout:///mnt/funcd-deps/registry:hi
-      dependsOn: [score]
+      dependsOn:
+        - score
       when:
         condition: "${{ step.score.output.score > 30 }}"
     - name: lo
       function:
         image: oci-layout:///mnt/funcd-deps/registry:lo
-      dependsOn: [score]
+      dependsOn:
+        - score
       when:
         condition: "${{ step.score.output.score <= 30 }}"
     - name: report
       function:
         image: oci-layout:///mnt/funcd-deps/registry:report
-      dependsOn: [hi, lo]
+      dependsOn:
+        - hi
+        - lo
       join: any
-    # built-in wait: the engine blocks this step for 2s, then passes report's output through — `describe`
-    # shows the step Running until it Succeeds. No container is dispatched.
+    # a built-in wait: the step waits 2 seconds, then succeeds with report's output as its own; describe shows
+    # it Running meanwhile.
     - name: settle
       builtin:
         wait: "2s"
-      dependsOn: [report]
-    # built-in pass: an in-engine data transform (goja Select). `settle` passed report's output through
-    # verbatim, so this reshapes it into the run's final output — no container is dispatched.
+      dependsOn:
+        - report
+    # a built-in pass: the value of its ${{ }} JavaScript expression is the step's output, here the run's output.
     - name: summary
       builtin:
         pass: "${{ {tier: step.settle.output.tier, settled: true} }}"
-      dependsOn: [settle]
+      dependsOn:
+        - settle

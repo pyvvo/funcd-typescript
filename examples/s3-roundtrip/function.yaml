@@ -1,10 +1,6 @@
-# s3-roundtrip — the Function WITH its spec.bindings.blob binding.
-#
-# It binds the shared lakehouse Bucket by `ref` (bucket.yaml; funcd ADR-0248), in any order: until the
-# Bucket exists the Function waits. The spec.bindings.blob entry is the read capability (ADR-0076 parity);
-# being gold's prefix.owner (bucket.yaml) is the WRITE grant (single writer). With
-# both, the daemon injects the AWS_* SigV4 keypair + endpoint into the worker (ADR-0085 addS3Env) — the
-# function reads its credentials purely from env and round-trips S3 against the gateway.
+# s3-roundtrip binds the prefix gold of the Bucket lakehouse, which it declares by ref, and waits until the prefix
+# exists. The binding lets it read gold; as gold's owner, it also writes gold. While the S3 gateway runs, each worker
+# gets AWS_ENDPOINT_URL_S3, AWS_REGION, AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY.
 apiVersion: funcd.io/v1alpha1
 kind: Function
 metadata:
@@ -14,7 +10,7 @@ metadata:
 spec:
   runtime: nodejs22
   handler: handle
-  image: oci-layout:///mnt/funcd-deps/registry:s3-roundtrip   # funcdctl push s3-roundtrip.mjs
+  image: oci-layout:///mnt/funcd-deps/registry:s3-roundtrip   # what funcdctl push wrote from s3-roundtrip.mjs
   replicas: 1
   scaling:
     minReplicas: 1
@@ -22,6 +18,6 @@ spec:
     - ref: lakehouse            # shared with the bi and docs Sites (bucket.yaml)
   bindings:
     blob:
-      - alias: gold           # the in-code handle / S3 scope: s3://lakehouse/gold/<key>
-        bucket: lakehouse     # the Bucket (domain)
-        prefix: gold          # the sub-domain it owns → reads AND writes (single writer)
+      - alias: gold           # the name ctx.blob takes
+        bucket: lakehouse     # the Bucket
+        prefix: gold          # the prefix it owns: it reads and writes it

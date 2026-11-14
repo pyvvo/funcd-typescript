@@ -1,4 +1,4 @@
-// The search function: plain context.sql, no ORM (funcd ADR-0233). Articles keep their tags as a JSON array, an FTS5
+// The search function: plain context.sql, no ORM. Articles keep their tags as a JSON array, an FTS5
 // index follows the table through triggers, and a search ranks matches with bm25 and returns a highlighted snippet.
 import type { CloudEvent, FunctionContext, SQLStatement } from '@funcd-dev/shim';
 

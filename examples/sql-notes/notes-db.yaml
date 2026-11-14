@@ -1,5 +1,4 @@
-# SQLDatabase notes-db (funcd ADR-0232): one rqlite engine with a durable directory, written only by its owner, the
-# notes function, and by the RolesAssignment of grant.yaml.
+# SQLDatabase notes-db: the notes database. Its owner, notes, writes it, and notes-migrate does through grant.yaml.
 apiVersion: funcd.io/v1alpha1
 kind: SQLDatabase
 metadata:

@@ -17,7 +17,8 @@ other body byte for byte, at most 1 MiB.
 ```bash
 yarn build                                  # → devices-api.mjs
 funcdctl push devices-api.mjs <ref>
-funcdctl apply -f devices.yaml -f route.yaml
+funcdctl apply -f devices.yaml
+funcdctl apply -f route.yaml
 curl -s -X POST localhost:8081/api/devices -H 'content-type: application/json' -d '{"name":"truck-7"}'
 curl -sN localhost:8081/api/devices/export  # one line per device, as it is written
 ```

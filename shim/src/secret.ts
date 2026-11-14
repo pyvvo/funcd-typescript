@@ -4,14 +4,26 @@
 // with PUT and DELETE /secret/{binding}/{key} (funcd ADR-0327, ADR-0328).
 import { type Resp, send } from './socket.ts';
 
-/** A function's bound secrets (funcd ADR-0249): an unbound key reads as undefined. */
+/** A function's bound Secrets: get and list read them at each call, and put and del change one key of a bound Secret
+ *  that the function may write. A key that no bound Secret holds, or that starts with FUNCD_, reads as undefined. */
 export interface SecretClient {
+  /** The key's value, or undefined when no bound Secret holds the key, the key starts with FUNCD_, or a bound Secret
+   *  does not exist. When two Secrets hold the key, the later one in spec.bindings.secret wins. Fails with the HTTP
+   *  status 403 when a Policy forbids the function to read a bound Secret. */
   get(key: string): Promise<string | undefined>;
+  /** The keys that the bound Secrets hold, sorted, except a key that starts with FUNCD_. Fails with the HTTP status
+   *  403 when a Policy forbids the function to read a bound Secret, and 404 when a bound Secret does not exist. */
   list(): Promise<string[]>;
   /** Writes key in Secret `binding`, which the function binds and may write: its owner, or a principal a writer role
-   *  names. Every function that binds it reads the value at its next read. */
+   *  names. Every function that binds it reads the value at its next read. Fails with the HTTP status 403 when the
+   *  function does not bind the Secret or may not write it, 404 when the Secret does not exist, 400 when the key or
+   *  the value breaks a Secret's rules, 413 when the request passes 1 MiB, and 409 when the Secret changed under
+   *  each of 5 attempts to write it. */
   put(binding: string, key: string, value: string): Promise<void>;
-  /** Removes key from Secret `binding`, as put may write it; a key the Secret lacks is no error. */
+  /** Removes key from Secret `binding`, which the function binds and may write, as for put; a key that the Secret
+   *  lacks is no error. Fails with the HTTP status 403 when the function does not bind the Secret
+   *  or may not write it, 404 when the Secret does not exist, and 409 when the Secret changed under each of 5
+   *  attempts to write it. */
   del(binding: string, key: string): Promise<void>;
 }
 
