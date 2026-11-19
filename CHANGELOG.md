@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.30.0](https://github.com/pyvvo/funcd-typescript/compare/v0.29.0...v0.30.0) (2026-11-19)
+
+
+### Features
+
+* **shim:** context.principal says who signed in, and an http app receives the principal headers (funcd ADR-0335) ([#111](https://github.com/pyvvo/funcd-typescript/issues/111)) ([a44e494](https://github.com/pyvvo/funcd-typescript/commit/a44e4941a1f09d3ba98bda4cdf818d44b5f170fa))
+
 ## [0.29.0](https://github.com/pyvvo/funcd-typescript/compare/v0.28.0...v0.29.0) (2026-11-14)
 
 
