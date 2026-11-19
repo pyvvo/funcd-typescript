@@ -3446,12 +3446,43 @@ function containStrayFaults(prefix) {
   process.on("uncaughtException", log("uncaught exception"));
 }
 
+// src/principal.ts
+var PRINCIPAL_HEADERS = /* @__PURE__ */ new Set([
+  "x-funcd-principal",
+  "x-funcd-principal-id",
+  "x-funcd-principal-name",
+  "x-funcd-id-token"
+]);
+var BASE64 = /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/;
+var isObject = (value) => typeof value === "object" && value !== null && !Array.isArray(value);
+var utf8 = (value) => Buffer.from(value, "latin1").toString("utf8");
+function principalFrom(headers) {
+  const encoded = headers.get("x-funcd-principal");
+  const id = headers.get("x-funcd-principal-id");
+  if (!encoded || !id || !BASE64.test(encoded)) return void 0;
+  let value;
+  try {
+    value = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(Buffer.from(encoded, "base64")));
+  } catch {
+    return void 0;
+  }
+  if (!isObject(value) || typeof value.provider !== "string" || value.provider === "" || !isObject(value.claims)) {
+    return void 0;
+  }
+  const principal = { provider: value.provider, id: utf8(id), claims: value.claims };
+  const name = headers.get("x-funcd-principal-name");
+  if (name) principal.name = utf8(name);
+  return principal;
+}
+
 // src/httpapp.ts
 var BODILESS = /* @__PURE__ */ new Set(["GET", "HEAD"]);
 async function appRequest(raw2) {
   const headers = new Headers();
   raw2.headers.forEach((value, key) => {
-    if (!key.startsWith("x-funcd-") && key !== "content-length") headers.append(key, value);
+    if ((!key.startsWith("x-funcd-") || PRINCIPAL_HEADERS.has(key)) && key !== "content-length") {
+      headers.append(key, value);
+    }
   });
   let body = null;
   if (!BODILESS.has(raw2.method)) {
@@ -3859,7 +3890,7 @@ function parseTraceparent(tp) {
   if (!/^[0-9a-f]{16}$/.test(parentId) || parentId === ZERO_SPAN) return null;
   return { traceId, parentId };
 }
-function newInvContext(tp, providedSpanId, deadline) {
+function newInvContext(tp, providedSpanId, deadline, principal) {
   const adopted = parseTraceparent(tp);
   const spanId = providedSpanId && /^[0-9a-f]{16}$/.test(providedSpanId) ? providedSpanId : randomBytes(8).toString("hex");
   return {
@@ -3867,7 +3898,8 @@ function newInvContext(tp, providedSpanId, deadline) {
     traceId: adopted ? adopted.traceId : randomBytes(16).toString("hex"),
     spanId,
     parentId: adopted ? adopted.parentId : "",
-    deadline
+    deadline,
+    principal
   };
 }
 function emitSpan(sink, ids, name, kind, start, end, status, statusMsg, attrs, links, member, bound) {
@@ -3903,8 +3935,8 @@ function boundSpan(rec, bound) {
   rec.attrs.keptBytes = String(b.kept);
   return JSON.stringify(rec);
 }
-function startSpan(sink, name, tp, spanId, links = [], member, bound = DEFAULT_MAX_RECORD_BYTES, deadline) {
-  const inv = newInvContext(tp, spanId, deadline);
+function startSpan(sink, name, tp, spanId, links = [], member, bound = DEFAULT_MAX_RECORD_BYTES, deadline, principal) {
+  const inv = newInvContext(tp, spanId, deadline, principal);
   const startNs = Date.now() * 1e6;
   const t0 = process.hrtime.bigint();
   const validLinks = links.filter((l) => /^[0-9a-f]{16}$/.test(l));
@@ -4435,7 +4467,10 @@ function contextFor(sink, bound) {
     config: makeConfig(),
     secret: makeSecret(),
     lake: makeLake(),
-    remainingMs
+    remainingMs,
+    get principal() {
+      return currentInv()?.principal;
+    }
   };
 }
 function addHealth(app, health) {
@@ -4474,7 +4509,8 @@ function createApp(handler, trace = {}, health = {}) {
       parseLinks(c.req.header("x-funcd-span-links")),
       void 0,
       trace.bound,
-      deadline
+      deadline,
+      principalFrom(c.req.raw.headers)
     );
     try {
       const result = toWire(await span.run(() => handler(ctx, event)));
@@ -4503,7 +4539,8 @@ function createHttpApp(handler, trace = {}, health = {}) {
       parseLinks(c.req.header("x-funcd-span-links")),
       void 0,
       trace.bound,
-      deadlineFrom(c.req.header("x-funcd-timeout-ms"))
+      deadlineFrom(c.req.header("x-funcd-timeout-ms")),
+      principalFrom(c.req.raw.headers)
     );
     try {
       const res = await span.run(async () => handler(await appRequest(c.req.raw), ctx));

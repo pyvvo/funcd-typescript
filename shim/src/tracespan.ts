@@ -9,6 +9,7 @@ import { randomBytes } from 'node:crypto';
 
 import { currentInv, invStore, type InvContext } from './invcontext.ts';
 import { type Budget, DEFAULT_MAX_RECORD_BYTES, fitText, type Sink } from './funclog.ts';
+import type { Principal } from './principal.ts';
 
 const ZERO_TRACE = '0'.repeat(32);
 const ZERO_SPAN = '0'.repeat(16);
@@ -48,8 +49,14 @@ export function parseTraceparent(tp: string | undefined): { traceId: string; par
 /** newInvContext establishes the invocation identity: adopt the traceparent's trace-id + parent
  *  span-id when present, else mint a root (fresh 16-byte trace). The span-id is the engine-provided
  *  one (ADR-0105, X-Funcd-Span-Id) when a valid hex16 is given, else freshly minted (direct invoke).
- *  `deadline` is the call's deadline (ADR-0226), absent without a valid X-Funcd-Timeout-Ms. */
-export function newInvContext(tp: string | undefined, providedSpanId?: string, deadline?: number): InvContext {
+ *  `deadline` is the call's deadline (ADR-0226), absent without a valid X-Funcd-Timeout-Ms; `principal` is who signed
+ *  in to the call (funcd ADR-0335), absent when nobody did. */
+export function newInvContext(
+  tp: string | undefined,
+  providedSpanId?: string,
+  deadline?: number,
+  principal?: Principal,
+): InvContext {
   const adopted = parseTraceparent(tp);
   const spanId =
     providedSpanId && /^[0-9a-f]{16}$/.test(providedSpanId) ? providedSpanId : randomBytes(8).toString('hex');
@@ -59,6 +66,7 @@ export function newInvContext(tp: string | undefined, providedSpanId?: string, d
     spanId,
     parentId: adopted ? adopted.parentId : '',
     deadline,
+    principal,
   };
 }
 
@@ -131,7 +139,7 @@ export interface Span {
  *  X-Funcd-Span-Id — else mint); `links` are fan-in edges (X-Funcd-Span-Links) attached to the span;
  *  `member` is the pool member, stamped as `funcd.member` (none in the solo shim); `bound` caps the span
  *  record line (FUNCD_FUNCLOG_MAX_RECORD_BYTES); `deadline` is the call's deadline, which ctx.remainingMs()
- *  reads (ADR-0226). */
+ *  reads (ADR-0226); `principal` is who signed in to the call, which ctx.principal reads (funcd ADR-0335). */
 export function startSpan(
   sink: Sink | null,
   name: string,
@@ -141,8 +149,9 @@ export function startSpan(
   member?: string,
   bound: number = DEFAULT_MAX_RECORD_BYTES,
   deadline?: number,
+  principal?: Principal,
 ): Span {
-  const inv = newInvContext(tp, spanId, deadline);
+  const inv = newInvContext(tp, spanId, deadline, principal);
   const startNs = Date.now() * 1e6;
   const t0 = process.hrtime.bigint();
   const validLinks = links.filter((l) => /^[0-9a-f]{16}$/.test(l));
