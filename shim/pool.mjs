@@ -3788,7 +3788,7 @@ function parseTraceparent(tp) {
   if (!/^[0-9a-f]{16}$/.test(parentId) || parentId === ZERO_SPAN) return null;
   return { traceId, parentId };
 }
-function newInvContext(tp, providedSpanId, deadline) {
+function newInvContext(tp, providedSpanId, deadline, principal) {
   const adopted = parseTraceparent(tp);
   const spanId = providedSpanId && /^[0-9a-f]{16}$/.test(providedSpanId) ? providedSpanId : randomBytes(8).toString("hex");
   return {
@@ -3796,7 +3796,8 @@ function newInvContext(tp, providedSpanId, deadline) {
     traceId: adopted ? adopted.traceId : randomBytes(16).toString("hex"),
     spanId,
     parentId: adopted ? adopted.parentId : "",
-    deadline
+    deadline,
+    principal
   };
 }
 function emitSpan(sink, ids, name, kind, start, end, status, statusMsg, attrs, links, member, bound) {
@@ -3832,8 +3833,8 @@ function boundSpan(rec, bound) {
   rec.attrs.keptBytes = String(b.kept);
   return JSON.stringify(rec);
 }
-function startSpan(sink, name, tp, spanId, links = [], member, bound = DEFAULT_MAX_RECORD_BYTES, deadline) {
-  const inv = newInvContext(tp, spanId, deadline);
+function startSpan(sink, name, tp, spanId, links = [], member, bound = DEFAULT_MAX_RECORD_BYTES, deadline, principal) {
+  const inv = newInvContext(tp, spanId, deadline, principal);
   const startNs = Date.now() * 1e6;
   const t0 = process.hrtime.bigint();
   const validLinks = links.filter((l) => /^[0-9a-f]{16}$/.test(l));
@@ -4352,6 +4353,29 @@ function checkDependencies(member, signal) {
   });
 }
 
+// src/principal.ts
+var BASE64 = /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/;
+var isObject = (value) => typeof value === "object" && value !== null && !Array.isArray(value);
+var utf8 = (value) => Buffer.from(value, "latin1").toString("utf8");
+function principalFrom(headers) {
+  const encoded = headers.get("x-funcd-principal");
+  const id = headers.get("x-funcd-principal-id");
+  if (!encoded || !id || !BASE64.test(encoded)) return void 0;
+  let value;
+  try {
+    value = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(Buffer.from(encoded, "base64")));
+  } catch {
+    return void 0;
+  }
+  if (!isObject(value) || typeof value.provider !== "string" || value.provider === "" || !isObject(value.claims)) {
+    return void 0;
+  }
+  const principal = { provider: value.provider, id: utf8(id), claims: value.claims };
+  const name = headers.get("x-funcd-principal-name");
+  if (name) principal.name = utf8(name);
+  return principal;
+}
+
 // src/pool.ts
 var maxOldMB = Number(process.env.FUNCD_POOL_MAX_OLD_MB ?? 64);
 var maxYoungMB = Number(process.env.FUNCD_POOL_MAX_YOUNG_MB ?? 16);
@@ -4398,7 +4422,10 @@ async function workerMain() {
     config: makeConfig(),
     secret: makeSecret(spec.name),
     lake: makeLake(),
-    remainingMs
+    remainingMs,
+    get principal() {
+      return currentInv()?.principal;
+    }
   };
   port.on("message", (msg) => {
     if ("ping" in msg) {
@@ -4416,7 +4443,8 @@ async function workerMain() {
         req.links ?? [],
         spec.name,
         recordBound(process.env),
-        req.deadline
+        req.deadline,
+        req.principal
       );
       try {
         const result = toWire(await span.run(() => handler(ctx, event)));
@@ -4589,7 +4617,7 @@ var PooledHandler = class {
   status() {
     return this.error === void 0 ? { name: this.spec.name, state: this.state } : { name: this.spec.name, state: this.state, error: this.error };
   }
-  async invoke(event, timeoutMs, traceparent, spanId, links, deadline) {
+  async invoke(event, timeoutMs, traceparent, spanId, links, deadline, principal) {
     if (!this.healthy) return { id: -1, status: 503, error: `function ${this.spec.name} unavailable` };
     const id = this.nextID++;
     const worker = this.worker;
@@ -4600,7 +4628,7 @@ var PooledHandler = class {
         if (deadline !== void 0) this.ping(worker);
       }, timeoutMs);
       this.pending.set(id, { resolve, timer });
-      worker.postMessage({ id, event, traceparent, spanId, links, deadline });
+      worker.postMessage({ id, event, traceparent, spanId, links, deadline, principal });
     });
   }
   async close() {
@@ -4664,7 +4692,8 @@ function createPool(manifest, limits) {
       c.req.header("traceparent"),
       c.req.header("x-funcd-span-id"),
       parseLinks(c.req.header("x-funcd-span-links")),
-      deadline
+      deadline,
+      principalFrom(c.req.raw.headers)
     );
     if (res.status === 503) return c.json({ error: res.error }, 503);
     if (res.status === 500) return c.json({ error: res.error }, 500);

@@ -80,6 +80,11 @@ export interface FunctionContext {
   lake: LakeClient;
   /** The whole milliseconds left before the call's deadline, 0 once it has passed, or null when the call has none. */
   remainingMs(): number | null;
+  /** Who signed in to the call, when funcd's edge signed a user in with an OpenID Connect provider: provider is the
+   *  name of the OIDCProvider, id the user's subject (the sub claim), name the first of the claims name,
+   *  preferred_username and email that is not empty, and claims the payload of the token that signed the user in, the
+   *  ID token of a browser session or the Bearer token of an API call. Undefined when nobody signed in. */
+  principal?: { provider: string; id: string; name?: string; claims: Record<string, unknown> };
 }
 
 /** A function handler: receives the context + CloudEvent, returns a response (or nothing). */

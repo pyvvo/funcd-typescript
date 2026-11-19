@@ -1,17 +1,21 @@
 // The request and response bridge of a Function with spec.protocol: http (funcd ADR-0243). The edge forwards the
 // request it received, with a JSON body wrapped in a CloudEvent envelope and any other body raw; the app answers a
 // Response the shim streams back as it comes.
+import { PRINCIPAL_HEADERS } from './principal.ts';
 import type { Span } from './tracespan.ts';
 
 const BODILESS = new Set(['GET', 'HEAD']);
 
 /** appRequest rebuilds the request the edge received: its method, URL and headers, without funcd's own x-funcd-*
- *  headers, and as its body the envelope's data re-encoded as JSON, none when the data is null, or the raw bytes of
- *  a body that is no envelope, its Content-Length recomputed. */
+ *  headers but the principal headers of a signed-in call (funcd ADR-0335), and as its body the envelope's data
+ *  re-encoded as JSON, none when the data is null, or the raw bytes of a body that is no envelope, its Content-Length
+ *  recomputed. */
 export async function appRequest(raw: Request): Promise<Request> {
   const headers = new Headers();
   raw.headers.forEach((value, key) => {
-    if (!key.startsWith('x-funcd-') && key !== 'content-length') headers.append(key, value);
+    if ((!key.startsWith('x-funcd-') || PRINCIPAL_HEADERS.has(key)) && key !== 'content-length') {
+      headers.append(key, value);
+    }
   });
   let body: Uint8Array | null = null;
   if (!BODILESS.has(raw.method)) {

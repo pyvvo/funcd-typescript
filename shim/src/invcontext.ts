@@ -3,10 +3,13 @@
 // buildRecord) tag their records with the SAME inv/trace/span ids — the logs↔trace correlation that
 // closes ADR-0081's provenance open question. ADR-0081 specified this carrier but never shipped it
 // (inv/trace_id/span_id were hardcoded empty); this is where it is introduced. It also carries the
-// call's deadline, which ctx.remainingMs() reads (ADR-0226).
+// call's deadline, which ctx.remainingMs() reads (ADR-0226), and its principal, which ctx.principal reads
+// (funcd ADR-0335): the handler's context is one object for every call.
 //
 // Built-ins only (node:async_hooks) so it bundles into shim.mjs/pool.mjs.
 import { AsyncLocalStorage } from 'node:async_hooks';
+
+import type { Principal } from './principal.ts';
 
 /** The identity of the currently-executing invocation. */
 export interface InvContext {
@@ -15,6 +18,7 @@ export interface InvContext {
   spanId: string; // hex16 — this invocation's span
   parentId: string; // hex16 — the traceparent span-id, "" for a root
   deadline?: number; // the nowMs() value at which X-Funcd-Timeout-Ms runs out; none without a valid header
+  principal?: Principal; // who signed in to the call; none when nobody did
 }
 
 /** invStore holds the active InvContext for the duration of a handler call (and its async

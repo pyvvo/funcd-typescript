@@ -36,8 +36,9 @@ import { makeConfig } from './config.ts';
 import { makeSecret } from './secret.ts';
 import { makeLake } from './lake.ts';
 import { checkDependencies, dependencyCheckBudgetMs } from './dependencies.ts';
-import { deadlineFrom, remainingMs } from './invcontext.ts';
+import { currentInv, deadlineFrom, remainingMs } from './invcontext.ts';
 import { installConsoleCapture, openChannel, recordBound, type Sink } from './funclog.ts';
+import { principalFrom } from './principal.ts';
 import { startSpan, parseLinks } from './tracespan.ts';
 
 export type { CloudEvent, FunctionContext, Handler, HttpHandler, Json } from './types.ts';
@@ -68,6 +69,9 @@ function contextFor(sink: Sink | null, bound?: number): FunctionContext {
     secret: makeSecret(),
     lake: makeLake(),
     remainingMs,
+    get principal() {
+      return currentInv()?.principal;
+    },
   };
 }
 
@@ -119,6 +123,7 @@ export function createApp(handler: Handler, trace: TraceOptions = {}, health: He
       undefined,
       trace.bound,
       deadline,
+      principalFrom(c.req.raw.headers),
     );
     try {
       const result = toWire(await span.run(() => handler(ctx, event)));
@@ -154,6 +159,7 @@ export function createHttpApp(handler: HttpHandler, trace: TraceOptions = {}, he
       undefined,
       trace.bound,
       deadlineFrom(c.req.header('x-funcd-timeout-ms')),
+      principalFrom(c.req.raw.headers),
     );
     try {
       const res = await span.run(async () => handler(await appRequest(c.req.raw), ctx));

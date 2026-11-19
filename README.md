@@ -55,6 +55,21 @@ another Function reaches it with `context.fetch(alias, path, init)` over a link,
 whatever its status, and rejects when funcd refuses the call (no link, or a target that does not serve HTTP). See
 [`examples/http-api`](examples/http-api).
 
+## Know who signed in
+
+When funcd's edge signs the caller in with an OpenID Connect provider (funcd ADR-0335), `context.principal` says who
+it is. It is `undefined` for a call that nobody signed in to:
+
+```ts
+export const handle: Handler = (context) => ({ hello: context.principal?.name ?? 'stranger' });
+```
+
+`provider` is the OIDCProvider's name, `id` the user's `sub` claim, `name` the first of the claims `name`,
+`preferred_username` and `email` that is not empty, and `claims` the payload of the token that signed the user in.
+An http app also receives the headers that the edge sets: `X-Funcd-Principal`, `X-Funcd-Principal-Id`,
+`X-Funcd-Principal-Name` and, for a browser session, the ID token in `X-Funcd-Id-Token`. The shim removes every other
+`x-funcd-*` header.
+
 ## Bundle your functions
 
 ```bash

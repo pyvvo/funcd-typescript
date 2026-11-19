@@ -39,7 +39,7 @@ import { makeConfig } from './config.ts';
 import { makeSecret } from './secret.ts';
 import { makeLake } from './lake.ts';
 import { checkDependencies, type DependencyReport, dependencyCheckBudgetMs } from './dependencies.ts';
-import { deadlineFrom, nowMs, parseTimeoutMs, remainingMs } from './invcontext.ts';
+import { currentInv, deadlineFrom, nowMs, parseTimeoutMs, remainingMs } from './invcontext.ts';
 import {
   type ChannelLock,
   installConsoleCapture,
@@ -48,6 +48,7 @@ import {
   recordBound,
   releaseChannelLock,
 } from './funclog.ts';
+import { type Principal, principalFrom } from './principal.ts';
 import { startSpan, parseLinks } from './tracespan.ts';
 
 // --- the wire between host and worker ---
@@ -67,6 +68,7 @@ interface Req {
   spanId?: string; // ADR-0105: the engine-provided span-id the worker's span uses (X-Funcd-Span-Id)
   links?: string[]; // ADR-0105: fan-in edges (X-Funcd-Span-Links)
   deadline?: number; // ADR-0226: the call's deadline, a nowMs() value
+  principal?: Principal; // funcd ADR-0335: who signed in to the call, from the headers funcd's edge set
 }
 // ADR-0226: the host pings the worker that served a late call; the worker answers from its event loop.
 interface Ping {
@@ -148,6 +150,9 @@ async function workerMain(): Promise<void> {
     secret: makeSecret(spec.name),
     lake: makeLake(),
     remainingMs,
+    get principal() {
+      return currentInv()?.principal;
+    },
   };
 
   port.on('message', (msg: Req | Ping) => {
@@ -169,6 +174,7 @@ async function workerMain(): Promise<void> {
         spec.name,
         recordBound(process.env),
         req.deadline,
+        req.principal,
       );
       try {
         const result = toWire(await span.run(() => handler(ctx, event)));
@@ -393,6 +399,7 @@ class PooledHandler {
     spanId?: string,
     links?: string[],
     deadline?: number,
+    principal?: Principal,
   ): Promise<Res> {
     if (!this.healthy) return { id: -1, status: 503, error: `function ${this.spec.name} unavailable` };
     const id = this.nextID++;
@@ -404,7 +411,7 @@ class PooledHandler {
         if (deadline !== undefined) this.ping(worker);
       }, timeoutMs);
       this.pending.set(id, { resolve, timer });
-      worker.postMessage({ id, event, traceparent, spanId, links, deadline } satisfies Req);
+      worker.postMessage({ id, event, traceparent, spanId, links, deadline, principal } satisfies Req);
     });
   }
 
@@ -486,7 +493,8 @@ export function createPool(
       // it cleanly — never forward it to a worker where `event.data` would throw and crash it.
       return c.text('request body must be a JSON object (CloudEvent envelope)', 400);
     }
-    // ADR-0101/0105: forward the trace + span-id + fan-in links headers to the worker.
+    // ADR-0101/0105: forward the trace + span-id + fan-in links headers to the worker, and funcd ADR-0335 the
+    // call's principal.
     const res = await h.invoke(
       event,
       callTimeoutMs(timeoutHeader),
@@ -494,6 +502,7 @@ export function createPool(
       c.req.header('x-funcd-span-id'),
       parseLinks(c.req.header('x-funcd-span-links')),
       deadline,
+      principalFrom(c.req.raw.headers),
     );
     if (res.status === 503) return c.json({ error: res.error }, 503);
     if (res.status === 500) return c.json({ error: res.error }, 500);
