@@ -38,6 +38,7 @@ import { makeBlob } from './blob.ts';
 import { makeConfig } from './config.ts';
 import { makeSecret } from './secret.ts';
 import { makeLake } from './lake.ts';
+import { makeAddon } from './addon.ts';
 import { checkDependencies, type DependencyReport, dependencyCheckBudgetMs } from './dependencies.ts';
 import { currentInv, deadlineFrom, nowMs, parseTimeoutMs, remainingMs } from './invcontext.ts';
 import {
@@ -149,6 +150,7 @@ async function workerMain(): Promise<void> {
     config: makeConfig(),
     secret: makeSecret(spec.name),
     lake: makeLake(),
+    addon: makeAddon({ member: spec.name, sink: channel, bound: recordBound(process.env) }),
     remainingMs,
     get principal() {
       return currentInv()?.principal;

@@ -8,6 +8,7 @@ import type { SQLClient } from './sql.ts';
 import type { ConfigClient } from './config.ts';
 import type { SecretClient } from './secret.ts';
 import type { LakeClient } from './lake.ts';
+import type { AddonClient } from './addon.ts';
 
 export type { KVClient, KVEntry, PutOptions } from './kv.ts';
 export type { BlobClient, SignOptions } from './blob.ts';
@@ -23,6 +24,7 @@ export type {
 export type { ConfigClient } from './config.ts';
 export type { SecretClient } from './secret.ts';
 export type { LakeClient, LakeEndpoint } from './lake.ts';
+export type { AddonClient, AddonError, AddonProblem } from './addon.ts';
 
 /** A CloudEvent — the normalized trigger envelope (ADR-0023). */
 export interface CloudEvent<T = unknown> {
@@ -78,6 +80,9 @@ export interface FunctionContext {
   /** The Lakes that the function binds, by alias: the address of each Lake's gateway, and the token that the gateway
    *  accepts from the function. */
   lake: LakeClient;
+  /** The add-on objects that the function binds, by alias: fetch calls an object's engine through funcd, which serves
+   *  only the paths that the object's edge entry serves. */
+  addon: AddonClient;
   /** The whole milliseconds left before the call's deadline, 0 once it has passed, or null when the call has none. */
   remainingMs(): number | null;
   /** Who signed in to the call, when funcd's edge signed a user in with an OpenID Connect provider: provider is the

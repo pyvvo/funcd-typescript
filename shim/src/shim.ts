@@ -35,6 +35,7 @@ import { makeBlob } from './blob.ts';
 import { makeConfig } from './config.ts';
 import { makeSecret } from './secret.ts';
 import { makeLake } from './lake.ts';
+import { makeAddon } from './addon.ts';
 import { checkDependencies, dependencyCheckBudgetMs } from './dependencies.ts';
 import { currentInv, deadlineFrom, remainingMs } from './invcontext.ts';
 import { installConsoleCapture, openChannel, recordBound, type Sink } from './funclog.ts';
@@ -68,6 +69,7 @@ function contextFor(sink: Sink | null, bound?: number): FunctionContext {
     config: makeConfig(),
     secret: makeSecret(),
     lake: makeLake(),
+    addon: makeAddon({ sink, bound }),
     remainingMs,
     get principal() {
       return currentInv()?.principal;
