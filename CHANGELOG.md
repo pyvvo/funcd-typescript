@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.31.0](https://github.com/pyvvo/funcd-typescript/compare/v0.30.0...v0.31.0) (2026-11-22)
+
+
+### Features
+
+* **shim:** context.addon.fetch calls a bound add-on object's engine through funcd (funcd ADR-0338) ([#113](https://github.com/pyvvo/funcd-typescript/issues/113)) ([52b6c8c](https://github.com/pyvvo/funcd-typescript/commit/52b6c8c39683ff5bb595358aa8552e589a3b3acd))
+
 ## [0.30.0](https://github.com/pyvvo/funcd-typescript/compare/v0.29.0...v0.30.0) (2026-11-19)
 
 
