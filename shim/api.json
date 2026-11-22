@@ -198,6 +198,18 @@
           "doc": "The gateway of the Lake bound as alias: url, its address as host:port, and token, the token that it accepts from the function. Throws an Error naming the alias when the function binds no Lake with that alias."
         }
       ]
+    },
+    {
+      "name": "addon",
+      "type": "AddonClient",
+      "doc": "The add-on objects that the function binds, by alias: fetch calls an object's engine through funcd, which serves only the paths that the object's edge entry serves.",
+      "methods": [
+        {
+          "name": "fetch",
+          "signature": "fetch(alias: string, path: string, init?: RequestInit): Promise<Response>",
+          "doc": "Sends an HTTP request to the engine of the add-on object that the function binds under alias, through funcd, and returns the engine's answer as a Response, whatever its status; funcd follows no redirect. path starts with \"/\" and may carry a query, and init sets the method, the headers and the body, as for the global fetch. Rejects with an AddonError when funcd refuses the call: 403 for an alias the function does not bind or a call a Policy forbids, 404 for a path the object's edge entry does not serve, 413 for a request or an answer body over addons.callPayloadLimit, 1 MiB by default, and 503 while the object is not Ready, while its namespace is held (with retryAfter), or when the engine does not answer within addons.callTimeout, 10 seconds by default."
+        }
+      ]
     }
   ]
 }

@@ -4398,8 +4398,117 @@ function makeLake(env = process.env) {
   };
 }
 
-// src/dependencies.ts
+// src/addon.ts
 import http4 from "node:http";
+var ADDON_REPLY_HEADER = "x-funcd-addon-reply";
+var NULL_BODY2 = /* @__PURE__ */ new Set([101, 204, 205, 304]);
+var AddonError = class extends Error {
+  /** The HTTP status of the refusal. */
+  status;
+  /** funcd's problem. */
+  problem;
+  /** The seconds to wait before a retry, from the Retry-After of a 503, as while the namespace is held. */
+  retryAfter;
+  constructor(alias, problem, retryAfter) {
+    super(`context.addon.fetch("${alias}") failed: ${problem.status} ${problem.detail}`);
+    this.name = "AddonError";
+    this.status = problem.status;
+    this.problem = problem;
+    this.retryAfter = retryAfter;
+  }
+};
+function makeAddon(opts = {}) {
+  return {
+    async fetch(alias, path2, init) {
+      const span = startClientSpan(opts.sink ?? null, alias, opts.member, opts.bound);
+      const fail4 = (err, httpStatus) => {
+        span?.end("ERROR", err.message, httpStatus);
+        throw err;
+      };
+      const socketPath = process.env.FUNCD_INVOKE_SOCKET;
+      if (!socketPath) {
+        return fail4(new Error("context.addon: worker-node local API socket unavailable (FUNCD_INVOKE_SOCKET unset)"));
+      }
+      if (!path2.startsWith("/")) {
+        return fail4(new Error(`context.addon.fetch("${alias}"): path "${path2}" must start with "/"`));
+      }
+      const request = new Request(new URL(path2, "http://funcd.local"), init);
+      const body = request.body ? Buffer.from(await request.arrayBuffer()) : void 0;
+      const headers = {};
+      request.headers.forEach((value, key) => {
+        headers[key] = value;
+      });
+      if (body) headers["content-length"] = String(body.length);
+      if (opts.member) headers[MEMBER_HEADER] = opts.member;
+      if (span) headers.traceparent = span.traceparent;
+      const target = new URL(request.url);
+      const reply = await new Promise((resolve, reject) => {
+        const req = http4.request(
+          {
+            socketPath,
+            path: `/addon/${encodeURIComponent(alias)}${target.pathname}${target.search}`,
+            method: request.method,
+            headers
+          },
+          (res) => {
+            const chunks = [];
+            res.on(
+              "error",
+              (err) => reject(
+                new Error(`context.addon.fetch("${alias}") failed: connection closed before the reply ended`, {
+                  cause: err
+                })
+              )
+            );
+            res.on("data", (c) => chunks.push(c));
+            res.on("end", () => {
+              const replyHeaders = new Headers();
+              for (const [key, value] of Object.entries(res.headers)) {
+                for (const v of Array.isArray(value) ? value : [value]) {
+                  if (v !== void 0) replyHeaders.append(key, v);
+                }
+              }
+              resolve({ status: res.statusCode ?? 0, headers: replyHeaders, body: Buffer.concat(chunks) });
+            });
+          }
+        );
+        req.on(
+          "error",
+          (err) => reject(new Error(`context.addon.fetch("${alias}") failed: ${err.message}`, { cause: err }))
+        );
+        req.end(body);
+      }).catch((err) => fail4(err));
+      if (!reply.headers.has(ADDON_REPLY_HEADER)) {
+        return fail4(refusal(alias, reply.status, reply.headers, reply.body), reply.status);
+      }
+      reply.headers.delete(ADDON_REPLY_HEADER);
+      span?.end(reply.status >= 500 ? "ERROR" : "OK", "", reply.status);
+      return new Response(NULL_BODY2.has(reply.status) ? null : new Uint8Array(reply.body), {
+        status: reply.status,
+        headers: reply.headers
+      });
+    }
+  };
+}
+function refusal(alias, status, headers, body) {
+  const text = body.toString("utf8");
+  let problem = { type: "about:blank", title: "", status, detail: text };
+  try {
+    const parsed = JSON.parse(text);
+    problem = {
+      type: parsed.type ?? "about:blank",
+      title: parsed.title ?? "",
+      status: parsed.status ?? status,
+      detail: parsed.detail ?? ""
+    };
+  } catch {
+  }
+  const after = status === 503 ? Number.parseInt(headers.get("retry-after") ?? "", 10) : Number.NaN;
+  return new AddonError(alias, problem, Number.isFinite(after) ? after : void 0);
+}
+
+// src/dependencies.ts
+import http5 from "node:http";
 var dependencyCheckBudgetMs = 50;
 var path = "/health/dependencies";
 var socketReport = (reason, message) => ({
@@ -4435,7 +4544,7 @@ function checkDependencies(member, signal) {
       resolve(report);
     };
     const unreachable = (err) => settle(socketReport("Unreachable", `GET ${path} failed: ${err.message}`));
-    const req = http4.request(
+    const req = http5.request(
       { socketPath, path, method: "GET", headers: member ? { [MEMBER_HEADER]: member } : {} },
       (res) => {
         const chunks = [];
@@ -4467,6 +4576,7 @@ function contextFor(sink, bound) {
     config: makeConfig(),
     secret: makeSecret(),
     lake: makeLake(),
+    addon: makeAddon({ sink, bound }),
     remainingMs,
     get principal() {
       return currentInv()?.principal;

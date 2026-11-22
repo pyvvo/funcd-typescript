@@ -5,12 +5,15 @@ import type { ServerResponse } from 'node:http';
 export interface Reply {
   status: number;
   body: string;
+  /** Headers of the reply, set before the body. */
+  headers?: Record<string, string>;
   /** Declare one byte more than the body, send the body, then drop the connection: a reply that ends
    *  mid-body, as when funcd closes the local API during a write (funcd-typescript#21). */
   cut?: boolean;
 }
 
 export function send(res: ServerResponse, r: Reply): void {
+  for (const [k, v] of Object.entries(r.headers ?? {})) res.setHeader(k, v);
   if (!r.cut) {
     res.statusCode = r.status;
     res.end(r.body);
