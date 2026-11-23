@@ -1,3 +1,6 @@
+import { serve } from '@hono/node-server';
+import { once } from 'node:events';
+import type { AddressInfo } from 'node:net';
 import { type TestContext, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { writeFileSync } from 'node:fs';
@@ -348,4 +351,31 @@ test("a Function worker's context has no run", async () => {
   const app = createApp((ctx) => ({ hasRun: 'run' in ctx }));
   const res = await app.request('/', jsonReq(JSON.stringify({ type: 't', data: null })));
   assert.deepEqual(await res.json(), { hasRun: false });
+});
+
+// funcd ADR-0347: a Job's call may last up to its timeout, 168 hours at most. The shim keeps that deadline, and the
+// node:http server it runs answers a call that outlasts the request and header timeouts, which bound only the reading
+// of a request.
+test("a Job's call keeps its longest deadline and outlasts the server's timeouts", async (t: TestContext) => {
+  const weekMs = 168 * 3_600_000;
+  const app = createApp(async (ctx) => {
+    await sleep(300);
+    return { left: ctx.remainingMs() };
+  });
+  const server = serve({
+    fetch: app.fetch,
+    hostname: '127.0.0.1',
+    port: 0,
+    serverOptions: { requestTimeout: 100, headersTimeout: 100, connectionsCheckingInterval: 10 },
+  });
+  t.after(() => server.close());
+  await once(server, 'listening');
+  const res = await fetch(`http://127.0.0.1:${(server.address() as AddressInfo).port}/`, {
+    method: 'POST',
+    headers: { 'x-funcd-timeout-ms': String(weekMs) },
+    body: '{}',
+  });
+  assert.equal(res.status, 200);
+  const { left } = (await res.json()) as { left: number };
+  assert.ok(left > weekMs - 5_000 && left <= weekMs, `left ${left}`);
 });
