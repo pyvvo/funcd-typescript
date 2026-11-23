@@ -1,0 +1,22 @@
+# region contract
+runtime: nodejs22
+input:
+  type: object
+  additionalProperties: false
+  properties:
+    month:
+      type: string
+  required:
+    - month
+output:
+  type: object
+  additionalProperties: false
+  properties:
+    month:
+      type: string
+    rows:
+      type: number
+  required:
+    - month
+    - rows
+# endregion contract

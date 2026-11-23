@@ -1,0 +1,15 @@
+# region job
+# report: a Job whose runs each report on the month of their input.
+apiVersion: funcd.io/v1alpha1
+kind: Job
+metadata:
+  name: report
+  namespace: default
+  resourceGroup: rg1
+spec:
+  runtime: nodejs22
+  handler: handle
+  image: oci-layout:///mnt/funcd-deps/registry:report   # funcdctl push report.mjs (built from src/main.ts)
+  timeout: 10m
+  concurrency: 2
+# endregion job
