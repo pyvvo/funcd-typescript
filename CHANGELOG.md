@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.33.0](https://github.com/pyvvo/funcd-typescript/compare/v0.32.0...v0.33.0) (2026-11-23)
+
+
+### ⚠ BREAKING CHANGES
+
+* **examples:** every owner names its kind (funcd ADR-0351) ([#117](https://github.com/pyvvo/funcd-typescript/issues/117))
+
+### Features
+
+* **examples:** every owner names its kind (funcd ADR-0351) ([#117](https://github.com/pyvvo/funcd-typescript/issues/117)) ([2c1ccff](https://github.com/pyvvo/funcd-typescript/commit/2c1ccff347c1c84f8f3e1f8537ef48b06ca966f0))
+
 ## [0.32.0](https://github.com/pyvvo/funcd-typescript/compare/v0.31.0...v0.32.0) (2026-11-23)
 
 
