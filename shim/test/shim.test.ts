@@ -7,6 +7,7 @@ import { createApp, resolveHandler } from '../src/shim.ts';
 import { startEntrypoint } from './entrypoint.ts';
 import { type Answer, fakeDependencies } from './localapi.ts';
 import { tempDir } from './tempdir.ts';
+import type { JobContext } from '../src/types.ts';
 
 const jsonReq = (body: string) => ({ method: 'POST', headers: { 'content-type': 'application/json' }, body }) as const;
 
@@ -314,4 +315,37 @@ test('liveness never calls funcd', async (t) => {
   const res = await createApp(() => ({})).request('/health/liveness');
   assert.equal(res.status, 200);
   assert.deepEqual(api.calls, []);
+});
+
+// scenario: job-context — a Job's worker (funcd ADR-0347) hands the handler its run, the phase from the event type.
+test('a Job worker hands the handler its run, the phase from the event type', async (t: TestContext) => {
+  const env = {
+    FUNCD_JOB_RUN: 'hello-abc',
+    FUNCD_JOB: 'hello',
+    FUNCD_JOB_REVISION: 'hello-v1',
+    FUNCD_JOB_STARTED_BY: 'alice',
+  };
+  for (const [k, v] of Object.entries(env)) process.env[k] = v;
+  t.after(() => {
+    for (const k of Object.keys(env)) delete process.env[k];
+  });
+  const app = createApp((ctx) => ({ run: (ctx as JobContext).run, remaining: typeof ctx.remainingMs }));
+  for (const [type, phase] of [
+    ['funcd.job.run', 'run'],
+    ['funcd.job.preview', 'preview'],
+  ] as const) {
+    const res = await app.request('/', jsonReq(JSON.stringify({ id: '1', source: 's', type, data: null })));
+    assert.equal(res.status, 200);
+    assert.deepEqual(await res.json(), {
+      run: { name: 'hello-abc', job: 'hello', revision: 'hello-v1', startedBy: 'alice', phase },
+      remaining: 'function',
+    });
+  }
+});
+
+// scenario: function-context-has-no-run — a Function's worker gets no run.
+test("a Function worker's context has no run", async () => {
+  const app = createApp((ctx) => ({ hasRun: 'run' in ctx }));
+  const res = await app.request('/', jsonReq(JSON.stringify({ type: 't', data: null })));
+  assert.deepEqual(await res.json(), { hasRun: false });
 });

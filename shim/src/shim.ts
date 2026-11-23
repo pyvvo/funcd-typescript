@@ -26,7 +26,7 @@ import {
   resolveHttpHandler,
   toWire,
 } from './runtime.ts';
-import type { CloudEvent, FunctionContext, Handler, HttpHandler } from './types.ts';
+import type { CloudEvent, FunctionContext, Handler, HttpHandler, JobContext, RunInfo } from './types.ts';
 import { appRequest, streamed } from './httpapp.ts';
 import { makeFetch, makeInvoke } from './invoke.ts';
 import { makeKV } from './kv.ts';
@@ -77,6 +77,25 @@ function contextFor(sink: Sink | null, bound?: number): FunctionContext {
   };
 }
 
+/** jobRunFrom reads a Job worker's run from its env (funcd ADR-0347): undefined for a Function's worker. */
+export function jobRunFrom(env: NodeJS.ProcessEnv): Omit<RunInfo, 'phase'> | undefined {
+  const name = env.FUNCD_JOB_RUN;
+  if (!name) return undefined;
+  return {
+    name,
+    job: env.FUNCD_JOB ?? '',
+    revision: env.FUNCD_JOB_REVISION ?? '',
+    startedBy: env.FUNCD_JOB_STARTED_BY ?? '',
+  };
+}
+
+/** withRun gives a Job's call its run, the phase from the event type (funcd ADR-0348). The context stays the
+ *  prototype, so its `principal` getter still reads the call's invocation. */
+function withRun(ctx: FunctionContext, run: Omit<RunInfo, 'phase'>, event: CloudEvent): JobContext {
+  const phase: RunInfo['phase'] = event.type === 'funcd.job.preview' ? 'preview' : 'run';
+  return Object.assign(Object.create(ctx) as FunctionContext, { run: { ...run, phase } });
+}
+
 /** addHealth serves the shim's probes: liveness never calls funcd, readiness checks funcd's dependencies (ADR-0215)
  *  within `health.dependencyBudgetMs`, unset meaning funcd's DependencyCheckBudget. */
 function addHealth(app: Hono, health: HealthOptions): void {
@@ -96,6 +115,7 @@ export function createApp(handler: Handler, trace: TraceOptions = {}, health: He
   const app = new Hono();
   const traceSink = trace.sink ?? null; // ADR-0101: per-invocation span emitter (null ⇒ context only)
   const ctx = contextFor(traceSink, trace.bound);
+  const job = jobRunFrom(process.env);
   const fnName = trace.fnName ?? 'invoke';
   addHealth(app, health);
 
@@ -128,7 +148,7 @@ export function createApp(handler: Handler, trace: TraceOptions = {}, health: He
       principalFrom(c.req.raw.headers),
     );
     try {
-      const result = toWire(await span.run(() => handler(ctx, event)));
+      const result = toWire(await span.run(() => handler(job ? withRun(ctx, job, event) : ctx, event)));
       span.end('OK');
       if (result === null) return c.body(null, 204);
       return c.json(result as Record<string, unknown>);
