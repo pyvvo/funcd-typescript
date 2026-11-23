@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.32.0](https://github.com/pyvvo/funcd-typescript/compare/v0.31.0...v0.32.0) (2026-11-23)
+
+
+### Features
+
+* **shim:** a Job's handler gets its run in context.run (funcd ADR-0347) ([#115](https://github.com/pyvvo/funcd-typescript/issues/115)) ([a34611a](https://github.com/pyvvo/funcd-typescript/commit/a34611afff00264169231b9953be95b2428d8043))
+
 ## [0.31.0](https://github.com/pyvvo/funcd-typescript/compare/v0.30.0...v0.31.0) (2026-11-22)
 
 
