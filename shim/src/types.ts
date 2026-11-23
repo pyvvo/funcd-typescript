@@ -92,6 +92,22 @@ export interface FunctionContext {
   principal?: { provider: string; id: string; name?: string; claims: Record<string, unknown> };
 }
 
+/** A Job run's facts (funcd ADR-0347): the run, its Job and the revision it pinned, the call's phase and who
+ *  started the run. */
+export interface RunInfo {
+  name: string;
+  job: string;
+  revision: string;
+  /** `run`, or `preview` in a run's preview call (funcd ADR-0348). */
+  phase: 'run' | 'preview';
+  startedBy: string;
+}
+
+/** The context a Job's handler gets (funcd ADR-0347): the FunctionContext plus its run. */
+export interface JobContext extends FunctionContext {
+  run: RunInfo;
+}
+
 /** A function handler: receives the context + CloudEvent, returns a response (or nothing). */
 export type Handler<In = unknown, Out = unknown> = (
   context: FunctionContext,

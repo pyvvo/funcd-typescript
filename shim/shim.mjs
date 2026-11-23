@@ -4583,6 +4583,20 @@ function contextFor(sink, bound) {
     }
   };
 }
+function jobRunFrom(env) {
+  const name = env.FUNCD_JOB_RUN;
+  if (!name) return void 0;
+  return {
+    name,
+    job: env.FUNCD_JOB ?? "",
+    revision: env.FUNCD_JOB_REVISION ?? "",
+    startedBy: env.FUNCD_JOB_STARTED_BY ?? ""
+  };
+}
+function withRun(ctx, run, event) {
+  const phase = event.type === "funcd.job.preview" ? "preview" : "run";
+  return Object.assign(Object.create(ctx), { run: { ...run, phase } });
+}
 function addHealth(app, health) {
   app.get("/health/liveness", (c) => c.text("ok"));
   app.get("/health/readiness", async (c) => {
@@ -4597,6 +4611,7 @@ function createApp(handler, trace = {}, health = {}) {
   const app = new Hono2();
   const traceSink = trace.sink ?? null;
   const ctx = contextFor(traceSink, trace.bound);
+  const job = jobRunFrom(process.env);
   const fnName = trace.fnName ?? "invoke";
   addHealth(app, health);
   app.post("/", async (c) => {
@@ -4623,7 +4638,7 @@ function createApp(handler, trace = {}, health = {}) {
       principalFrom(c.req.raw.headers)
     );
     try {
-      const result = toWire(await span.run(() => handler(ctx, event)));
+      const result = toWire(await span.run(() => handler(job ? withRun(ctx, job, event) : ctx, event)));
       span.end("OK");
       if (result === null) return c.body(null, 204);
       return c.json(result);
@@ -4711,6 +4726,7 @@ export {
   createApp,
   createHttpApp,
   http,
+  jobRunFrom,
   resolveHandler,
   resolveHttpHandler
 };
