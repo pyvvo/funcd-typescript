@@ -3,6 +3,7 @@
 import http from 'node:http';
 
 import { MEMBER_HEADER } from './invoke.ts';
+import { localApi } from './localapi.ts';
 
 /** funcd's DependencyReport: the first of the caller's bindings that failed its check. */
 export interface DependencyReport {
@@ -45,8 +46,8 @@ export function checkDependencies(
   signal: AbortSignal,
 ): Promise<DependencyReport | undefined> {
   return new Promise((resolve) => {
-    const socketPath = process.env.FUNCD_INVOKE_SOCKET;
-    if (!socketPath) {
+    const api = localApi();
+    if (!api) {
       resolve(undefined);
       return;
     }
@@ -59,7 +60,12 @@ export function checkDependencies(
     };
     const unreachable = (err: Error) => settle(socketReport('Unreachable', `GET ${path} failed: ${err.message}`));
     const req = http.request(
-      { socketPath, path, method: 'GET', headers: member ? { [MEMBER_HEADER]: member } : {} },
+      {
+        ...api.options,
+        path,
+        method: 'GET',
+        headers: member ? { ...api.headers, [MEMBER_HEADER]: member } : api.headers,
+      },
       (res) => {
         const chunks: Buffer[] = [];
         res.on('error', unreachable);

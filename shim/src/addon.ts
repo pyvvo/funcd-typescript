@@ -3,6 +3,7 @@
 import http from 'node:http';
 
 import { type InvokeOptions, MEMBER_HEADER } from './invoke.ts';
+import { localApi } from './localapi.ts';
 import { startClientSpan } from './tracespan.ts';
 
 /** The local API header that marks an answer as the engine's; a call that funcd refused carries none. */
@@ -58,8 +59,8 @@ export function makeAddon(opts: InvokeOptions = {}): AddonClient {
         span?.end('ERROR', err.message, httpStatus);
         throw err;
       };
-      const socketPath = process.env.FUNCD_INVOKE_SOCKET;
-      if (!socketPath) {
+      const api = localApi();
+      if (!api) {
         return fail(new Error('context.addon: worker-node local API socket unavailable (FUNCD_INVOKE_SOCKET unset)'));
       }
       if (!path.startsWith('/')) {
@@ -72,13 +73,14 @@ export function makeAddon(opts: InvokeOptions = {}): AddonClient {
         headers[key] = value;
       });
       if (body) headers['content-length'] = String(body.length);
+      Object.assign(headers, api.headers);
       if (opts.member) headers[MEMBER_HEADER] = opts.member;
       if (span) headers.traceparent = span.traceparent;
       const target = new URL(request.url);
       const reply = await new Promise<{ status: number; headers: Headers; body: Buffer }>((resolve, reject) => {
         const req = http.request(
           {
-            socketPath,
+            ...api.options,
             path: `/addon/${encodeURIComponent(alias)}${target.pathname}${target.search}`,
             method: request.method,
             headers,
