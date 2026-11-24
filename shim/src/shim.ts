@@ -24,9 +24,10 @@ import {
   protocolFrom,
   resolveHandler,
   resolveHttpHandler,
+  resolvePreview,
   toWire,
 } from './runtime.ts';
-import type { CloudEvent, FunctionContext, Handler, HttpHandler, JobContext, RunInfo } from './types.ts';
+import type { CloudEvent, FunctionContext, Handler, HttpHandler, JobContext, Preview, RunInfo } from './types.ts';
 import { appRequest, streamed } from './httpapp.ts';
 import { makeFetch, makeInvoke } from './invoke.ts';
 import { makeKV } from './kv.ts';
@@ -36,6 +37,7 @@ import { makeConfig } from './config.ts';
 import { makeSecret } from './secret.ts';
 import { makeLake } from './lake.ts';
 import { makeAddon } from './addon.ts';
+import { type Approval, makeJob, readApproval } from './job.ts';
 import { checkDependencies, dependencyCheckBudgetMs } from './dependencies.ts';
 import { currentInv, deadlineFrom, remainingMs } from './invcontext.ts';
 import { installConsoleCapture, openChannel, recordBound, type Sink } from './funclog.ts';
@@ -44,7 +46,7 @@ import { startSpan, parseLinks } from './tracespan.ts';
 
 export type { CloudEvent, FunctionContext, Handler, HttpHandler, Json } from './types.ts';
 export { http } from './types.ts';
-export { resolveHandler, resolveHttpHandler } from './runtime.ts';
+export { resolveHandler, resolveHttpHandler, resolvePreview } from './runtime.ts';
 
 interface TraceOptions {
   sink?: Sink | null;
@@ -55,6 +57,14 @@ interface TraceOptions {
 interface HealthOptions {
   dependencyBudgetMs?: number;
 }
+
+/** A Job module's exports besides its handler: its optional preview (funcd ADR-0348). */
+interface JobOptions {
+  preview?: Preview;
+}
+
+/** The event type of a run's preview call (funcd ADR-0348). */
+const PREVIEW_EVENT = 'funcd.job.preview';
 
 /** contextFor builds the function context both apps hand their handler; `sink` carries the CLIENT spans of its
  *  invoke and fetch calls. */
@@ -70,6 +80,7 @@ function contextFor(sink: Sink | null, bound?: number): FunctionContext {
     secret: makeSecret(),
     lake: makeLake(),
     addon: makeAddon({ sink, bound }),
+    job: makeJob(),
     remainingMs,
     get principal() {
       return currentInv()?.principal;
@@ -89,11 +100,34 @@ export function jobRunFrom(env: NodeJS.ProcessEnv): Omit<RunInfo, 'phase'> | und
   };
 }
 
-/** withRun gives a Job's call its run, the phase from the event type (funcd ADR-0348). The context stays the
- *  prototype, so its `principal` getter still reads the call's invocation. */
-function withRun(ctx: FunctionContext, run: Omit<RunInfo, 'phase'>, event: CloudEvent): JobContext {
-  const phase: RunInfo['phase'] = event.type === 'funcd.job.preview' ? 'preview' : 'run';
-  return Object.assign(Object.create(ctx) as FunctionContext, { run: { ...run, phase } });
+/** withRun gives a Job's call its run, the phase from the event type, and the approval it runs under (funcd ADR-0348).
+ *  The context stays the prototype, so its `principal` getter still reads the call's invocation. */
+function withRun(
+  ctx: FunctionContext,
+  run: Omit<RunInfo, 'phase'>,
+  event: CloudEvent,
+  approval: Approval | null,
+): JobContext {
+  const phase: RunInfo['phase'] = event.type === PREVIEW_EVENT ? 'preview' : 'run';
+  return Object.assign(Object.create(ctx) as FunctionContext, { run: { ...run, phase }, approval });
+}
+
+/** callFor is how a call reaches the module (funcd ADR-0347, ADR-0348): a Function's call and a Job's run call the
+ *  handler, the run with the approval funcd recorded; a Job's preview call calls the module's preview, or answers the
+ *  run's input when the module has none. */
+function callFor(
+  handler: Handler,
+  ctx: FunctionContext,
+  job: Omit<RunInfo, 'phase'> | undefined,
+  opts: JobOptions,
+): (event: CloudEvent) => Promise<unknown> {
+  return async (event) => {
+    if (!job) return handler(ctx, event);
+    if (event.type === PREVIEW_EVENT) {
+      return opts.preview ? opts.preview(withRun(ctx, job, event, null), event) : (event.data ?? null);
+    }
+    return handler(withRun(ctx, job, event, await readApproval()), event);
+  };
 }
 
 /** addHealth serves the shim's probes: liveness never calls funcd, readiness checks funcd's dependencies (ADR-0215)
@@ -109,13 +143,18 @@ function addHealth(app: Hono, health: HealthOptions): void {
   });
 }
 
-/** createApp builds the shim's HTTP app (the runtime contract) around a handler. `health.dependencyBudgetMs` bounds
- *  the readiness check; unset is funcd's DependencyCheckBudget. */
-export function createApp(handler: Handler, trace: TraceOptions = {}, health: HealthOptions = {}): Hono {
+/** createApp builds the shim's HTTP app (the runtime contract) around a handler, and a Job module's preview.
+ *  `health.dependencyBudgetMs` bounds the readiness check; unset is funcd's DependencyCheckBudget. */
+export function createApp(
+  handler: Handler,
+  trace: TraceOptions = {},
+  health: HealthOptions = {},
+  jobOpts: JobOptions = {},
+): Hono {
   const app = new Hono();
   const traceSink = trace.sink ?? null; // ADR-0101: per-invocation span emitter (null ⇒ context only)
   const ctx = contextFor(traceSink, trace.bound);
-  const job = jobRunFrom(process.env);
+  const call = callFor(handler, ctx, jobRunFrom(process.env), jobOpts);
   const fnName = trace.fnName ?? 'invoke';
   addHealth(app, health);
 
@@ -148,7 +187,7 @@ export function createApp(handler: Handler, trace: TraceOptions = {}, health: He
       principalFrom(c.req.raw.headers),
     );
     try {
-      const result = toWire(await span.run(() => handler(job ? withRun(ctx, job, event) : ctx, event)));
+      const result = toWire(await span.run(() => call(event)));
       span.end('OK');
       if (result === null) return c.body(null, 204);
       return c.json(result as Record<string, unknown>);
@@ -231,7 +270,7 @@ async function main(): Promise<void> {
     app =
       protocol === 'http'
         ? createHttpApp(resolveHttpHandler(mod, handlerName), appTrace)
-        : createApp(resolveHandler(mod, handlerName), appTrace);
+        : createApp(resolveHandler(mod, handlerName), appTrace, {}, { preview: resolvePreview(mod) });
   } catch (err) {
     process.stderr.write(`funcd-shim: shape error: ${err instanceof Error ? err.message : err}\n`);
     process.exit(3); // materialization shape-gate failure (ADR-0030)
