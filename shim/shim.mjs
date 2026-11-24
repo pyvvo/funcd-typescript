@@ -3424,6 +3424,12 @@ function resolveHttpHandler(mod, name) {
   }
   return candidate;
 }
+function resolvePreview(mod) {
+  const candidate = mod?.preview ?? mod?.default?.preview;
+  if (candidate === void 0) return void 0;
+  if (typeof candidate !== "function") throw new Error('export "preview" is not a function');
+  return candidate;
+}
 function toWire(result) {
   const text = JSON.stringify(result);
   return text === void 0 ? null : JSON.parse(text);
@@ -4494,17 +4500,90 @@ function refusal(alias, status, headers, body) {
   const text = body.toString("utf8");
   let problem = { type: "about:blank", title: "", status, detail: text };
   try {
-    const parsed = JSON.parse(text);
+    const parsed2 = JSON.parse(text);
     problem = {
-      type: parsed.type ?? "about:blank",
-      title: parsed.title ?? "",
-      status: parsed.status ?? status,
-      detail: parsed.detail ?? ""
+      type: parsed2.type ?? "about:blank",
+      title: parsed2.title ?? "",
+      status: parsed2.status ?? status,
+      detail: parsed2.detail ?? ""
     };
   } catch {
   }
   const after = status === 503 ? Number.parseInt(headers.get("retry-after") ?? "", 10) : Number.NaN;
   return new AddonError(alias, problem, Number.isFinite(after) ? after : void 0);
+}
+
+// src/job.ts
+var JobError = class extends Error {
+  /** The HTTP status of the refusal. */
+  status;
+  /** funcd's problem. */
+  problem;
+  constructor(call, problem) {
+    super(`${call} failed: ${problem.status} ${problem.detail}`);
+    this.name = "JobError";
+    this.status = problem.status;
+    this.problem = problem;
+  }
+};
+function refusal2(call, r) {
+  const text = r.body.toString("utf8");
+  let problem = { type: "about:blank", title: "", status: r.status, detail: text };
+  try {
+    const parsed2 = JSON.parse(text);
+    problem = {
+      type: parsed2.type ?? "about:blank",
+      title: parsed2.title ?? "",
+      status: parsed2.status ?? r.status,
+      detail: parsed2.detail ?? text
+    };
+  } catch {
+  }
+  return new JobError(call, problem);
+}
+var parsed = (call, r) => {
+  try {
+    return JSON.parse(r.body.toString("utf8"));
+  } catch (err) {
+    throw new Error(`${call} failed: ${r.status} reply is not JSON: ${err.message}`, { cause: err });
+  }
+};
+var ok3 = (r) => r.status >= 200 && r.status < 300;
+function makeJob(member) {
+  return {
+    async start(alias, input, name) {
+      const call = `context.job.start("${alias}")`;
+      const body = Buffer.from(JSON.stringify(name === void 0 ? { input } : { input, name }), "utf8");
+      const r = await send(
+        "context.job",
+        "POST",
+        `/job/${encodeURIComponent(alias)}`,
+        body,
+        member,
+        "application/json"
+      );
+      if (!ok3(r)) throw refusal2(call, r);
+      return parsed(call, r).run;
+    },
+    async get(alias, run) {
+      const call = `context.job.get("${alias}", "${run}")`;
+      const r = await send(
+        "context.job",
+        "GET",
+        `/job/${encodeURIComponent(alias)}/${encodeURIComponent(run)}`,
+        void 0,
+        member
+      );
+      if (!ok3(r)) throw refusal2(call, r);
+      return parsed(call, r);
+    }
+  };
+}
+async function readApproval() {
+  const call = "context.approval";
+  const r = await send(call, "GET", "/job/run", void 0, void 0);
+  if (r.status !== 200) throw refusal2(call, r);
+  return parsed(call, r).approval ?? null;
 }
 
 // src/dependencies.ts
@@ -4565,6 +4644,7 @@ function checkDependencies(member, signal) {
 }
 
 // src/shim.ts
+var PREVIEW_EVENT = "funcd.job.preview";
 function contextFor(sink, bound) {
   return {
     log: (...args) => console.log(...args),
@@ -4577,6 +4657,7 @@ function contextFor(sink, bound) {
     secret: makeSecret(),
     lake: makeLake(),
     addon: makeAddon({ sink, bound }),
+    job: makeJob(),
     remainingMs,
     get principal() {
       return currentInv()?.principal;
@@ -4593,9 +4674,18 @@ function jobRunFrom(env) {
     startedBy: env.FUNCD_JOB_STARTED_BY ?? ""
   };
 }
-function withRun(ctx, run, event) {
-  const phase = event.type === "funcd.job.preview" ? "preview" : "run";
-  return Object.assign(Object.create(ctx), { run: { ...run, phase } });
+function withRun(ctx, run, event, approval) {
+  const phase = event.type === PREVIEW_EVENT ? "preview" : "run";
+  return Object.assign(Object.create(ctx), { run: { ...run, phase }, approval });
+}
+function callFor(handler, ctx, job, opts) {
+  return async (event) => {
+    if (!job) return handler(ctx, event);
+    if (event.type === PREVIEW_EVENT) {
+      return opts.preview ? opts.preview(withRun(ctx, job, event, null), event) : event.data ?? null;
+    }
+    return handler(withRun(ctx, job, event, await readApproval()), event);
+  };
 }
 function addHealth(app, health) {
   app.get("/health/liveness", (c) => c.text("ok"));
@@ -4607,11 +4697,11 @@ function addHealth(app, health) {
     return report ? c.json(report, 503) : c.text("ready");
   });
 }
-function createApp(handler, trace = {}, health = {}) {
+function createApp(handler, trace = {}, health = {}, jobOpts = {}) {
   const app = new Hono2();
   const traceSink = trace.sink ?? null;
   const ctx = contextFor(traceSink, trace.bound);
-  const job = jobRunFrom(process.env);
+  const call = callFor(handler, ctx, jobRunFrom(process.env), jobOpts);
   const fnName = trace.fnName ?? "invoke";
   addHealth(app, health);
   app.post("/", async (c) => {
@@ -4638,7 +4728,7 @@ function createApp(handler, trace = {}, health = {}) {
       principalFrom(c.req.raw.headers)
     );
     try {
-      const result = toWire(await span.run(() => handler(job ? withRun(ctx, job, event) : ctx, event)));
+      const result = toWire(await span.run(() => call(event)));
       span.end("OK");
       if (result === null) return c.body(null, 204);
       return c.json(result);
@@ -4704,7 +4794,7 @@ async function main() {
   let app;
   try {
     const mod = await import(pathToFileURL(artifact).href);
-    app = protocol === "http" ? createHttpApp(resolveHttpHandler(mod, handlerName), appTrace) : createApp(resolveHandler(mod, handlerName), appTrace);
+    app = protocol === "http" ? createHttpApp(resolveHttpHandler(mod, handlerName), appTrace) : createApp(resolveHandler(mod, handlerName), appTrace, {}, { preview: resolvePreview(mod) });
   } catch (err) {
     process.stderr.write(`funcd-shim: shape error: ${err instanceof Error ? err.message : err}
 `);
@@ -4728,5 +4818,6 @@ export {
   http,
   jobRunFrom,
   resolveHandler,
-  resolveHttpHandler
+  resolveHttpHandler,
+  resolvePreview
 };

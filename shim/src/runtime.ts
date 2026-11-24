@@ -3,7 +3,7 @@
 // the stray-fault containment both hosts install.
 import { inspect } from 'node:util';
 
-import { HTTP_HANDLER, type Handler, type HttpHandler } from './types.ts';
+import { HTTP_HANDLER, type Handler, type HttpHandler, type Preview } from './types.ts';
 
 /** How funcd calls a Function (FUNCD_PROTOCOL, funcd ADR-0243): with a CloudEvent, or with each HTTP request. */
 export type Protocol = 'cloudevent' | 'http';
@@ -49,6 +49,15 @@ export function resolveHttpHandler(mod: Record<string, unknown>, name: string): 
     throw new Error(`export "${name}" is not an http(app) handler, which spec.protocol: http needs`);
   }
   return candidate;
+}
+
+/** resolvePreview picks a Job module's optional preview export (funcd ADR-0348), `preview` or `default.preview`:
+ *  undefined when the module has none; one that is no function throws, as the handler's shape-gate does. */
+export function resolvePreview(mod: Record<string, unknown>): Preview | undefined {
+  const candidate = mod?.preview ?? (mod?.default as Record<string, unknown> | undefined)?.preview;
+  if (candidate === undefined) return undefined;
+  if (typeof candidate !== 'function') throw new Error('export "preview" is not a function');
+  return candidate as Preview;
 }
 
 /** toWire returns the handler result as the JSON value the shim sends: JSON.stringify applies toJSON,

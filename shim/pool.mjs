@@ -4392,17 +4392,84 @@ function refusal(alias, status, headers, body) {
   const text = body.toString("utf8");
   let problem = { type: "about:blank", title: "", status, detail: text };
   try {
-    const parsed = JSON.parse(text);
+    const parsed2 = JSON.parse(text);
     problem = {
-      type: parsed.type ?? "about:blank",
-      title: parsed.title ?? "",
-      status: parsed.status ?? status,
-      detail: parsed.detail ?? ""
+      type: parsed2.type ?? "about:blank",
+      title: parsed2.title ?? "",
+      status: parsed2.status ?? status,
+      detail: parsed2.detail ?? ""
     };
   } catch {
   }
   const after = status === 503 ? Number.parseInt(headers.get("retry-after") ?? "", 10) : Number.NaN;
   return new AddonError(alias, problem, Number.isFinite(after) ? after : void 0);
+}
+
+// src/job.ts
+var JobError = class extends Error {
+  /** The HTTP status of the refusal. */
+  status;
+  /** funcd's problem. */
+  problem;
+  constructor(call, problem) {
+    super(`${call} failed: ${problem.status} ${problem.detail}`);
+    this.name = "JobError";
+    this.status = problem.status;
+    this.problem = problem;
+  }
+};
+function refusal2(call, r) {
+  const text = r.body.toString("utf8");
+  let problem = { type: "about:blank", title: "", status: r.status, detail: text };
+  try {
+    const parsed2 = JSON.parse(text);
+    problem = {
+      type: parsed2.type ?? "about:blank",
+      title: parsed2.title ?? "",
+      status: parsed2.status ?? r.status,
+      detail: parsed2.detail ?? text
+    };
+  } catch {
+  }
+  return new JobError(call, problem);
+}
+var parsed = (call, r) => {
+  try {
+    return JSON.parse(r.body.toString("utf8"));
+  } catch (err) {
+    throw new Error(`${call} failed: ${r.status} reply is not JSON: ${err.message}`, { cause: err });
+  }
+};
+var ok3 = (r) => r.status >= 200 && r.status < 300;
+function makeJob(member) {
+  return {
+    async start(alias, input, name) {
+      const call = `context.job.start("${alias}")`;
+      const body = Buffer.from(JSON.stringify(name === void 0 ? { input } : { input, name }), "utf8");
+      const r = await send(
+        "context.job",
+        "POST",
+        `/job/${encodeURIComponent(alias)}`,
+        body,
+        member,
+        "application/json"
+      );
+      if (!ok3(r)) throw refusal2(call, r);
+      return parsed(call, r).run;
+    },
+    async get(alias, run) {
+      const call = `context.job.get("${alias}", "${run}")`;
+      const r = await send(
+        "context.job",
+        "GET",
+        `/job/${encodeURIComponent(alias)}/${encodeURIComponent(run)}`,
+        void 0,
+        member
+      );
+      if (!ok3(r)) throw refusal2(call, r);
+      return parsed(call, r);
+    }
+  };
 }
 
 // src/dependencies.ts
@@ -4532,6 +4599,7 @@ async function workerMain() {
     secret: makeSecret(spec.name),
     lake: makeLake(),
     addon: makeAddon({ member: spec.name, sink: channel, bound: recordBound(process.env) }),
+    job: makeJob(spec.name),
     remainingMs,
     get principal() {
       return currentInv()?.principal;

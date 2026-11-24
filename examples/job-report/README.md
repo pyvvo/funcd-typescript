@@ -10,9 +10,9 @@ for each day of the month:
 
 | File | What |
 |---|---|
-| `src/main.ts` | The handler, with its input and output types, `JobInput` and `JobOutput` |
+| `src/main.ts` | The handler, with its input and output types, `JobInput` and `JobOutput`, and the run's `preview` (funcd ADR-0348) |
 | `report.contract.yaml` | The artifact's runtime and I/O contract (funcd ADR-0247): `month` alone, required |
-| `report.yaml` | The Job resource (`runtime: nodejs22`, `handler: handle`, `timeout`, `concurrency`) |
+| `report.yaml` | The Job resource (`runtime: nodejs22`, `handler: handle`, `timeout`, `concurrency`, `approval.bypass`) |
 | `report.mjs` | The committed build of `src/main.ts` |
 | `test/handler.test.ts` | The author's unit tests, with no platform |
 

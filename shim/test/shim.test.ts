@@ -6,7 +6,7 @@ import assert from 'node:assert/strict';
 import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
-import { createApp, resolveHandler } from '../src/shim.ts';
+import { createApp, resolveHandler, resolvePreview } from '../src/shim.ts';
 import { startEntrypoint } from './entrypoint.ts';
 import { type Answer, fakeDependencies } from './localapi.ts';
 import { tempDir } from './tempdir.ts';
@@ -320,30 +320,119 @@ test('liveness never calls funcd', async (t) => {
   assert.deepEqual(api.calls, []);
 });
 
-// scenario: job-context — a Job's worker (funcd ADR-0347) hands the handler its run, the phase from the event type.
-test('a Job worker hands the handler its run, the phase from the event type', async (t: TestContext) => {
-  const env = {
-    FUNCD_JOB_RUN: 'hello-abc',
-    FUNCD_JOB: 'hello',
-    FUNCD_JOB_REVISION: 'hello-v1',
-    FUNCD_JOB_STARTED_BY: 'alice',
-  };
-  for (const [k, v] of Object.entries(env)) process.env[k] = v;
+const jobEnv = {
+  FUNCD_JOB_RUN: 'hello-abc',
+  FUNCD_JOB: 'hello',
+  FUNCD_JOB_REVISION: 'hello-v1',
+  FUNCD_JOB_STARTED_BY: 'alice',
+};
+
+/** asJobWorker sets a Job worker's env for the rest of the test. */
+function asJobWorker(t: TestContext): void {
+  for (const [k, v] of Object.entries(jobEnv)) process.env[k] = v;
   t.after(() => {
-    for (const k of Object.keys(env)) delete process.env[k];
+    for (const k of Object.keys(jobEnv)) delete process.env[k];
   });
-  const app = createApp((ctx) => ({ run: (ctx as JobContext).run, remaining: typeof ctx.remainingMs }));
-  for (const [type, phase] of [
-    ['funcd.job.run', 'run'],
-    ['funcd.job.preview', 'preview'],
-  ] as const) {
-    const res = await app.request('/', jsonReq(JSON.stringify({ id: '1', source: 's', type, data: null })));
-    assert.equal(res.status, 200);
-    assert.deepEqual(await res.json(), {
-      run: { name: 'hello-abc', job: 'hello', revision: 'hello-v1', startedBy: 'alice', phase },
-      remaining: 'function',
-    });
-  }
+}
+
+const runOf = (phase: string) => ({ name: 'hello-abc', job: 'hello', revision: 'hello-v1', startedBy: 'alice', phase });
+const approval = { approvedBy: 'bob', digest: `sha256:${'1'.repeat(64)}`, preview: { summary: '2 to add' } };
+
+// scenario: job-context — a Job's worker (funcd ADR-0347) hands the handler its run, and in the run's call the approval
+// funcd recorded, read from GET /job/run (funcd ADR-0348).
+test('a Job worker hands the handler its run and its approval', async (t: TestContext) => {
+  asJobWorker(t);
+  const api = await fakeDependencies(t, (_m, url) =>
+    url === '/job/run'
+      ? { status: 200, body: JSON.stringify({ name: 'hello-abc', approval }) }
+      : { status: 404, body: '' },
+  );
+  const app = createApp((ctx) => {
+    const job = ctx as JobContext;
+    return { run: job.run, approval: job.approval, remaining: typeof ctx.remainingMs };
+  });
+  const res = await app.request(
+    '/',
+    jsonReq(JSON.stringify({ id: '1', source: 's', type: 'funcd.job.run', data: null })),
+  );
+  assert.equal(res.status, 200);
+  assert.deepEqual(await res.json(), { run: runOf('run'), approval, remaining: 'function' });
+  assert.deepEqual(api.calls, ['GET /job/run -']);
+});
+
+// scenario: job-bypass-runs-at-once — a run with no approval, as one of a Job with approval.bypass, has a null approval.
+test("a Job's run with no approval has a null approval", async (t: TestContext) => {
+  asJobWorker(t);
+  await fakeDependencies(t, () => ({ status: 200, body: JSON.stringify({ name: 'hello-abc', approval: null }) }));
+  const app = createApp((ctx) => ({ approval: (ctx as JobContext).approval }));
+  const res = await app.request('/', jsonReq(JSON.stringify({ type: 'funcd.job.run', data: null })));
+  assert.deepEqual(await res.json(), { approval: null });
+});
+
+// funcd ADR-0348: a handler never runs with an approval the shim could not read: the call fails, and the handler is
+// not called.
+test("a Job's run whose approval cannot be read fails before the handler", async (t: TestContext) => {
+  asJobWorker(t);
+  await fakeDependencies(t, () => ({
+    status: 403,
+    body: '{"type":"urn:funcd:problem:forbidden","title":"Forbidden","status":403,"detail":"no Job\'s worker"}',
+  }));
+  let called = false;
+  const app = createApp(() => {
+    called = true;
+    return {};
+  });
+  const res = await app.request('/', jsonReq(JSON.stringify({ type: 'funcd.job.run', data: null })));
+  assert.equal(res.status, 500);
+  assert.match(((await res.json()) as { error: string }).error, /context.approval failed: 403/);
+  assert.equal(called, false);
+});
+
+// scenario: job-run-waits-for-approval — a preview call (funcd.job.preview) calls the module's preview with the run in
+// phase preview and no approval, and never the handler.
+test("a Job's preview call calls the preview export, never the handler", async (t: TestContext) => {
+  asJobWorker(t);
+  const api = await fakeDependencies(t, () => ({ status: 500, body: '' }));
+  let handled = false;
+  const app = createApp(
+    () => {
+      handled = true;
+      return {};
+    },
+    {},
+    {},
+    {
+      preview: (ctx, event) => ({ run: ctx.run, approval: ctx.approval, plan: event.data }),
+    },
+  );
+  const res = await app.request(
+    '/',
+    jsonReq(JSON.stringify({ type: 'funcd.job.preview', data: { op: 'plan' }, id: '1', source: 's' })),
+  );
+  assert.equal(res.status, 200);
+  assert.deepEqual(await res.json(), { run: runOf('preview'), approval: null, plan: { op: 'plan' } });
+  assert.equal(handled, false);
+  assert.deepEqual(api.calls, [], 'a preview reads no approval');
+});
+
+// scenario: job-without-preview-export — a module with no preview export previews its run's input.
+test('a Job module with no preview previews its input', async (t: TestContext) => {
+  asJobWorker(t);
+  const app = createApp(() => ({ ran: true }));
+  const res = await app.request('/', jsonReq(JSON.stringify({ type: 'funcd.job.preview', data: { op: 'plan' } })));
+  assert.equal(res.status, 200);
+  assert.deepEqual(await res.json(), { op: 'plan' });
+  const none = await app.request('/', jsonReq(JSON.stringify({ type: 'funcd.job.preview' })));
+  assert.equal(none.status, 204, 'a run with no input previews null');
+});
+
+// funcd ADR-0348: the preview export is optional, and one that is no function fails the shape-gate.
+test('resolvePreview finds the preview export, or none', () => {
+  const preview = () => ({});
+  assert.equal(resolvePreview({ handle: () => ({}), preview }), preview);
+  assert.equal(resolvePreview({ default: { handle: () => ({}), preview } }), preview);
+  assert.equal(resolvePreview({ handle: () => ({}) }), undefined);
+  assert.throws(() => resolvePreview({ preview: 'plan' }), /export "preview" is not a function/);
 });
 
 // scenario: function-context-has-no-run — a Function's worker gets no run.

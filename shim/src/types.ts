@@ -9,6 +9,7 @@ import type { ConfigClient } from './config.ts';
 import type { SecretClient } from './secret.ts';
 import type { LakeClient } from './lake.ts';
 import type { AddonClient } from './addon.ts';
+import type { Approval, JobClient } from './job.ts';
 
 export type { KVClient, KVEntry, PutOptions } from './kv.ts';
 export type { BlobClient, SignOptions } from './blob.ts';
@@ -25,6 +26,7 @@ export type { ConfigClient } from './config.ts';
 export type { SecretClient } from './secret.ts';
 export type { LakeClient, LakeEndpoint } from './lake.ts';
 export type { AddonClient, AddonError, AddonProblem } from './addon.ts';
+export type { Approval, JobClient, JobError, JobProblem, JobRunState } from './job.ts';
 
 /** A CloudEvent — the normalized trigger envelope (ADR-0023). */
 export interface CloudEvent<T = unknown> {
@@ -83,6 +85,8 @@ export interface FunctionContext {
   /** The add-on objects that the function binds, by alias: fetch calls an object's engine through funcd, which serves
    *  only the paths that the object's edge entry serves. */
   addon: AddonClient;
+  /** The Jobs that the function binds, by alias: start a run of one with an input, and read a run back. */
+  job: JobClient;
   /** The whole milliseconds left before the call's deadline, 0 once it has passed, or null when the call has none. */
   remainingMs(): number | null;
   /** Who signed in to the call, when funcd's edge signed a user in with an OpenID Connect provider: provider is the
@@ -103,10 +107,18 @@ export interface RunInfo {
   startedBy: string;
 }
 
-/** The context a Job's handler gets (funcd ADR-0347): the FunctionContext plus its run. */
+/** The context a Job's handler and its preview get (funcd ADR-0347, ADR-0348): the FunctionContext plus its run and,
+ *  in the run's call, the approval it runs under. */
 export interface JobContext extends FunctionContext {
   run: RunInfo;
+  /** The person's approval of the preview that this run runs: who approved it, the preview's digest and its document.
+   *  Null in the preview call, and for a run of a Job with approval.bypass. */
+  approval: Approval | null;
 }
+
+/** A Job module's optional preview export (funcd ADR-0348): called in a run's preview call, before a person approves
+ *  the run, it answers what the run would change, as JSON. A module with none previews its run's input. */
+export type Preview<In = unknown> = (context: JobContext, event: CloudEvent<In>) => Json | Promise<Json>;
 
 /** A function handler: receives the context + CloudEvent, returns a response (or nothing). */
 export type Handler<In = unknown, Out = unknown> = (
