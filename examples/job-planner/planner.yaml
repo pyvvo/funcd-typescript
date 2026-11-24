@@ -1,0 +1,17 @@
+# region function
+# planner: a Function that starts a run of the Job report and reads it back, through its job binding.
+apiVersion: funcd.io/v1alpha1
+kind: Function
+metadata:
+  name: planner
+  namespace: default
+  resourceGroup: rg1
+spec:
+  runtime: nodejs22
+  handler: handle
+  image: oci-layout:///mnt/funcd-deps/registry:planner   # funcdctl push planner.mjs (built from src/main.ts)
+  bindings:
+    job:
+      - alias: report   # the name that the handler passes to ctx.job
+        job: report     # the Job of the namespace that it may start and read
+# endregion function
