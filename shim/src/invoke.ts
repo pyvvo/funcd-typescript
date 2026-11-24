@@ -4,6 +4,7 @@
 import http from 'node:http';
 
 import type { Sink } from './funclog.ts';
+import { localApi } from './localapi.ts';
 import { startClientSpan } from './tracespan.ts';
 
 /** Build the context.invoke implementation. The returned function POSTs `input` to
@@ -35,13 +36,14 @@ export function makeInvoke(
         span?.end('ERROR', err.message, httpStatus);
         reject(err);
       };
-      const socketPath = process.env.FUNCD_INVOKE_SOCKET;
-      if (!socketPath) {
+      const api = localApi();
+      if (!api) {
         fail(new Error('context.invoke: worker-node local API socket unavailable (FUNCD_INVOKE_SOCKET unset)'));
         return;
       }
       const body = JSON.stringify(input ?? null);
       const headers: Record<string, number | string> = {
+        ...api.headers,
         'content-type': 'application/json',
         'content-length': Buffer.byteLength(body),
       };
@@ -49,7 +51,7 @@ export function makeInvoke(
       if (span) headers.traceparent = span.traceparent;
       const req = http.request(
         {
-          socketPath,
+          ...api.options,
           path: `/invoke/${encodeURIComponent(alias)}`,
           method: 'POST',
           headers,
@@ -113,8 +115,8 @@ export function makeFetch(
       span?.end('ERROR', err.message, httpStatus);
       throw err;
     };
-    const socketPath = process.env.FUNCD_INVOKE_SOCKET;
-    if (!socketPath) {
+    const api = localApi();
+    if (!api) {
       return fail(new Error('context.fetch: worker-node local API socket unavailable (FUNCD_INVOKE_SOCKET unset)'));
     }
     if (!path.startsWith('/')) {
@@ -127,13 +129,14 @@ export function makeFetch(
       headers[key] = value;
     });
     if (body) headers['content-length'] = String(body.length);
+    Object.assign(headers, api.headers);
     if (opts.member) headers[MEMBER_HEADER] = opts.member;
     if (span) headers.traceparent = span.traceparent;
     const target = new URL(request.url);
     const reply = await new Promise<{ status: number; headers: Headers; body: Buffer }>((resolve, reject) => {
       const req = http.request(
         {
-          socketPath,
+          ...api.options,
           path: `/fetch/${encodeURIComponent(alias)}${target.pathname}${target.search}`,
           method: request.method,
           headers,

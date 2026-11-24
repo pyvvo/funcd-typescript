@@ -1,8 +1,9 @@
 // The worker-node local API client shared by context.kv, context.blob and context.sql: one HTTP request over the
-// per-sandbox socket (FUNCD_INVOKE_SOCKET), as the calling pool member when one is given.
+// local API (localApi), as the calling pool member when one is given.
 import http from 'node:http';
 
 import { MEMBER_HEADER } from './invoke.ts';
+import { localApi } from './localapi.ts';
 
 export interface Resp {
   status: number;
@@ -22,17 +23,17 @@ export function send(
   extra?: Record<string, string>,
 ): Promise<Resp> {
   return new Promise<Resp>((resolve, reject) => {
-    const socketPath = process.env.FUNCD_INVOKE_SOCKET;
-    if (!socketPath) {
+    const api = localApi();
+    if (!api) {
       reject(new Error(`${client}: worker-node local API socket unavailable (FUNCD_INVOKE_SOCKET unset)`));
       return;
     }
-    const headers: Record<string, number | string> = {};
+    const headers: Record<string, number | string> = { ...api.headers };
     if (body) headers['content-length'] = body.byteLength;
     if (contentType) headers['content-type'] = contentType;
     if (member) headers[MEMBER_HEADER] = member;
     Object.assign(headers, extra);
-    const req = http.request({ socketPath, path, method, headers }, (res) => {
+    const req = http.request({ ...api.options, path, method, headers }, (res) => {
       const chunks: Buffer[] = [];
       // A connection that drops mid-body errors the response, not the request, and never ends it.
       res.on('error', (err) =>

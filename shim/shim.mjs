@@ -3544,6 +3544,20 @@ function streamed(res, span) {
 // src/invoke.ts
 import http2 from "node:http";
 
+// src/localapi.ts
+var TOKEN_HEADER = "x-funcd-invoke-token";
+function localApi(env = process.env) {
+  const url = env.FUNCD_INVOKE_URL;
+  if (url) {
+    const u = new URL(url);
+    const headers = {};
+    if (env.FUNCD_INVOKE_TOKEN) headers[TOKEN_HEADER] = env.FUNCD_INVOKE_TOKEN;
+    return { options: { host: u.hostname, port: u.port === "" ? 80 : Number(u.port) }, headers };
+  }
+  const socketPath = env.FUNCD_INVOKE_SOCKET;
+  return socketPath ? { options: { socketPath }, headers: {} } : void 0;
+}
+
 // src/tracespan.ts
 import { randomBytes } from "node:crypto";
 
@@ -3574,7 +3588,7 @@ function remainingMs() {
 // src/funclog.ts
 import { writeSync } from "node:fs";
 import { connect } from "node:net";
-import { inspect as inspect2 } from "node:util";
+import { format, inspect as inspect2 } from "node:util";
 import { threadId } from "node:worker_threads";
 var SEVERITY = {
   debug: "DEBUG",
@@ -3869,7 +3883,11 @@ function openChannel(env, lock) {
   return null;
 }
 function installConsoleCapture(env = process.env, sink = openChannel(env), member) {
-  if (!sink) return false;
+  if (!sink) {
+    if (!env.FUNCD_LOG_STDOUT) return false;
+    printToStdout();
+    return true;
+  }
   const bound = recordBound(env);
   const methods = ["debug", "log", "info", "warn", "error"];
   for (const method of methods) {
@@ -3881,6 +3899,18 @@ function installConsoleCapture(env = process.env, sink = openChannel(env), membe
     };
   }
   return true;
+}
+function printToStdout() {
+  const methods = ["debug", "log", "info", "warn", "error"];
+  for (const method of methods) {
+    console[method] = (...args) => {
+      try {
+        writeSync(1, `${format(...args)}
+`);
+      } catch {
+      }
+    };
+  }
 }
 
 // src/tracespan.ts
@@ -3999,13 +4029,14 @@ function makeInvoke(opts = {}) {
       span?.end("ERROR", err.message, httpStatus);
       reject(err);
     };
-    const socketPath = process.env.FUNCD_INVOKE_SOCKET;
-    if (!socketPath) {
+    const api = localApi();
+    if (!api) {
       fail4(new Error("context.invoke: worker-node local API socket unavailable (FUNCD_INVOKE_SOCKET unset)"));
       return;
     }
     const body = JSON.stringify(input ?? null);
     const headers = {
+      ...api.headers,
       "content-type": "application/json",
       "content-length": Buffer.byteLength(body)
     };
@@ -4013,7 +4044,7 @@ function makeInvoke(opts = {}) {
     if (span) headers.traceparent = span.traceparent;
     const req = http2.request(
       {
-        socketPath,
+        ...api.options,
         path: `/invoke/${encodeURIComponent(alias)}`,
         method: "POST",
         headers
@@ -4063,8 +4094,8 @@ function makeFetch(opts = {}) {
       span?.end("ERROR", err.message, httpStatus);
       throw err;
     };
-    const socketPath = process.env.FUNCD_INVOKE_SOCKET;
-    if (!socketPath) {
+    const api = localApi();
+    if (!api) {
       return fail4(new Error("context.fetch: worker-node local API socket unavailable (FUNCD_INVOKE_SOCKET unset)"));
     }
     if (!path2.startsWith("/")) {
@@ -4077,13 +4108,14 @@ function makeFetch(opts = {}) {
       headers[key] = value;
     });
     if (body) headers["content-length"] = String(body.length);
+    Object.assign(headers, api.headers);
     if (opts.member) headers[MEMBER_HEADER] = opts.member;
     if (span) headers.traceparent = span.traceparent;
     const target = new URL(request.url);
     const reply = await new Promise((resolve, reject) => {
       const req = http2.request(
         {
-          socketPath,
+          ...api.options,
           path: `/fetch/${encodeURIComponent(alias)}${target.pathname}${target.search}`,
           method: request.method,
           headers
@@ -4130,17 +4162,17 @@ function makeFetch(opts = {}) {
 import http3 from "node:http";
 function send(client, method, path2, body, member, contentType2, extra) {
   return new Promise((resolve, reject) => {
-    const socketPath = process.env.FUNCD_INVOKE_SOCKET;
-    if (!socketPath) {
+    const api = localApi();
+    if (!api) {
       reject(new Error(`${client}: worker-node local API socket unavailable (FUNCD_INVOKE_SOCKET unset)`));
       return;
     }
-    const headers = {};
+    const headers = { ...api.headers };
     if (body) headers["content-length"] = body.byteLength;
     if (contentType2) headers["content-type"] = contentType2;
     if (member) headers[MEMBER_HEADER] = member;
     Object.assign(headers, extra);
-    const req = http3.request({ socketPath, path: path2, method, headers }, (res) => {
+    const req = http3.request({ ...api.options, path: path2, method, headers }, (res) => {
       const chunks = [];
       res.on(
         "error",
@@ -4431,8 +4463,8 @@ function makeAddon(opts = {}) {
         span?.end("ERROR", err.message, httpStatus);
         throw err;
       };
-      const socketPath = process.env.FUNCD_INVOKE_SOCKET;
-      if (!socketPath) {
+      const api = localApi();
+      if (!api) {
         return fail4(new Error("context.addon: worker-node local API socket unavailable (FUNCD_INVOKE_SOCKET unset)"));
       }
       if (!path2.startsWith("/")) {
@@ -4445,13 +4477,14 @@ function makeAddon(opts = {}) {
         headers[key] = value;
       });
       if (body) headers["content-length"] = String(body.length);
+      Object.assign(headers, api.headers);
       if (opts.member) headers[MEMBER_HEADER] = opts.member;
       if (span) headers.traceparent = span.traceparent;
       const target = new URL(request.url);
       const reply = await new Promise((resolve, reject) => {
         const req = http4.request(
           {
-            socketPath,
+            ...api.options,
             path: `/addon/${encodeURIComponent(alias)}${target.pathname}${target.search}`,
             method: request.method,
             headers
@@ -4610,8 +4643,8 @@ function judge(status, text) {
 }
 function checkDependencies(member, signal) {
   return new Promise((resolve) => {
-    const socketPath = process.env.FUNCD_INVOKE_SOCKET;
-    if (!socketPath) {
+    const api = localApi();
+    if (!api) {
       resolve(void 0);
       return;
     }
@@ -4624,7 +4657,12 @@ function checkDependencies(member, signal) {
     };
     const unreachable = (err) => settle(socketReport("Unreachable", `GET ${path} failed: ${err.message}`));
     const req = http5.request(
-      { socketPath, path, method: "GET", headers: member ? { [MEMBER_HEADER]: member } : {} },
+      {
+        ...api.options,
+        path,
+        method: "GET",
+        headers: member ? { ...api.headers, [MEMBER_HEADER]: member } : api.headers
+      },
       (res) => {
         const chunks = [];
         res.on("error", unreachable);

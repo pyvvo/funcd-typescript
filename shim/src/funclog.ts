@@ -5,14 +5,17 @@
 // (Node + Python) emit the SAME wire, so the reader is language-agnostic.
 //
 // Channel selection at startup (env, in order):
-//   FUNCD_LOG_FD   = a numeric fd (e.g. "3")  → fs.writeSync(fd, line)  [SYNCHRONOUS — minimal crash-tail loss]
-//   FUNCD_LOG_SOCK = a unix socket path        → net.connect(path), write lines to it
-//   neither set                                → no capture; console stays as-is (Path A / stdout)
+//   FUNCD_LOG_FD     = a numeric fd (e.g. "3")  → fs.writeSync(fd, line)  [SYNCHRONOUS — minimal crash-tail loss]
+//   FUNCD_LOG_SOCK   = a unix socket path        → net.connect(path), write lines to it
+//   FUNCD_LOG_STDOUT = set, with neither above    → every console call prints its line to stdout (funcd ADR-0346
+//                                                   Decision 4: a worker in a container has no channel, and funcd
+//                                                   keeps its stdout as lines, without the records' fields)
+//   none set                                     → no capture; console stays as-is (Path A / stdout)
 //
 // Pure Node, built-ins only (node:fs, node:net, node:worker_threads) — no npm deps, so it bundles into shim.mjs/pool.mjs.
 import { writeSync } from 'node:fs';
 import { connect, type Socket } from 'node:net';
-import { inspect } from 'node:util';
+import { format, inspect } from 'node:util';
 import { threadId } from 'node:worker_threads';
 
 import { currentInv } from './invcontext.ts';
@@ -422,7 +425,11 @@ export function installConsoleCapture(
   sink: Sink | null = openChannel(env),
   member?: string,
 ): boolean {
-  if (!sink) return false;
+  if (!sink) {
+    if (!env.FUNCD_LOG_STDOUT) return false;
+    printToStdout();
+    return true;
+  }
 
   const bound = recordBound(env);
   const methods: ConsoleMethod[] = ['debug', 'log', 'info', 'warn', 'error'];
@@ -436,4 +443,19 @@ export function installConsoleCapture(
     };
   }
   return true;
+}
+
+/** printToStdout makes every console call print its formatted line to stdout, synchronously: the record funcd keeps
+ *  as a line when FUNCD_LOG_STDOUT is set and no channel is (funcd ADR-0346 Decision 4). */
+function printToStdout(): void {
+  const methods: ConsoleMethod[] = ['debug', 'log', 'info', 'warn', 'error'];
+  for (const method of methods) {
+    console[method] = (...args: unknown[]): void => {
+      try {
+        writeSync(1, `${format(...args)}\n`);
+      } catch {
+        // a closed stdout must never crash the function — drop the line.
+      }
+    };
+  }
 }
