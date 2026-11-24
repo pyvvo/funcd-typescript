@@ -35,12 +35,12 @@ export interface JobRunState {
   phase: string;
   /** Why the run is in its phase, empty while it runs. */
   reason: string;
-  /** When the run started running, an RFC 3339 time; absent before. */
-  startedAt?: string;
-  /** When the run ended, an RFC 3339 time; absent before. */
-  endedAt?: string;
-  /** The handler's answer, once the run Succeeded. */
-  result?: Json;
+  /** When the run started running, an RFC 3339 time; null before. */
+  startedAt: string | null;
+  /** When the run ended, an RFC 3339 time; null before. */
+  endedAt: string | null;
+  /** The handler's answer once the run Succeeded; null before. */
+  result: Json;
 }
 
 export interface JobClient {
@@ -66,7 +66,8 @@ export interface Approval {
   preview: Json;
 }
 
-/** refusal is funcd's problem as a JobError; a body that is no problem keeps its text as the detail. */
+/** refusal is funcd's problem as a JobError. A body that is no problem, as the 422 of an input off the Job's contract,
+ *  which answers as a Function's call does, keeps its text as the detail, as context.invoke's error does. */
 function refusal(call: string, r: Resp): JobError {
   const text = r.body.toString('utf8');
   let problem: JobProblem = { type: 'about:blank', title: '', status: r.status, detail: text };
@@ -76,10 +77,10 @@ function refusal(call: string, r: Resp): JobError {
       type: parsed.type ?? 'about:blank',
       title: parsed.title ?? '',
       status: parsed.status ?? r.status,
-      detail: parsed.detail ?? '',
+      detail: parsed.detail ?? text,
     };
   } catch {
-    // not a problem body: keep its text
+    // not JSON: keep its text
   }
   return new JobError(call, problem);
 }

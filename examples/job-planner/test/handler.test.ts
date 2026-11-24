@@ -13,7 +13,14 @@ function fakeContext() {
         starts.push({ alias, input, name });
         return name ?? 'report-x1y2';
       },
-      get: async (_alias: string, run: string): Promise<JobRunState> => ({ name: run, phase: 'Pending', reason: '' }),
+      get: async (_alias: string, run: string): Promise<JobRunState> => ({
+        name: run,
+        phase: 'Pending',
+        reason: '',
+        startedAt: null,
+        endedAt: null,
+        result: null,
+      }),
     },
   } as unknown as FunctionContext;
   return { ctx, starts };

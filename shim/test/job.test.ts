@@ -57,6 +57,19 @@ test("funcd's refusal rejects with a JobError and its problem", async (t) => {
   await assert.rejects(makeJob().get('stack', 'x'), (err: unknown) => err instanceof JobError && err.status === 404);
 });
 
+test("an input off the Job's contract rejects with 422 and keeps the body's text, as context.invoke does", async (t) => {
+  const violation =
+    '{"error":"run input does not match the input schema of Job report","details":[{"path":"/month","message":"required"}]}';
+  await fakeDependencies(t, () => ({ status: 422, body: violation }));
+  await assert.rejects(makeJob().start('report', {}), (err: unknown) => {
+    assert.ok(err instanceof JobError);
+    assert.equal(err.status, 422);
+    assert.equal(err.problem.detail, violation);
+    assert.match(err.message, /failed: 422 \{"error":"run input does not match/);
+    return true;
+  });
+});
+
 test('a refusal whose body is no problem keeps its text', async (t) => {
   await fakeDependencies(t, () => ({ status: 403, body: 'denied' }));
   await assert.rejects(makeJob().start('other', {}), (err: unknown) => {

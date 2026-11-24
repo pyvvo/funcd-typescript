@@ -4535,7 +4535,7 @@ function refusal2(call, r) {
       type: parsed2.type ?? "about:blank",
       title: parsed2.title ?? "",
       status: parsed2.status ?? r.status,
-      detail: parsed2.detail ?? ""
+      detail: parsed2.detail ?? text
     };
   } catch {
   }
