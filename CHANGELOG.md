@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.35.0](https://github.com/pyvvo/funcd-typescript/compare/v0.34.0...v0.35.0) (2026-11-24)
+
+
+### Features
+
+* **shim:** a Job's preview call, ctx.approval and ctx.job (funcd ADR-0348, ADR-0349) ([#122](https://github.com/pyvvo/funcd-typescript/issues/122)) ([0400f0d](https://github.com/pyvvo/funcd-typescript/commit/0400f0d8ad85faf8bba787817d616214535bac24))
+
 ## [0.34.0](https://github.com/pyvvo/funcd-typescript/compare/v0.33.0...v0.34.0) (2026-11-24)
 
 
