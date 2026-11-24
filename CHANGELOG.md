@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.36.0](https://github.com/pyvvo/funcd-typescript/compare/v0.35.0...v0.36.0) (2026-11-24)
+
+
+### Features
+
+* **shim:** a worker in a container reaches the local API at FUNCD_INVOKE_URL with its token, and FUNCD_LOG_STDOUT prints its records ([#124](https://github.com/pyvvo/funcd-typescript/issues/124)) ([8b314fb](https://github.com/pyvvo/funcd-typescript/commit/8b314fbc0ef43c05746379806869eba23e96fa94))
+
 ## [0.35.0](https://github.com/pyvvo/funcd-typescript/compare/v0.34.0...v0.35.0) (2026-11-24)
 
 
