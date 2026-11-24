@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.34.0](https://github.com/pyvvo/funcd-typescript/compare/v0.33.0...v0.34.0) (2026-11-24)
+
+
+### Features
+
+* **examples:** job-report, a Job whose runs each report on one month (funcd ADR-0347) ([#120](https://github.com/pyvvo/funcd-typescript/issues/120)) ([ce25001](https://github.com/pyvvo/funcd-typescript/commit/ce25001122931641b4de76de31719188807cfd04))
+
 ## [0.33.0](https://github.com/pyvvo/funcd-typescript/compare/v0.32.0...v0.33.0) (2026-11-23)
 
 
