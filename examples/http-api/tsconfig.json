@@ -12,7 +12,8 @@
     "types": ["node"],
     "lib": ["ES2022"],
     "paths": {
-      "@funcd-dev/shim": ["../../shim/src/types.ts"]
+      "@funcd-dev/shim": ["../../shim/src/types.ts"],
+      "@funcd-dev/shim/ws": ["../../shim/src/ws.ts"]
     }
   },
   "include": ["src", "test"]

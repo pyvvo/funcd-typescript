@@ -4,12 +4,47 @@ __funcdCreateRequire(import.meta.url);
 /** The tag http(app) puts on its handler. A global symbol, so the copy of http() bundled into a function and the
 *  shim's own agree. */
 var HTTP_HANDLER = Symbol.for("funcd.http");
+/** The key of the hook that the shim's context carries in a Function with spec.protocol: http (funcd ADR-0360), which
+*  `upgradeWebSocket` from `@funcd-dev/shim/ws` calls. A global symbol, for the same reason as HTTP_HANDLER. */
+var WS_UPGRADE = Symbol.for("funcd.ws");
 /** http makes a fetch app the export of a Function with spec.protocol: http (funcd ADR-0243):
 *  `export const handle = http(app)`. A Hono route reaches the function context as `c.env.funcd`. */
 function http(app) {
 	const handler = (request, context) => app.fetch(request, { funcd: context });
 	return Object.assign(handler, { [HTTP_HANDLER]: true });
 }
+//#endregion
+//#region ../../node_modules/hono/dist/helper/websocket/index.js
+var defineWebSocketHelper = (handler) => {
+	return ((...args) => {
+		if (typeof args[0] === "function") {
+			const [createEvents, options] = args;
+			return async function upgradeWebSocket(c, next) {
+				const result = await handler(c, await createEvents(c), options);
+				if (result) return result;
+				await next();
+			};
+		} else {
+			const [c, events, options] = args;
+			return (async () => {
+				const upgraded = await handler(c, events, options);
+				if (!upgraded) throw new Error("Failed to upgrade WebSocket");
+				return upgraded;
+			})();
+		}
+	});
+};
+//#endregion
+//#region ../../shim/dist/ws.js
+/** upgradeWebSocket takes a WebSocket upgrade in a route of a Function with spec.protocol: http, as Hono's helper does
+*  on its other runtimes: `app.get('/relay', upgradeWebSocket((c) => ({ onMessage(event, ws) {} })))`. A request
+*  whose Upgrade header is not websocket goes to the next handler. */
+var upgradeWebSocket = defineWebSocketHelper(async (c, events) => {
+	if (c.req.header("upgrade")?.toLowerCase() !== "websocket") return;
+	const take = c.env?.funcd?.[WS_UPGRADE];
+	if (typeof take !== "function") throw new Error("upgradeWebSocket needs a Function with spec.protocol: http, served by a funcd shim that takes WebSockets (funcd ADR-0360)");
+	return take(events);
+});
 //#endregion
 //#region ../../node_modules/hono/dist/compose.js
 var compose = (middleware, onError, onNotFound) => {
@@ -1914,6 +1949,7 @@ var streamText = (c, cb, onError) => {
 var devices = /* @__PURE__ */ new Map();
 var firmware = /* @__PURE__ */ new Map();
 var nextId = 1;
+var relay = /* @__PURE__ */ new Set();
 /** isNamed accepts a JSON body that carries a non-empty name. */
 function isNamed(body) {
 	return typeof body === "object" && body !== null && typeof body.name === "string" && body.name !== "";
@@ -1928,7 +1964,17 @@ var handle = http(new Hono().use(requestId()).get("/devices", (c) => {
 		await stream.writeln(JSON.stringify(device));
 		await stream.sleep(50);
 	}
-})).post("/devices/purge", (c) => {
+})).get("/relay", upgradeWebSocket(() => ({
+	onOpen(_event, ws) {
+		relay.add(ws);
+	},
+	onMessage(event, ws) {
+		for (const peer of relay) if (peer !== ws && typeof event.data === "string") peer.send(event.data);
+	},
+	onClose(_event, ws) {
+		relay.delete(ws);
+	}
+}))).post("/devices/purge", (c) => {
 	const purged = devices.size;
 	devices.clear();
 	firmware.clear();

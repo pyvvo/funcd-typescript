@@ -6,16 +6,20 @@
 //                          else 503 with funcd's dependency report
 //   GET  /health/liveness  200 while up; never calls funcd
 // With FUNCD_PROTOCOL=http (funcd ADR-0243) the export is an http(app) handler instead, and every request but
-// /health/* reaches it as the Request the edge received (createHttpApp).
+// /health/* reaches it as the Request the edge received (createHttpApp); a route made with upgradeWebSocket takes a
+// WebSocket upgrade (funcd ADR-0360).
 // funcd checks each call's input and result against the Function's contract (funcd ADR-0303), so the shim checks
 // neither.
 // Env: FUNCD_ARTIFACT (local path), FUNCD_HANDLER (export, default "handle"); FUNCD_PORT
 // (container: bind 0.0.0.0:PORT) else FUNCD_PORTFILE (process: bind 127.0.0.1:0 + write the port).
-// Bundled (Hono inlined) to shim.mjs, so the runtime stays a single self-contained file.
-import { serve } from '@hono/node-server';
-import { Hono } from 'hono';
+// Bundled (Hono and ws inlined) to shim.mjs, so the runtime stays a single self-contained file.
+import { serve, upgradeWebSocket as takeUpgrade } from '@hono/node-server';
+import { type Context, Hono } from 'hono';
+import type { WSContext, WSEvents } from 'hono/ws';
+import { AsyncLocalStorage } from 'node:async_hooks';
 import { realpathSync, writeFileSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
+import { type WebSocket, WebSocketServer } from 'ws';
 
 import {
   containStrayFaults,
@@ -27,7 +31,17 @@ import {
   resolvePreview,
   toWire,
 } from './runtime.ts';
-import type { CloudEvent, FunctionContext, Handler, HttpHandler, JobContext, Preview, RunInfo } from './types.ts';
+import {
+  type CloudEvent,
+  type FunctionContext,
+  type Handler,
+  type HttpHandler,
+  type JobContext,
+  type Preview,
+  type RunInfo,
+  WS_UPGRADE,
+} from './types.ts';
+import type { TakeWebSocket } from './ws.ts';
 import { appRequest, streamed } from './httpapp.ts';
 import { makeFetch, makeInvoke } from './invoke.ts';
 import { makeKV } from './kv.ts';
@@ -39,7 +53,7 @@ import { makeLake } from './lake.ts';
 import { makeAddon } from './addon.ts';
 import { type Approval, makeJob, readApproval } from './job.ts';
 import { checkDependencies, dependencyCheckBudgetMs } from './dependencies.ts';
-import { currentInv, deadlineFrom, remainingMs } from './invcontext.ts';
+import { currentInv, deadlineFrom, type InvContext, invStore, remainingMs } from './invcontext.ts';
 import { installConsoleCapture, openChannel, recordBound, type Sink } from './funclog.ts';
 import { principalFrom } from './principal.ts';
 import { startSpan, parseLinks } from './tracespan.ts';
@@ -200,14 +214,71 @@ export function createApp(
   return app;
 }
 
+/** maxMessageBytes is the WebSocket server's maxPayload (funcd ADR-0360): a larger message closes its socket with code
+ *  1009, as a request body over the same ceiling is refused (funcd ADR-0243). */
+const maxMessageBytes = 1 << 20;
+
+/** wsServer is the WebSocket server that serve() takes in a Function with spec.protocol: http (funcd ADR-0360): it
+ *  completes the handshake of each upgrade that a route takes. */
+export function wsServer(): WebSocketServer {
+  return new WebSocketServer({ noServer: true, maxPayload: maxMessageBytes });
+}
+
+/** isWebSocketUpgrade reports whether a request asks for a WebSocket upgrade, which Node hands to the server's upgrade
+ *  listener: serve() then reads only the status and headers of the app's answer. */
+function isWebSocketUpgrade(headers: Headers): boolean {
+  const connection = (headers.get('connection') ?? '').toLowerCase().split(',');
+  return (
+    headers.get('upgrade')?.toLowerCase() === 'websocket' && connection.some((token) => token.trim() === 'upgrade')
+  );
+}
+
+/** shimCall holds the shim's own request context during a call, which the WebSocket hook hands to serve(). */
+const shimCall = new AsyncLocalStorage<Context>();
+
+/** takeWebSocket is the hook under WS_UPGRADE (funcd ADR-0360): @hono/node-server's upgradeWebSocket with the shim's
+ *  request context of the current call, so serve() completes the handshake once the app has answered. It rejects a
+ *  call that the server did not receive as an upgrade, such as one whose Connection header names no upgrade, so the
+ *  app answers its error. */
+const takeWebSocket: TakeWebSocket = async (events) => {
+  const c = shimCall.getStore();
+  if (!c || !isWebSocketUpgrade(c.req.raw.headers)) {
+    throw new Error('upgradeWebSocket takes only a request that the server received as a WebSocket upgrade');
+  }
+  return takeUpgrade(c, inUpgradeCall(events) as Parameters<typeof takeUpgrade>[1]);
+};
+
+/** inUpgradeCall runs each event in the invocation context of the call that took the socket, its deadline dropped:
+ *  an event's log records carry that call's ids, ctx.principal is who opened the socket, and ctx.remainingMs() is
+ *  null. ws fires the events from the socket, outside that call. */
+function inUpgradeCall(events: WSEvents<WebSocket>): WSEvents<WebSocket> {
+  const inv = currentInv();
+  if (!inv) return events;
+  const call: InvContext = {
+    inv: inv.inv,
+    traceId: inv.traceId,
+    spanId: inv.spanId,
+    parentId: inv.parentId,
+    principal: inv.principal,
+  };
+  const within = <E>(fn?: (event: E, ws: WSContext<WebSocket>) => void) =>
+    fn && ((event: E, ws: WSContext<WebSocket>) => invStore.run(call, () => fn(event, ws)));
+  return {
+    onOpen: within(events.onOpen),
+    onMessage: within(events.onMessage),
+    onClose: within(events.onClose),
+    onError: within(events.onError),
+  };
+}
+
 /** createHttpApp builds the shim's app around the http(app) handler of a Function with spec.protocol: http (funcd
  *  ADR-0243): every request but the shim's own /health/*, which shadows the app's, reaches the handler as the
  *  Request the edge received, and its Response goes back as is, its body streamed. The invocation span ends with the
- *  body. */
+ *  body, or with the answer to a WebSocket upgrade, whose body nothing reads (funcd ADR-0360). */
 export function createHttpApp(handler: HttpHandler, trace: TraceOptions = {}, health: HealthOptions = {}): Hono {
   const app = new Hono();
   const traceSink = trace.sink ?? null;
-  const ctx = contextFor(traceSink, trace.bound);
+  const ctx = Object.assign(contextFor(traceSink, trace.bound), { [WS_UPGRADE]: takeWebSocket });
   const fnName = trace.fnName ?? 'invoke';
   addHealth(app, health);
   app.all('*', async (c) => {
@@ -223,8 +294,11 @@ export function createHttpApp(handler: HttpHandler, trace: TraceOptions = {}, he
       principalFrom(c.req.raw.headers),
     );
     try {
-      const res = await span.run(async () => handler(await appRequest(c.req.raw), ctx));
-      return streamed(res, span);
+      const res = await shimCall.run(c, () => span.run(async () => handler(await appRequest(c.req.raw), ctx)));
+      if (!isWebSocketUpgrade(c.req.raw.headers)) return streamed(res, span);
+      span.end(res.status >= 500 ? 'ERROR' : 'OK');
+      await res.body?.cancel();
+      return res;
     } catch (err) {
       const message = String(err instanceof Error ? err.message : err);
       span.end('ERROR', message);
@@ -277,7 +351,8 @@ async function main(): Promise<void> {
   }
 
   const hostname = fixedPort > 0 ? '0.0.0.0' : '127.0.0.1';
-  serve({ fetch: app.fetch, hostname, port: fixedPort }, (info) => {
+  const websocket = protocol === 'http' ? { websocket: { server: wsServer() } } : {};
+  serve({ fetch: app.fetch, hostname, port: fixedPort, ...websocket }, (info) => {
     containStrayFaults('funcd-shim');
     if (portFile) writeFileSync(portFile, String(info.port));
     process.stdout.write(`funcd-shim: listening on ${hostname}:${info.port}\n`);

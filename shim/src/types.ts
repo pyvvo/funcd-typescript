@@ -135,6 +135,10 @@ export interface HttpApp {
  *  shim's own agree. */
 export const HTTP_HANDLER: unique symbol = Symbol.for('funcd.http');
 
+/** The key of the hook that the shim's context carries in a Function with spec.protocol: http (funcd ADR-0360), which
+ *  `upgradeWebSocket` from `@funcd-dev/shim/ws` calls. A global symbol, for the same reason as HTTP_HANDLER. */
+export const WS_UPGRADE: unique symbol = Symbol.for('funcd.ws');
+
 /** What a Function with spec.protocol: http exports: the shim calls it with each request it rebuilds. */
 export type HttpHandler = ((request: Request, context: FunctionContext) => Response | Promise<Response>) & {
   readonly [HTTP_HANDLER]: true;
