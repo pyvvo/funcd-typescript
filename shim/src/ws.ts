@@ -6,7 +6,7 @@ import type { WebSocket } from 'ws';
 import { WS_UPGRADE } from './types.ts';
 
 /** TakeWebSocket is the hook under WS_UPGRADE on the shim's context: it takes the socket of the call that runs it, when
- *  the shim's server received that call as an upgrade, and answers 500 otherwise. */
+ *  the shim's server received that call as an upgrade, and rejects otherwise. */
 export type TakeWebSocket = (events: WSEvents<WebSocket>) => Promise<Response>;
 
 /** upgradeWebSocket takes a WebSocket upgrade in a route of a Function with spec.protocol: http, as Hono's helper does

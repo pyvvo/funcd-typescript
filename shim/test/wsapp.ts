@@ -40,6 +40,7 @@ const app = new Hono<{ Bindings: { funcd: FunctionContext } }>()
       };
     }),
   )
-  .get('/plain', (c) => c.text('plain', 200, { 'x-plain': 'yes' }));
+  .get('/plain', (c) => c.text('plain', 200, { 'x-plain': 'yes' }))
+  .onError((err, c) => c.text(err.message, 500));
 
 export const handle = http(app);

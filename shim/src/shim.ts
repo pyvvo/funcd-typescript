@@ -237,11 +237,14 @@ function isWebSocketUpgrade(headers: Headers): boolean {
 const shimCall = new AsyncLocalStorage<Context>();
 
 /** takeWebSocket is the hook under WS_UPGRADE (funcd ADR-0360): @hono/node-server's upgradeWebSocket with the shim's
- *  request context of the current call, so serve() completes the handshake once the app has answered. A call that
- *  serve() did not receive as an upgrade gets its 500. */
-const takeWebSocket: TakeWebSocket = (events) => {
+ *  request context of the current call, so serve() completes the handshake once the app has answered. It rejects a
+ *  call that the server did not receive as an upgrade, such as one whose Connection header names no upgrade, so the
+ *  app answers its error. */
+const takeWebSocket: TakeWebSocket = async (events) => {
   const c = shimCall.getStore();
-  if (!c) return Promise.resolve(new Response(null, { status: 500 }));
+  if (!c || !isWebSocketUpgrade(c.req.raw.headers)) {
+    throw new Error('upgradeWebSocket takes only a request that the server received as a WebSocket upgrade');
+  }
   return takeUpgrade(c, inUpgradeCall(events) as Parameters<typeof takeUpgrade>[1]);
 };
 

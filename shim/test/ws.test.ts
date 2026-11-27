@@ -93,6 +93,22 @@ test(
 );
 
 test(
+  'a request with Upgrade: websocket that the server did not receive as an upgrade reaches the app’s error',
+  bounded,
+  async (t) => {
+    const address = await serveShim(t);
+    const [host, port] = address.split(':');
+    const req = http.request({ host, port: Number(port), path: '/relay', headers: { upgrade: 'websocket' } });
+    req.end();
+    const [res] = (await once(req, 'response')) as [http.IncomingMessage];
+    let body = '';
+    for await (const chunk of res) body += String(chunk);
+    assert.equal(res.statusCode, 500);
+    assert.match(body, /received as a WebSocket upgrade/);
+  },
+);
+
+test(
   'scenario ws-message-cap: a message over 1 MiB closes its socket with 1009, and a new socket opens',
   bounded,
   async (t) => {

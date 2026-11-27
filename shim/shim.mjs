@@ -8632,9 +8632,11 @@ function isWebSocketUpgrade(headers) {
   return headers.get("upgrade")?.toLowerCase() === "websocket" && connection.some((token) => token.trim() === "upgrade");
 }
 var shimCall = new AsyncLocalStorage2();
-var takeWebSocket = (events) => {
+var takeWebSocket = async (events) => {
   const c = shimCall.getStore();
-  if (!c) return Promise.resolve(new Response(null, { status: 500 }));
+  if (!c || !isWebSocketUpgrade(c.req.raw.headers)) {
+    throw new Error("upgradeWebSocket takes only a request that the server received as a WebSocket upgrade");
+  }
   return upgradeWebSocket(c, inUpgradeCall(events));
 };
 function inUpgradeCall(events) {
