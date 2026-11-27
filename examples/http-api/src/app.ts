@@ -46,6 +46,7 @@ export const app = new Hono<{ Bindings: { funcd: FunctionContext } }>()
       }
     }),
   )
+  // #region relay
   .get(
     '/relay',
     // Each message goes to every other socket of the route (funcd ADR-0360), such as from a phone remote to a TV page.
@@ -63,6 +64,7 @@ export const app = new Hono<{ Bindings: { funcd: FunctionContext } }>()
       },
     })),
   )
+  // #endregion relay
   .post('/devices/purge', (c) => {
     const purged = devices.size;
     devices.clear();
