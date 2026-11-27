@@ -10,6 +10,7 @@
   },
   "include": [
     "src/types.ts",
-    "src/build.ts"
+    "src/build.ts",
+    "src/ws.ts"
   ]
 }

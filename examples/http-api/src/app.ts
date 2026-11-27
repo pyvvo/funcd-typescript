@@ -1,7 +1,9 @@
 import type { FunctionContext } from '@funcd-dev/shim';
+import { upgradeWebSocket } from '@funcd-dev/shim/ws';
 import { Hono } from 'hono';
 import { requestId } from 'hono/request-id';
 import { streamText } from 'hono/streaming';
+import type { WSContext } from 'hono/ws';
 
 /** A device of the fleet. */
 export interface Device {
@@ -13,6 +15,9 @@ export interface Device {
 const devices = new Map<string, Device>();
 const firmware = new Map<string, Uint8Array<ArrayBuffer>>();
 let nextId = 1;
+
+// The relay's sockets, also in this worker's memory: with one replica, every socket of the Function meets here.
+const relay = new Set<WSContext>();
 
 /** isNamed accepts a JSON body that carries a non-empty name. */
 function isNamed(body: unknown): body is { name: string } {
@@ -40,6 +45,23 @@ export const app = new Hono<{ Bindings: { funcd: FunctionContext } }>()
         await stream.sleep(50);
       }
     }),
+  )
+  .get(
+    '/relay',
+    // Each message goes to every other socket of the route (funcd ADR-0360), such as from a phone remote to a TV page.
+    upgradeWebSocket(() => ({
+      onOpen(_event, ws) {
+        relay.add(ws);
+      },
+      onMessage(event, ws) {
+        for (const peer of relay) {
+          if (peer !== ws && typeof event.data === 'string') peer.send(event.data);
+        }
+      },
+      onClose(_event, ws) {
+        relay.delete(ws);
+      },
+    })),
   )
   .post('/devices/purge', (c) => {
     const purged = devices.size;

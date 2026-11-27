@@ -13,6 +13,10 @@ const json = (body: unknown) => ({
   body: JSON.stringify(body),
 });
 
+test('a GET of the relay with no Upgrade header reaches no route', async () => {
+  assert.equal((await app.request('/relay', {}, env)).status, 404);
+});
+
 test('the devices API creates, reads, updates, lists and deletes a device', async () => {
   const created = await app.request('/devices', json({ name: 'truck-7' }), env);
   assert.equal(created.status, 201);

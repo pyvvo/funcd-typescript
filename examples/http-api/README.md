@@ -1,11 +1,11 @@
 # http-api
 
-A Function that serves HTTP (funcd ADR-0243): `devices-api`, a Hono REST API with a streamed export, exported with
+A Function that serves HTTP (funcd ADR-0243): `devices-api`, a Hono REST API with a streamed export and a WebSocket relay, exported with
 `http(app)` under `spec.protocol: http`.
 
 | File | What |
 |---|---|
-| `src/app.ts` | The Hono app: `GET/POST /devices` (`?name=` filters), `GET/PUT/DELETE /devices/:id`, `GET/PUT /devices/:id/firmware` (raw bytes), `POST /devices/purge`, and `GET /devices/export`, one line per device, streamed |
+| `src/app.ts` | The Hono app: `GET/POST /devices` (`?name=` filters), `GET/PUT/DELETE /devices/:id`, `GET/PUT /devices/:id/firmware` (raw bytes), `POST /devices/purge`, `GET /devices/export`, one line per device, streamed, and `GET /relay`, a WebSocket that sends each message to every other socket of the route (funcd ADR-0360) |
 | `src/main.ts` | `export const handle = http(app)` |
 | `devices-api.contract.yaml` | The push config: `protocol: http`, so `funcdctl push` bakes no I/O contract |
 | `devices.yaml`, `route.yaml` | The Function `devices-api` and the Route `api` that serves it at `/api` |
