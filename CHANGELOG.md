@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.37.0](https://github.com/pyvvo/funcd-typescript/compare/v0.36.0...v0.37.0) (2026-11-27)
+
+
+### Features
+
+* **shim:** a Function that serves HTTP takes WebSocket connections (funcd ADR-0360) ([#126](https://github.com/pyvvo/funcd-typescript/issues/126)) ([4315766](https://github.com/pyvvo/funcd-typescript/commit/4315766b743da2c90ccaf0c524a0626738a526b3))
+
 ## [0.36.0](https://github.com/pyvvo/funcd-typescript/compare/v0.35.0...v0.36.0) (2026-11-24)
 
 
