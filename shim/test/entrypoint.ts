@@ -1,17 +1,17 @@
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
-// startEntrypoint runs src/<entry>.ts as the process driver does, with any extra node flags, and resolves once it
-// listens. `exited` resolves with how the process ended.
-export async function startEntrypoint(entry: 'shim' | 'pool', env: Record<string, string>, nodeArgs: string[] = []) {
+// startEntrypoint runs src/<entry>.ts, or script such as a built bundle, as the process driver does, with any extra
+// node flags, and resolves once it listens. `exited` resolves with how the process ended.
+export async function startEntrypoint(
+  entry: 'shim' | 'pool',
+  env: Record<string, string>,
+  nodeArgs: string[] = [],
+  script: URL = new URL(`../src/${entry}.ts`, import.meta.url),
+) {
   const child = spawn(
     process.execPath,
-    [
-      '--experimental-strip-types',
-      '--no-warnings',
-      ...nodeArgs,
-      fileURLToPath(new URL(`../src/${entry}.ts`, import.meta.url)),
-    ],
+    ['--experimental-strip-types', '--no-warnings', ...nodeArgs, fileURLToPath(script)],
     { env, stdio: ['ignore', 'pipe', 'pipe'] },
   );
   let stderr = '';

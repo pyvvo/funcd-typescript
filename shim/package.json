@@ -39,7 +39,7 @@
     "test": "node --test --experimental-strip-types test/*.test.ts",
     "build": "yarn build:shim && yarn build:pool && yarn build:lib && yarn build:api",
     "build:api": "node --experimental-strip-types scripts/api.ts",
-    "build:shim": "esbuild src/shim.ts --bundle --platform=node --format=esm --target=node22 --external:bufferutil --external:utf-8-validate --outfile=shim.mjs --banner:js=\"// GENERATED from shim/src/shim.ts by 'yarn build' (esbuild). Do not edit by hand.\"",
+    "build:shim": "esbuild src/shim.ts --bundle --platform=node --format=esm --target=node22 --external:bufferutil --external:utf-8-validate --outfile=shim.mjs --banner:js=\"// GENERATED from shim/src/shim.ts by 'yarn build' (esbuild). Do not edit by hand.\nimport { createRequire } from 'node:module';\nconst require = createRequire(import.meta.url);\"",
     "build:pool": "esbuild src/pool.ts --bundle --platform=node --format=esm --target=node22 --outfile=pool.mjs --banner:js=\"// GENERATED from shim/src/pool.ts by 'yarn build' (esbuild). Do not edit by hand.\"",
     "build:lib": "tsc -p tsconfig.lib.json"
   },

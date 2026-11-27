@@ -187,3 +187,19 @@ test('the shim’s entrypoint takes WebSockets under FUNCD_PROTOCOL=http', bound
   a.send('left');
   assert.equal(await atB, 'left');
 });
+
+test('the built shim.mjs takes WebSockets: its bundled ws reaches the node builtins', bounded, async (t) => {
+  const shim = await startEntrypoint(
+    'shim',
+    { FUNCD_ARTIFACT: fileURLToPath(new URL('./wsapp.ts', import.meta.url)), FUNCD_PROTOCOL: 'http' },
+    [],
+    new URL('../shim.mjs', import.meta.url),
+  );
+  t.after(() => shim.child.kill());
+  const address = `127.0.0.1:${shim.port}`;
+  const a = await connect(t, address, '/relay');
+  const b = await connect(t, address, '/relay');
+  const atB = nextMessage(b);
+  a.send('left');
+  assert.equal(await atB, 'left');
+});

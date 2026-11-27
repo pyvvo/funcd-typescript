@@ -1,4 +1,6 @@
 // GENERATED from shim/src/shim.ts by 'yarn build' (esbuild). Do not edit by hand.
+import { createRequire } from 'node:module';
+const require = createRequire(import.meta.url);
 var __create = Object.create;
 var __defProp = Object.defineProperty;
 var __getOwnPropDesc = Object.getOwnPropertyDescriptor;
