@@ -55,6 +55,28 @@ another Function reaches it with `context.fetch(alias, path, init)` over a link,
 whatever its status, and rejects when funcd refuses the call (no link, or a target that does not serve HTTP). See
 [`examples/http-api`](examples/http-api).
 
+### Take WebSocket connections
+
+A route made with `upgradeWebSocket` from `@funcd-dev/shim/ws` takes a socket, as Hono's own helper does on Node (funcd
+ADR-0360). That entry needs `hono`, and `@types/ws` for TypeScript:
+
+```ts
+import { http } from '@funcd-dev/shim';
+import { upgradeWebSocket } from '@funcd-dev/shim/ws';
+import { Hono } from 'hono';
+
+const app = new Hono().get('/echo', upgradeWebSocket(() => ({
+  onMessage(event, ws) {
+    ws.send(String(event.data));
+  },
+})));
+export const handle = http(app);
+```
+
+A message holds at most 1 MiB, and a larger one closes its socket with code 1009. funcd closes a socket that carries no
+byte for 5 minutes, and a change of the Function ends its open sockets, so a client pings about every 30 seconds and
+reconnects. The `/relay` route of [`examples/http-api`](examples/http-api) passes each message to every other socket.
+
 ## Know who signed in
 
 When funcd's edge signs the caller in with an OpenID Connect provider (funcd ADR-0335), `context.principal` says who
